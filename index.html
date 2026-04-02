@@ -1058,9 +1058,9 @@ function adaptModalForView(){
   const isVR = currentView==='vr';
   const isBT = currentView==='bt';
   // Joueurs max
-  document.getElementById('fPers').min = (isVR || isBT) ? 2 : 1;
+  document.getElementById('fPers').min = isVR ? 2 : (isBT ? 4 : 1);
   document.getElementById('fPers').max = isVR ? 4 : 24;
-  document.getElementById('fPers').value = isVR ? 2 : (isBT ? 2 : 4);
+  document.getElementById('fPers').value = isVR ? 2 : (isBT ? 4 : 4);
   // Remplacer options type selon vue
   const sel = document.getElementById('fType');
   if(isBT){
@@ -1459,6 +1459,92 @@ document.getElementById('clientsOverlay').addEventListener('click',function(e){ 
 
 // Auto-refresh current-time highlight
 setInterval(renderCalendar,30000);
+
+// ── AUTO-SCROLL ───────────────────────────────────────────────────────────────
+// Scroll automatique sur h - 40 min, suspendu si l'utilisateur interagit,
+// repris après 30 secondes d'inactivité.
+
+let _autoScrollPaused = false;
+let _autoScrollTimer  = null;
+
+function getTargetScrollTop(){
+  const calWrap = document.querySelector('.cal-wrap');
+  if(!calWrap) return 0;
+
+  const now = new Date();
+  // Heure cible = maintenant − 40 minutes
+  const targetMin = now.getHours()*60 + now.getMinutes() - 40;
+
+  // Trouver la ligne dont le créneau est le plus proche de targetMin
+  const rows = calWrap.querySelectorAll('tbody tr');
+  let bestRow = null;
+  let bestDiff = Infinity;
+
+  rows.forEach(row => {
+    const timeCell = row.querySelector('.time-cell');
+    if(!timeCell) return;
+    const t = timeCell.textContent.trim();
+    const parts = t.split(':');
+    if(parts.length < 2) return;
+    const rowMin = parseInt(parts[0])*60 + parseInt(parts[1]);
+    const diff = Math.abs(rowMin - targetMin);
+    if(diff < bestDiff){ bestDiff = diff; bestRow = row; }
+  });
+
+  if(!bestRow) return 0;
+  // Position de la ligne relative au scrollable container
+  const wrapRect  = calWrap.getBoundingClientRect();
+  const rowRect   = bestRow.getBoundingClientRect();
+  return calWrap.scrollTop + (rowRect.top - wrapRect.top) - 40; // 40px de marge visuelle
+}
+
+function doAutoScroll(){
+  if(_autoScrollPaused) return;
+  const calWrap = document.querySelector('.cal-wrap');
+  if(!calWrap) return;
+  const target = getTargetScrollTop();
+  calWrap.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+}
+
+function pauseAutoScroll(){
+  _autoScrollPaused = true;
+  clearTimeout(_autoScrollTimer);
+  // Reprendre après 30 s d'inactivité
+  _autoScrollTimer = setTimeout(resumeAutoScroll, 30000);
+}
+
+function resumeAutoScroll(){
+  _autoScrollPaused = false;
+  doAutoScroll();
+}
+
+// Écouter les interactions utilisateur sur le calendrier
+(function attachUserInteractionListeners(){
+  const calWrap = document.querySelector('.cal-wrap');
+  if(calWrap){
+    // Scroll manuel
+    calWrap.addEventListener('scroll', pauseAutoScroll, { passive: true });
+  }
+
+  // Clics et ouvertures de modales (sur tout le document)
+  const interactionEvents = ['click', 'pointerdown', 'keydown', 'touchstart'];
+  interactionEvents.forEach(evt => {
+    document.addEventListener(evt, pauseAutoScroll, { passive: true });
+  });
+})();
+
+// Scroll initial au chargement (déclenché après le premier renderCalendar)
+// On utilise un flag pour ne le faire qu'une seule fois.
+let _initialScrollDone = false;
+const _origRenderCalendar = renderCalendar;
+function renderCalendar(){
+  _origRenderCalendar();
+  if(!_initialScrollDone){
+    _initialScrollDone = true;
+    // Laisser le DOM se construire avant de scroller
+    requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 80); });
+  }
+}
 
 // Init : le calendrier sera rendu après connexion Firebase (auth.onAuthStateChanged)
 // renderCalendar() est appelé automatiquement à la réception des données
