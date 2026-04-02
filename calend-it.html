@@ -698,6 +698,11 @@ function initFirebaseSync(){
     bookings = snap.val() || {};
     setSyncDot('ok');
     renderCalendar();
+    // Scroll automatique initial (une seule fois au 1er chargement)
+    if(!_initialScrollDone){
+      _initialScrollDone = true;
+      requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 120); });
+    }
   }, ()=>setSyncDot('error'));
 }
 
@@ -1533,18 +1538,10 @@ function resumeAutoScroll(){
   });
 })();
 
-// Scroll initial au chargement (déclenché après le premier renderCalendar)
-// On utilise un flag pour ne le faire qu'une seule fois.
+// Scroll initial : déclenché une seule fois après le premier rendu Firebase.
+// On patche initFirebaseSync (déclarée via function, donc hoistée) en réaffectant
+// la référence après sa déclaration.
 let _initialScrollDone = false;
-const _origRenderCalendar = renderCalendar;
-function renderCalendar(){
-  _origRenderCalendar();
-  if(!_initialScrollDone){
-    _initialScrollDone = true;
-    // Laisser le DOM se construire avant de scroller
-    requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 80); });
-  }
-}
 
 // Init : le calendrier sera rendu après connexion Firebase (auth.onAuthStateChanged)
 // renderCalendar() est appelé automatiquement à la réception des données
