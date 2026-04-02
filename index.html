@@ -84,7 +84,19 @@ th.th-slot{/* auto = (100% - 42px - 62px) / 8 */}
 
 tbody tr{transition:background .1s}
 tbody tr:hover{background:#f8fafc}
-tbody tr.now-row{background:#fff7ed}
+
+/* ── CRÉNEAU EN COURS ── */
+tbody tr.now-row{background:#fff1f2}
+tbody tr.now-row td{border-top:2px solid var(--red) !important;border-bottom:2px solid var(--red) !important;}
+tbody tr.now-row td:first-child{border-left:4px solid var(--red) !important;}
+
+/* ── CRÉNEAU PASSÉ ── */
+tbody tr.past-row{background:#f8f9fb;opacity:.72}
+tbody tr.past-row .time-cell{color:#b0b8c8;text-decoration:line-through}
+tbody tr.past-row .slot-cell{background:#f1f3f7 !important}
+tbody tr.past-row .add-btn{opacity:.3;pointer-events:none}
+tbody tr.past-row .bk{filter:grayscale(.45) opacity(.7)}
+tbody tr.past-row .vest-badge{opacity:.5}
 
 tbody td{border:1px solid var(--border);padding:0;vertical-align:top;height:80px;overflow:hidden}
 
@@ -104,7 +116,7 @@ tbody td{border:1px solid var(--border);padding:0;vertical-align:top;height:80px
 
 /* ── TIME CELL ── */
 .time-cell{padding:8px 8px 0;font-family:'DM Mono',monospace;font-size:12px;font-weight:500;color:var(--muted);text-align:center;width:62px;vertical-align:top}
-.now-row .time-cell{color:var(--red);font-weight:700}
+.now-row .time-cell{color:var(--red);font-weight:800;}
 
 /* ── HOUR SEPARATOR ── */
 tbody tr.hour-sep td{border-top:2px solid var(--border2)}
@@ -204,6 +216,9 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 /* VR types */
 .t-vrzone        {background:#16a34a;color:#ffffff;border-color:#15803d}
 .t-escapevr      {background:#1d4ed8;color:#ffffff;border-color:#1e40af}
+/* Blind Test types */
+.t-bt30          {background:#7dd3fc;color:#0c4a6e;border-color:#38bdf8}
+.t-bt60          {background:#86efac;color:#14532d;border-color:#4ade80}
 
 /* ── AUTOCOMPLETE TEL ── */
 .ac-wrap{position:relative}
@@ -360,6 +375,23 @@ body.copy-mode .slot-cell.too-close{background:#fff7ed !important;outline:2px da
 #syncDot.syncing{background:#f97316;animation:pulse .7s infinite alternate}
 #syncDot.error{background:#ef4444}
 @keyframes pulse{from{opacity:1}to{opacity:.4}}
+/* ── CLIENTS PANEL ── */
+#clientsOverlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:999;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+#clientsOverlay.open{display:flex}
+.clients-modal{background:var(--white);border-radius:14px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);animation:pop .18s ease}
+.clients-header{padding:16px 20px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.clients-search{border:1.5px solid var(--border);border-radius:var(--r);padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:13px;width:220px;outline:none;transition:border-color .15s}
+.clients-search:focus{border-color:var(--accent)}
+.clients-body{overflow-y:auto;flex:1}
+.clients-table{width:100%;border-collapse:collapse}
+.clients-table thead th{background:var(--th-bg);border-bottom:2px solid var(--border2);padding:8px 12px;font-size:11.5px;font-weight:700;text-align:left;position:sticky;top:0;z-index:2}
+.clients-table tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+.clients-table tbody tr:hover{background:#f8fafc}
+.clients-table td{padding:8px 12px;font-size:12.5px;vertical-align:middle}
+.client-tel{font-family:'DM Mono',monospace;color:var(--muted)}
+.client-count{display:inline-flex;align-items:center;justify-content:center;background:var(--text);color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:1px 7px;min-width:22px}
+.client-last{font-size:11px;color:var(--muted)}
+.clients-empty{text-align:center;padding:40px;color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
@@ -395,7 +427,8 @@ body.copy-mode .slot-cell.too-close{background:#fff7ed !important;outline:2px da
   </div>
   <a class="nav-item nav-active" id="navLaser" onclick="switchView('laser')">🎯 Laser</a>
   <a class="nav-item" id="navVR" onclick="switchView('vr')">🥽 VR</a>
-  <a class="nav-item">👤 Clients</a>
+  <a class="nav-item" id="navBT" onclick="switchView('bt')">🎵 Blind Test</a>
+  <a class="nav-item" id="navClients" onclick="openClientsPanel()">👤 Clients</a>
   <div class="nav-spacer"></div>
   <div class="nav-site">Game Zone Montauban<span id="syncDot" title="Synchronisation Firebase"></span></div>
   <button class="btn-pow" title="Déconnexion" onclick="doLogout()">⏻</button>
@@ -444,6 +477,9 @@ body.copy-mode .slot-cell.too-close{background:#fff7ed !important;outline:2px da
   <span style="margin-left:16px;font-size:11.5px;font-weight:700;color:var(--muted)">VR :</span>
   <span class="leg-item"><span class="leg-dot" style="background:#16a34a"></span>VRzone</span>
   <span class="leg-item"><span class="leg-dot" style="background:#1d4ed8"></span>Escape Game VR</span>
+  <span style="margin-left:16px;font-size:11.5px;font-weight:700;color:var(--muted)">Blind Test :</span>
+  <span class="leg-item"><span class="leg-dot" style="background:#7dd3fc"></span>30 min</span>
+  <span class="leg-item"><span class="leg-dot" style="background:#86efac"></span>60 min</span>
 </div>
 
 <!-- CALENDAR -->
@@ -536,6 +572,37 @@ body.copy-mode .slot-cell.too-close{background:#fff7ed !important;outline:2px da
       <button class="btn-copy" id="btnCopy" onclick="startCopyMode()" style="display:none">📋 Copier vers…</button>
       <button class="btn-cancel" onclick="closeModal()">Annuler</button>
       <button class="btn-ok" onclick="confirmBooking()">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLIENTS PANEL -->
+<div id="clientsOverlay">
+  <div class="clients-modal">
+    <div class="clients-header">
+      <div>
+        <div class="modal-title">👤 Listing Clients</div>
+        <div class="modal-sub">Clients reconnus automatiquement depuis les réservations</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="text" class="clients-search" id="clientsSearch" placeholder="Rechercher nom ou téléphone…" oninput="renderClients()">
+        <button class="btn-close" onclick="document.getElementById('clientsOverlay').classList.remove('open')">✕</button>
+      </div>
+    </div>
+    <div class="clients-body">
+      <table class="clients-table">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Téléphone</th>
+            <th>Email</th>
+            <th>Réservations</th>
+            <th>Dernière visite</th>
+          </tr>
+        </thead>
+        <tbody id="clientsBody"></tbody>
+      </table>
+      <div class="clients-empty" id="clientsEmpty" style="display:none">Aucun client trouvé.</div>
     </div>
   </div>
 </div>
@@ -643,11 +710,12 @@ function saveBookings(){
 
 // ── CONFIG ──────────────────────────────────────────────────────────────────
 let MAX_VESTS = 24;          // modifiable via modal
-let currentView = 'laser';   // 'laser' | 'vr'
+let currentView = 'laser';   // 'laser' | 'vr' | 'bt'
 
-// Laser : 8 cols / VR : 4 cols
+// Laser : 8 cols / VR : 4 cols / BT : 1 col
 const LASER_COLS = 8;
 const VR_COLS    = 4;
+const BT_COLS    = 1;
 const HOUR_COLS  = 8;
 const STD_COLS   = 8;
 
@@ -657,7 +725,8 @@ const TYPES_LABEL = {
   't-evc':'EVC','t-team':'Teambooster','t-jeu3':'Jeu 3 pour 16€',
   't-vendredi':'Vendredi no limit','t-weekend':'WE 11/13',
   't-job':'Job','t-conge':'Congé','t-bloque':'Bloqué','t-message':'Message',
-  't-vrzone':'VRzone','t-escapevr':'Escape Game VR'
+  't-vrzone':'VRzone','t-escapevr':'Escape Game VR',
+  't-bt30':'30 min','t-bt60':'60 min'
 };
 const PAY_LABEL = {'attente':'Attente','paye':'Payé','incomplet':'Incomplet'};
 const PAY_CLASS = {'attente':'pay-attente','paye':'pay-paye','incomplet':'pay-incomplet'};
@@ -736,6 +805,34 @@ function buildSlots(){
 
 const ALL_SLOTS = buildSlots();
 
+// ── BLIND TEST SLOTS ──────────────────────────────────────────────────────────
+// Démarre à 10:10, sessions toutes les 30 min
+// Toutes les 60 min (soit toutes les 2 sessions) on ajoute 5 min de décalage
+function buildBTSlots(){
+  const slots = [];
+  // On part de 10h10 en minutes
+  let currentMin = 10*60 + 10;
+  const endMin   = 23*60;
+  let sessionCount = 0; // compte les sessions depuis le dernier décalage horaire
+
+  while(currentMin < endMin){
+    const h = Math.floor(currentMin/60);
+    const m = currentMin % 60;
+    slots.push({time:`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cols:1});
+    sessionCount++;
+    currentMin += 30;
+    // Toutes les 2 sessions (= 60 min écoulées) on ajoute 5 min
+    if(sessionCount % 2 === 0){
+      currentMin += 5;
+    }
+  }
+  return slots;
+}
+
+const BT_SLOTS = buildBTSlots();
+
+function getActiveSlots(){ return currentView==='bt' ? BT_SLOTS : ALL_SLOTS; }
+
 function isHourSlot(t){ return t.endsWith(':00'); }
 
 function isCurrentSlot(t){
@@ -747,9 +844,24 @@ function isCurrentSlot(t){
   return nowMin>=slotMin && nowMin<slotMin+5;
 }
 
+function isPastSlot(t){
+  const now=new Date();
+  // Jours passés : toute la journée est passée
+  if(fmtDate(curDate) < fmtDate(now)) return true;
+  // Jours futurs : rien n'est passé
+  if(fmtDate(curDate) > fmtDate(now)) return false;
+  // Aujourd'hui : comparer les minutes
+  const [h,m]=t.split(':').map(Number);
+  const slotMin=h*60+m;
+  const nowMin=now.getHours()*60+now.getMinutes();
+  // Durée du créneau selon la vue
+  const duration = currentView==='bt' ? 30 : 20;
+  return slotMin + duration <= nowMin;
+}
+
 function slotKey(date,time,slot){ return `${currentView}|${date}|${time}|${slot}`; }
 
-function getSlotIndex(time){ return ALL_SLOTS.findIndex(s=>s.time===time); }
+function getSlotIndex(time){ return getActiveSlots().findIndex(s=>s.time===time); }
 
 // Count total players at a given time on a given date, excluding a specific key
 function countVests(date,time){
@@ -776,14 +888,16 @@ function timeToMin(t){ const[h,m]=t.split(':').map(Number); return h*60+m; }
 function renderCalendar(){
   document.getElementById('cur-date').textContent = dispDate(curDate);
   const dateKey = fmtDate(curDate);
-  const dayNum  = curDate.getDate();
+  const isBT = currentView === 'bt';
   const isVR = currentView === 'vr';
-  const MAX_COLS = isVR ? VR_COLS : LASER_COLS;
-  const colLabel = isVR ? 'Casque VR n°' : 'Réservation n°';
+  const MAX_COLS = isBT ? BT_COLS : (isVR ? VR_COLS : LASER_COLS);
+  const colLabel = isBT ? 'Blind Test' : (isVR ? 'Casque VR n°' : 'Réservation n°');
+  const activeSlots = getActiveSlots();
 
   const headRow = document.getElementById('headRow');
   headRow.innerHTML = '';
-  if(!isVR){
+  // Vest cell uniquement en vue laser
+  if(!isVR && !isBT){
     const thV=document.createElement('th');
     thV.className='th-vest';
     thV.title='Cliquer pour modifier la capacité';
@@ -793,19 +907,22 @@ function renderCalendar(){
   }
   const thT=document.createElement('th'); thT.className='th-time'; thT.textContent='🕐'; headRow.appendChild(thT);
   for(let i=1;i<=MAX_COLS;i++){
-    const th=document.createElement('th'); th.className='th-slot'; th.textContent=`${colLabel}${i}`; headRow.appendChild(th);
+    const th=document.createElement('th'); th.className='th-slot';
+    th.textContent = isBT ? colLabel : `${colLabel}${i}`;
+    headRow.appendChild(th);
   }
 
   const tbody = document.getElementById('calBody');
   tbody.innerHTML = '';
 
-  ALL_SLOTS.forEach(({time,cols})=>{
+  activeSlots.forEach(({time,cols})=>{
     const tr = document.createElement('tr');
     if(isCurrentSlot(time)) tr.classList.add('now-row');
+    else if(isPastSlot(time)) tr.classList.add('past-row');
     if(isHourSlot(time)) tr.classList.add('hour-sep');
 
-    // Vest cell (masquée en VR)
-    if(!isVR){
+    // Vest cell (masquée en VR et BT)
+    if(!isVR && !isBT){
       const used = countVests(dateKey,time);
       const remaining = MAX_VESTS - used;
       const tdV = document.createElement('td');
@@ -868,10 +985,11 @@ function renderCalendar(){
       } else {
         // Empty slot
         if(copyMode){
-          const srcTime=copySourceKey.split('|')[2]; // view|date|time|slot → index 2
+          const srcTime=copySourceKey.split('|')[2];
           const srcIdx=getSlotIndex(srcTime);
           const tgtIdx=getSlotIndex(time);
-          const isNextSlot = !isVR && (tgtIdx === srcIdx + 1);
+          // Créneau suivant bloqué uniquement en Laser (pas en VR ni BT)
+          const isNextSlot = currentView==='laser' && (tgtIdx === srcIdx + 1);
           if(isNextSlot){
             td.classList.add('too-close');
             td.title='Créneau immédiatement suivant — non autorisé';
@@ -897,7 +1015,7 @@ function renderCalendar(){
           e.preventDefault();
           const srcIdx=getSlotIndex(dragSourceKey.split('|')[2]);
           const tgtIdx=getSlotIndex(time);
-          if(!isVR && tgtIdx === srcIdx + 1){ e.dataTransfer.dropEffect='none'; return; }
+          if(currentView==='laser' && tgtIdx === srcIdx + 1){ e.dataTransfer.dropEffect='none'; return; }
           e.dataTransfer.dropEffect='move';
           td.classList.add('drag-over');
         });
@@ -908,7 +1026,7 @@ function renderCalendar(){
           if(!dragSourceKey) return;
           const srcIdx=getSlotIndex(dragSourceKey.split('|')[2]);
           const tgtIdx=getSlotIndex(time);
-          if(!isVR && tgtIdx === srcIdx + 1){ showAlert('Créneau suivant bloqué','Impossible de déplacer une réservation sur le créneau immédiatement suivant.'); return; }
+          if(currentView==='laser' && tgtIdx === srcIdx + 1){ showAlert('Créneau suivant bloqué','Impossible de déplacer une réservation sur le créneau immédiatement suivant.'); return; }
           dropHere(dateKey,time,s);
         });
       }
@@ -924,11 +1042,12 @@ function renderCalendar(){
 function openNew(date,time,slot){
   pendingSlot={date,time,slot,isEdit:false,key:null};
   const isVR = currentView==='vr';
-  document.getElementById('mTitle').textContent = isVR ? 'Nouvelle réservation VR 🥽' : 'Nouvelle réservation';
-  document.getElementById('mSub').textContent=`${dispDate(curDate)} — ${time} — ${isVR?'Casque VR':'Réservation'} n°${slot}`;
+  const isBT = currentView==='bt';
+  document.getElementById('mTitle').textContent = isBT ? 'Nouvelle réservation Blind Test 🎵' : (isVR ? 'Nouvelle réservation VR 🥽' : 'Nouvelle réservation');
+  document.getElementById('mSub').textContent=`${dispDate(curDate)} — ${time} — ${isBT?'Blind Test':(isVR?'Casque VR':'Réservation')} n°${slot}`;
   clearForm();
   adaptModalForView();
-  if(!isVR) autoUpdateType();
+  if(!isVR && !isBT) autoUpdateType();
   document.getElementById('btnCopy').style.display='none';
   document.getElementById('copyInfo').textContent='';
   document.getElementById('bkOverlay').classList.add('open');
@@ -937,15 +1056,21 @@ function openNew(date,time,slot){
 
 function adaptModalForView(){
   const isVR = currentView==='vr';
+  const isBT = currentView==='bt';
   // Joueurs max
+  document.getElementById('fPers').min = (isVR || isBT) ? 2 : 1;
   document.getElementById('fPers').max = isVR ? 4 : 24;
-  document.getElementById('fPers').value = isVR ? 2 : 4;
+  document.getElementById('fPers').value = isVR ? 2 : (isBT ? 2 : 4);
   // Remplacer options type selon vue
   const sel = document.getElementById('fType');
-  sel.innerHTML = isVR
-    ? `<option value="t-vrzone">VRzone</option>
-       <option value="t-escapevr">Escape Game VR</option>`
-    : `<option value="t-particulier">Particulier</option>
+  if(isBT){
+    sel.innerHTML = `<option value="t-bt30">🎵 30 minutes</option>
+       <option value="t-bt60">🎵 60 minutes (2 créneaux)</option>`;
+  } else if(isVR){
+    sel.innerHTML = `<option value="t-vrzone">VRzone</option>
+       <option value="t-escapevr">Escape Game VR</option>`;
+  } else {
+    sel.innerHTML = `<option value="t-particulier">Particulier</option>
        <option value="t-groupe">Groupe</option>
        <option value="t-centre">Centre de loisirs</option>
        <option value="t-club">Club &amp; Association</option>
@@ -960,6 +1085,7 @@ function adaptModalForView(){
        <option value="t-conge">Congé</option>
        <option value="t-bloque">Bloqué</option>
        <option value="t-message">Message</option>`;
+  }
 }
 
 function editBooking(key){
@@ -969,8 +1095,9 @@ function editBooking(key){
   const [view,date,time,slot] = parts;
   pendingSlot={date,time,slot:parseInt(slot),isEdit:true,key};
   const isVR = currentView==='vr';
-  document.getElementById('mTitle').textContent = isVR ? 'Modifier la réservation VR 🥽' : 'Modifier la réservation';
-  document.getElementById('mSub').textContent=`${dispDate(curDate)} — ${time} — ${isVR?'Casque VR':'Réservation'} n°${slot}`;
+  const isBT = currentView==='bt';
+  document.getElementById('mTitle').textContent = isBT ? 'Modifier la réservation Blind Test 🎵' : (isVR ? 'Modifier la réservation VR 🥽' : 'Modifier la réservation');
+  document.getElementById('mSub').textContent=`${dispDate(curDate)} — ${time} — ${isBT?'Blind Test':(isVR?'Casque VR':'Réservation')} n°${slot}`;
   adaptModalForView();
   document.getElementById('fTel').value=b.tel||'';
   document.getElementById('fNom').value=b.nom||'';
@@ -1093,17 +1220,31 @@ function confirmBooking(){
 
   const{date,time,slot,isEdit,key}=pendingSlot;
 
-  // Check vest capacity
-  let usedNow=countVests(date,time);
-  if(isEdit && key){ usedNow-=(parseInt(bookings[key]?.pers)||0); } // subtract old
-  const remaining=MAX_VESTS-usedNow;
-  if(pers>remaining){
-    showAlert('Capacité maximale atteinte',`Il ne reste que ${remaining} gilet(s) disponible(s) sur ce créneau (max ${MAX_VESTS}). Impossible d'ajouter ${pers} joueurs.`);
-    return;
+  // Check vest capacity (laser only)
+  if(currentView==='laser'){
+    let usedNow=countVests(date,time);
+    if(isEdit && key){ usedNow-=(parseInt(bookings[key]?.pers)||0); }
+    const remaining=MAX_VESTS-usedNow;
+    if(pers>remaining){
+      showAlert('Capacité maximale atteinte',`Il ne reste que ${remaining} gilet(s) disponible(s) sur ce créneau (max ${MAX_VESTS}). Impossible d'ajouter ${pers} joueurs.`);
+      return;
+    }
   }
 
   const k = isEdit && key ? key : slotKey(date,time,slot);
   bookings[k]={tel,nom,mail,comment,pers,type,pay};
+
+  // BT 60 min : réserver aussi le créneau suivant
+  if(currentView==='bt' && type==='t-bt60'){
+    const slots = BT_SLOTS;
+    const idx = slots.findIndex(s=>s.time===time);
+    if(idx>=0 && idx+1<slots.length){
+      const nextTime = slots[idx+1].time;
+      const k2 = `bt|${date}|${nextTime}|1`;
+      bookings[k2]={tel,nom,mail,comment:comment?comment+' (suite 60min)':'Suite 60min',pers,type,pay};
+    }
+  }
+
   closeModal();
   saveBookings();
 }
@@ -1195,6 +1336,7 @@ function switchView(v){
   currentView = v;
   document.getElementById('navLaser').classList.toggle('nav-active', v==='laser');
   document.getElementById('navVR').classList.toggle('nav-active', v==='vr');
+  document.getElementById('navBT').classList.toggle('nav-active', v==='bt');
   renderCalendar();
 }
 
@@ -1239,7 +1381,81 @@ function toggleDark(){
 document.getElementById('bkOverlay').addEventListener('click',function(e){ if(e.target===this) closeModal(); });
 document.getElementById('alertOverlay').addEventListener('click',function(e){ if(e.target===this) this.classList.remove('open'); });
 document.getElementById('vestOverlay').addEventListener('click',function(e){ if(e.target===this) closeVestModal(); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeModal(); closeVestModal(); document.getElementById('alertOverlay').classList.remove('open'); if(copyMode) cancelCopyMode(); }});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeModal(); closeVestModal(); document.getElementById('alertOverlay').classList.remove('open'); document.getElementById('clientsOverlay').classList.remove('open'); if(copyMode) cancelCopyMode(); }});
+
+// ── CLIENTS PANEL ─────────────────────────────────────────────────────────────
+function openClientsPanel(){
+  renderClients();
+  document.getElementById('clientsOverlay').classList.add('open');
+  setTimeout(()=>document.getElementById('clientsSearch').focus(), 80);
+}
+
+function buildFullClientIndex(){
+  // Construit un index complet : tel → {nom, mail, count, lastDate}
+  const idx = {};
+  for(const [key, b] of Object.entries(bookings)){
+    if(!b.tel || !b.nom) continue;
+    const parts = key.split('|'); // view|date|time|slot
+    const date = parts[1] || '';
+    if(!idx[b.tel]){
+      idx[b.tel] = {nom:b.nom, mail:b.mail||'', count:0, lastDate:''};
+    }
+    idx[b.tel].count++;
+    // Garder la date la plus récente
+    if(date > idx[b.tel].lastDate) idx[b.tel].lastDate = date;
+    // Mettre à jour nom/mail si plus récent
+    if(date >= idx[b.tel].lastDate){
+      idx[b.tel].nom = b.nom;
+      if(b.mail) idx[b.tel].mail = b.mail;
+    }
+  }
+  return idx;
+}
+
+function renderClients(){
+  const q = (document.getElementById('clientsSearch')?.value||'').toLowerCase();
+  const idx = buildFullClientIndex();
+  let entries = Object.entries(idx);
+
+  // Filtrer
+  if(q) entries = entries.filter(([tel,c])=>
+    tel.includes(q) || c.nom.toLowerCase().includes(q) || (c.mail||'').toLowerCase().includes(q)
+  );
+
+  // Trier par nombre de réservations desc
+  entries.sort((a,b)=> b[1].count - a[1].count);
+
+  const tbody = document.getElementById('clientsBody');
+  const empty = document.getElementById('clientsEmpty');
+
+  if(!entries.length){
+    tbody.innerHTML='';
+    empty.style.display='block';
+    return;
+  }
+  empty.style.display='none';
+
+  const D=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  const M=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+
+  tbody.innerHTML = entries.map(([tel,c])=>{
+    let lastStr = '—';
+    if(c.lastDate){
+      const d = new Date(c.lastDate+'T12:00:00');
+      lastStr = `${D[d.getDay()]} ${d.getDate()} ${M[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    return `<tr>
+      <td><strong>${c.nom}</strong></td>
+      <td class="client-tel">${tel.replace(/(\d{2})(?=\d)/g,'$1 ')}</td>
+      <td style="color:var(--muted)">${c.mail||'—'}</td>
+      <td><span class="client-count">${c.count}</span></td>
+      <td class="client-last">${lastStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Close clients panel on backdrop
+document.getElementById('clientsOverlay').addEventListener('click',function(e){ if(e.target===this) this.classList.remove('open'); });
 
 // Auto-refresh current-time highlight
 setInterval(renderCalendar,30000);
