@@ -698,6 +698,11 @@ function initFirebaseSync(){
     bookings = snap.val() || {};
     setSyncDot('ok');
     renderCalendar();
+    // Scroll automatique initial (une seule fois au 1er chargement)
+    if(!_initialScrollDone){
+      _initialScrollDone = true;
+      requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 120); });
+    }
   }, ()=>setSyncDot('error'));
 }
 
@@ -838,10 +843,19 @@ function isHourSlot(t){ return t.endsWith(':00'); }
 function isCurrentSlot(t){
   const now=new Date();
   if(fmtDate(now)!==fmtDate(curDate)) return false;
+  const slots=getActiveSlots();
+  const idx=slots.findIndex(s=>s.time===t);
+  if(idx<0) return false;
   const [h,m]=t.split(':').map(Number);
   const slotMin=h*60+m;
   const nowMin=now.getHours()*60+now.getMinutes();
-  return nowMin>=slotMin && nowMin<slotMin+5;
+  // Durée réelle = écart avec le créneau suivant, sinon 20 min par défaut
+  let duration=20;
+  if(idx+1<slots.length){
+    const [nh,nm]=slots[idx+1].time.split(':').map(Number);
+    duration=(nh*60+nm)-slotMin;
+  }
+  return nowMin>=slotMin && nowMin<slotMin+duration;
 }
 
 function isPastSlot(t){
@@ -1467,43 +1481,32 @@ setInterval(renderCalendar,30000);
 let _autoScrollPaused = false;
 let _autoScrollTimer  = null;
 
-function getTargetScrollTop(){
-  const calWrap = document.querySelector('.cal-wrap');
-  if(!calWrap) return 0;
-
-  const now = new Date();
+function getTargetRow(){
   // Heure cible = maintenant − 40 minutes
+  const now = new Date();
   const targetMin = now.getHours()*60 + now.getMinutes() - 40;
-
-  // Trouver la ligne dont le créneau est le plus proche de targetMin
-  const rows = calWrap.querySelectorAll('tbody tr');
+  const rows = document.querySelectorAll('#calBody tr');
   let bestRow = null;
   let bestDiff = Infinity;
-
   rows.forEach(row => {
     const timeCell = row.querySelector('.time-cell');
     if(!timeCell) return;
-    const t = timeCell.textContent.trim();
-    const parts = t.split(':');
+    const parts = timeCell.textContent.trim().split(':');
     if(parts.length < 2) return;
     const rowMin = parseInt(parts[0])*60 + parseInt(parts[1]);
     const diff = Math.abs(rowMin - targetMin);
     if(diff < bestDiff){ bestDiff = diff; bestRow = row; }
   });
-
-  if(!bestRow) return 0;
-  // Position de la ligne relative au scrollable container
-  const wrapRect  = calWrap.getBoundingClientRect();
-  const rowRect   = bestRow.getBoundingClientRect();
-  return calWrap.scrollTop + (rowRect.top - wrapRect.top) - 40; // 40px de marge visuelle
+  return bestRow;
 }
 
 function doAutoScroll(){
   if(_autoScrollPaused) return;
-  const calWrap = document.querySelector('.cal-wrap');
-  if(!calWrap) return;
-  const target = getTargetScrollTop();
-  calWrap.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  const row = getTargetRow();
+  if(!row) return;
+  // Scroll window : position de la ligne - offset nav/toolbar (~170px)
+  const rowTop = row.getBoundingClientRect().top + window.scrollY - 170;
+  window.scrollTo({ top: Math.max(0, rowTop), behavior: 'smooth' });
 }
 
 function pauseAutoScroll(){
@@ -1518,33 +1521,21 @@ function resumeAutoScroll(){
   doAutoScroll();
 }
 
-// Écouter les interactions utilisateur sur le calendrier
+// Écouter les interactions utilisateur
 (function attachUserInteractionListeners(){
-  const calWrap = document.querySelector('.cal-wrap');
-  if(calWrap){
-    // Scroll manuel
-    calWrap.addEventListener('scroll', pauseAutoScroll, { passive: true });
-  }
-
-  // Clics et ouvertures de modales (sur tout le document)
+  // Scroll manuel sur window
+  window.addEventListener('scroll', pauseAutoScroll, { passive: true });
+  // Clics et touches
   const interactionEvents = ['click', 'pointerdown', 'keydown', 'touchstart'];
   interactionEvents.forEach(evt => {
     document.addEventListener(evt, pauseAutoScroll, { passive: true });
   });
 })();
 
-// Scroll initial au chargement (déclenché après le premier renderCalendar)
-// On utilise un flag pour ne le faire qu'une seule fois.
+// Scroll initial : déclenché une seule fois après le premier rendu Firebase.
+// On patche initFirebaseSync (déclarée via function, donc hoistée) en réaffectant
+// la référence après sa déclaration.
 let _initialScrollDone = false;
-const _origRenderCalendar = renderCalendar;
-function renderCalendar(){
-  _origRenderCalendar();
-  if(!_initialScrollDone){
-    _initialScrollDone = true;
-    // Laisser le DOM se construire avant de scroller
-    requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 80); });
-  }
-}
 
 // Init : le calendrier sera rendu après connexion Firebase (auth.onAuthStateChanged)
 // renderCalendar() est appelé automatiquement à la réception des données
