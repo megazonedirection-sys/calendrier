@@ -392,6 +392,50 @@ body.copy-mode .slot-cell.too-close{background:#fff7ed !important;outline:2px da
 .client-count{display:inline-flex;align-items:center;justify-content:center;background:var(--text);color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:1px 7px;min-width:22px}
 .client-last{font-size:11px;color:var(--muted)}
 .clients-empty{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+
+/* ── VACANCES SCOLAIRES ── */
+.vacances-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  background:#fef9c3;color:#92400e;border:1.5px solid #fde68a;
+  border-radius:12px;padding:3px 12px;font-size:12px;font-weight:700;
+  margin-left:12px;white-space:nowrap;vertical-align:middle;
+}
+/* Fond rayé jaune sur les créneaux vides en période de vacances */
+#calTbl.vacances-active tbody tr:not(.past-row) td.slot-cell{
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(254,249,195,.55) 0px, rgba(254,249,195,.55) 5px,
+    rgba(255,255,255,.0)  5px, rgba(255,255,255,.0)  13px
+  );
+}
+/* Variante grisée pour les créneaux passés en vacances */
+#calTbl.vacances-active tbody tr.past-row td.slot-cell{
+  background: repeating-linear-gradient(
+    135deg,
+    #e9eaec 0px, #e9eaec 5px,
+    #f1f3f7 5px, #f1f3f7 13px
+  ) !important;
+}
+/* Heure légèrement ambrée pour signaler la période */
+#calTbl.vacances-active tbody tr:not(.past-row) .time-cell{
+  color:#92400e !important;font-weight:700;
+}
+/* La cellule de booking (.bk) n'est pas affectée — elle couvre le fond */
+
+/* ── EVC PARTIE 2 ── */
+.bk.evc-part2::before{
+  content:'2';position:absolute;top:3px;right:4px;
+  width:16px;height:16px;border-radius:50%;
+  background:rgba(255,255,255,.35);color:#fff;
+  font-size:10px;font-weight:800;line-height:16px;text-align:center;
+}
+
+/* ── VR BLOC SUITE (créneaux auto-remplis) ── */
+.bk.vr-suite{opacity:.82;border-left-color:rgba(255,255,255,.5) !important}
+.bk.vr-suite::after{
+  content:'↩';position:absolute;top:3px;right:4px;
+  font-size:11px;opacity:.7;
+}
 </style>
 </head>
 <body>
@@ -480,6 +524,11 @@ body.copy-mode .slot-cell.too-close{background:#fff7ed !important;outline:2px da
   <span style="margin-left:16px;font-size:11.5px;font-weight:700;color:var(--muted)">Blind Test :</span>
   <span class="leg-item"><span class="leg-dot" style="background:#7dd3fc"></span>30 min</span>
   <span class="leg-item"><span class="leg-dot" style="background:#86efac"></span>60 min</span>
+  <span style="margin-left:16px;font-size:11.5px;font-weight:700;color:var(--muted)">Calendrier :</span>
+  <span class="leg-item">
+    <span class="leg-dot" style="background:repeating-linear-gradient(135deg,#fef9c3 0px,#fef9c3 4px,#fff 4px,#fff 10px);border:1px solid #fde68a"></span>
+    Vacances scolaires (Zone&nbsp;C)
+  </span>
 </div>
 
 <!-- CALENDAR -->
@@ -539,7 +588,7 @@ body.copy-mode .slot-cell.too-close{background:#fff7ed !important;outline:2px da
         </div>
         <div class="fg">
           <label>🏷️ Type de réservation</label>
-          <select id="fType">
+          <select id="fType" onchange="onTypeChange()">
             <option value="t-particulier">Particulier</option>
             <option value="t-groupe">Groupe</option>
             <option value="t-centre">Centre de loisirs</option>
@@ -736,6 +785,38 @@ const TYPES_LABEL = {
 const PAY_LABEL = {'attente':'Attente','paye':'Payé','incomplet':'Incomplet'};
 const PAY_CLASS = {'attente':'pay-attente','paye':'pay-paye','incomplet':'pay-incomplet'};
 
+// Nombre minimal de joueurs selon la formule
+const MIN_PERS_BY_TYPE = {'t-anniv':6,'t-anniv3':6,'t-evc':6,'t-groupe':12};
+// Durée VR en nombre de créneaux ALL_SLOTS (20 min chacun)
+const VR_DURATION = {'t-vrzone':2,'t-escapevr':3}; // 40 min / 60 min
+
+// ── VACANCES SCOLAIRES – Zone C (Académie de Toulouse) ───────────────────────
+// Montauban (82) → Académie de Toulouse → Zone C
+const VACANCES_ZONE_C = [
+  // 2024-2025
+  {start:'2024-10-19',end:'2024-11-03',label:'Toussaint 2024'},
+  {start:'2024-12-21',end:'2025-01-05',label:'Noël 2024-25'},
+  {start:'2025-02-22',end:'2025-03-09',label:'Hiver 2025'},
+  {start:'2025-04-19',end:'2025-05-04',label:'Printemps 2025'},
+  {start:'2025-07-05',end:'2025-08-31',label:'Été 2025'},
+  // 2025-2026
+  {start:'2025-10-18',end:'2025-11-02',label:'Toussaint 2025'},
+  {start:'2025-12-20',end:'2026-01-04',label:'Noël 2025-26'},
+  {start:'2026-02-07',end:'2026-02-22',label:'Hiver 2026'},
+  {start:'2026-04-18',end:'2026-05-03',label:'Printemps 2026'},
+  {start:'2026-07-04',end:'2026-08-31',label:'Été 2026'},
+  // 2026-2027
+  {start:'2026-10-17',end:'2026-11-01',label:'Toussaint 2026'},
+  {start:'2026-12-19',end:'2027-01-03',label:'Noël 2026-27'},
+  {start:'2027-02-06',end:'2027-02-21',label:'Hiver 2027'},
+  {start:'2027-04-17',end:'2027-05-02',label:'Printemps 2027'},
+  {start:'2027-07-03',end:'2027-08-31',label:'Été 2027'},
+];
+
+function getVacance(dateStr){
+  return VACANCES_ZONE_C.find(v => dateStr >= v.start && dateStr <= v.end) || null;
+}
+
 // ── STATE ────────────────────────────────────────────────────────────────────
 let curDate = new Date();
 let bookings = {};   // key: "YYYY-MM-DD|HH:MM|slot" => {tel,nom,mail,comment,pers,type,pay}
@@ -902,6 +983,26 @@ function timeToMin(t){ const[h,m]=t.split(':').map(Number); return h*60+m; }
 function renderCalendar(){
   document.getElementById('cur-date').textContent = dispDate(curDate);
   const dateKey = fmtDate(curDate);
+
+  // ── Vacances scolaires : badge toolbar + classe table ──
+  const vacance = getVacance(dateKey);
+  const tbl = document.getElementById('calTbl');
+  let vacBadge = document.getElementById('vacanceBadge');
+  if(vacance){
+    tbl.classList.add('vacances-active');
+    if(!vacBadge){
+      vacBadge = document.createElement('span');
+      vacBadge.id = 'vacanceBadge';
+      vacBadge.className = 'vacances-badge';
+      document.getElementById('cur-date').after(vacBadge);
+    }
+    vacBadge.textContent = `🎒 Vacances scolaires — ${vacance.label}`;
+    vacBadge.style.display = '';
+  } else {
+    tbl.classList.remove('vacances-active');
+    if(vacBadge) vacBadge.style.display = 'none';
+  }
+
   const isBT = currentView === 'bt';
   const isVR = currentView === 'vr';
   const MAX_COLS = isBT ? BT_COLS : (isVR ? VR_COLS : LASER_COLS);
@@ -967,7 +1068,7 @@ function renderCalendar(){
 
         const payLabel = {'attente':'⏳ Attente','paye':'✅ Payé','incomplet':'⚠️ Incomplet'};
         const div=document.createElement('div');
-        div.className=`bk ${b.type}`;
+        div.className=`bk ${b.type}${b.evcPart2?' evc-part2':''}${b.vrStep>0?' vr-suite':''}`;
         div.dataset.key=k;
         div.draggable=true;
         div.innerHTML=`
@@ -1100,6 +1201,8 @@ function adaptModalForView(){
        <option value="t-bloque">Bloqué</option>
        <option value="t-message">Message</option>`;
   }
+  // Ajuster le minimum de joueurs selon le type sélectionné
+  updatePersMin();
 }
 
 function editBooking(key){
@@ -1152,6 +1255,24 @@ function autoUpdateType(){
   } else if(pers >= 12){
     sel.value = 't-groupe';
   }
+}
+
+// ── MIN JOUEURS SELON TYPE ────────────────────────────────────────────────────
+function updatePersMin(){
+  if(!pendingSlot) return;
+  const type = document.getElementById('fType').value;
+  const isVR = currentView==='vr';
+  const isBT = currentView==='bt';
+  const baseMin = isVR ? 1 : (isBT ? 4 : 1);
+  const min = MIN_PERS_BY_TYPE[type] || baseMin;
+  const inp = document.getElementById('fPers');
+  inp.min = min;
+  if((parseInt(inp.value)||0) < min) inp.value = min;
+}
+
+function onTypeChange(){
+  autoUpdateType();
+  updatePersMin();
 }
 
 // ── AUTOCOMPLETE ─────────────────────────────────────────────────────────────
@@ -1232,6 +1353,17 @@ function confirmBooking(){
   const maxP = currentView==='vr' ? 4 : 24;
   if(pers<1||pers>maxP){ alert(`Nombre de joueurs invalide (1-${maxP})`); return; }
 
+  // ── Validation minimum par type ─────────────────────────────────────────────
+  const minP = MIN_PERS_BY_TYPE[type] || 1;
+  if(pers < minP){
+    showAlert(
+      'Nombre de joueurs insuffisant',
+      `La formule « ${TYPES_LABEL[type]} » nécessite au minimum ${minP} joueurs.\nActuellement saisi : ${pers}.`
+    );
+    document.getElementById('fPers').focus();
+    return;
+  }
+
   const{date,time,slot,isEdit,key}=pendingSlot;
 
   // Check vest capacity (laser only)
@@ -1245,19 +1377,92 @@ function confirmBooking(){
     }
   }
 
-  const k = isEdit && key ? key : slotKey(date,time,slot);
-  bookings[k]={tel,nom,mail,comment,pers,type,pay};
+  // ── Auto-remplissage VR (nouvelle réservation uniquement) ───────────────────
+  if(currentView==='vr' && !isEdit){
+    const durSlots = VR_DURATION[type] || 2;
+    const timeIdx  = ALL_SLOTS.findIndex(s => s.time === time);
 
-  // BT 60 min : réserver aussi le créneau suivant
-  if(currentView==='bt' && type==='t-bt60'){
-    const slots = BT_SLOTS;
-    const idx = slots.findIndex(s=>s.time===time);
-    if(idx>=0 && idx+1<slots.length){
-      const nextTime = slots[idx+1].time;
-      const k2 = `bt|${date}|${nextTime}|1`;
-      bookings[k2]={tel,nom,mail,comment:comment?comment+' (suite 60min)':'Suite 60min',pers,type,pay};
+    // Vérifier les conflits avant d'écrire
+    const conflits = [];
+    for(let col=1; col<=pers; col++){
+      for(let d=0; d<durSlots; d++){
+        const tIdx = timeIdx + d;
+        if(tIdx >= ALL_SLOTS.length) break;
+        const t = ALL_SLOTS[tIdx].time;
+        const k2 = `vr|${date}|${t}|${col}`;
+        if(bookings[k2]) conflits.push(`Casque ${col} à ${t}`);
+      }
     }
-  }
+    if(conflits.length){
+      showAlert(
+        '⚠️ Casques VR déjà occupés',
+        `Les créneaux suivants sont déjà réservés :\n${conflits.join(', ')}\nVeuillez choisir un autre horaire ou réduire le nombre de joueurs.`
+      );
+      return;
+    }
+
+    // Remplir N casques × durée
+    const durMin = durSlots * 20;
+    for(let col=1; col<=pers; col++){
+      for(let d=0; d<durSlots; d++){
+        const tIdx = timeIdx + d;
+        if(tIdx >= ALL_SLOTS.length) break;
+        const t = ALL_SLOTS[tIdx].time;
+        const k2 = `vr|${date}|${t}|${col}`;
+        bookings[k2] = {
+          tel, nom, mail,
+          comment: comment
+            ? (d > 0 ? `${comment} (suite — casque ${col})` : comment)
+            : (d > 0 ? `Suite ${durMin} min — casque ${col}` : ''),
+          pers, type, pay,
+          vrBlock: true,
+          vrCol: col,
+          vrStep: d
+        };
+      }
+    }
+
+  } else {
+    // Comportement standard (laser, BT, édition VR)
+    const k = isEdit && key ? key : slotKey(date,time,slot);
+    bookings[k]={tel,nom,mail,comment,pers,type,pay};
+
+    // ── EVC : doublon automatique (Partie 2) avec 20 min de pause ──────────────
+    if(currentView === 'laser' && type === 't-evc' && !isEdit){
+      const idx2 = ALL_SLOTS.findIndex(s => s.time === time);
+      if(idx2 >= 0 && idx2 + 2 < ALL_SLOTS.length){
+        const time2 = ALL_SLOTS[idx2 + 2].time;
+        const k2 = slotKey(date, time2, slot);
+        if(bookings[k2]){
+          setTimeout(()=>showAlert(
+            '⚠️ EVC – Créneau Partie 2 occupé',
+            `La 2ème partie EVC prévue à ${time2} est déjà occupée sur ce couloir.\nVeuillez la placer manuellement.`
+          ), 200);
+        } else {
+          const pauseNote = `(pause 20 min à ${ALL_SLOTS[idx2+1].time})`;
+          bookings[k2] = {
+            tel, nom, mail,
+            comment: comment
+              ? `${comment} — Partie 2/2 ${pauseNote}`
+              : `Partie 2/2 ${pauseNote}`,
+            pers, type, pay,
+            evcPart2: true
+          };
+        }
+      }
+    }
+
+    // BT 60 min : réserver aussi le créneau suivant
+    if(currentView==='bt' && type==='t-bt60'){
+      const slots = BT_SLOTS;
+      const idx = slots.findIndex(s=>s.time===time);
+      if(idx>=0 && idx+1<slots.length){
+        const nextTime = slots[idx+1].time;
+        const k2 = `bt|${date}|${nextTime}|1`;
+        bookings[k2]={tel,nom,mail,comment:comment?comment+' (suite 60min)':'Suite 60min',pers,type,pay};
+      }
+    }
+  } // fin else standard
 
   closeModal();
   saveBookings();
