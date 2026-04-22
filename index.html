@@ -180,8 +180,15 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-bloque .bk-pay-label.pay-attente,
 .t-vendredi .bk-pay-label.pay-attente{background:rgba(255,255,255,.15);color:rgba(255,255,255,.9);border-color:rgba(255,255,255,.25)}
 
-/* Boutons action inline */
-.bk-actions{display:flex;align-items:center;gap:3px;margin-left:auto;flex-shrink:0}
+/* Boutons action — overlay absolu en haut à droite, visible au survol */
+.bk-actions{
+  display:flex;align-items:center;gap:3px;
+  position:absolute;top:4px;right:4px;
+  opacity:0;pointer-events:none;
+  transition:opacity .15s;
+  z-index:5;
+}
+.bk:hover .bk-actions{opacity:1;pointer-events:auto}
 .bk-btn{
   width:22px;height:22px;border-radius:5px;border:none;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;
@@ -189,11 +196,8 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
   background:rgba(255,255,255,.3);color:inherit;
 }
 .bk-btn:hover{opacity:.75}
-.bk-btn.btn-tel  {background:rgba(255,255,255,.25)}
-.bk-btn.btn-sms  {background:rgba(255,255,255,.25)}
-.bk-btn.btn-loc  {background:rgba(255,255,255,.25)}
-.bk-btn.btn-edit {background:rgba(255,165,0,.35)}
-.bk-btn.btn-del  {background:rgba(220,38,38,.35);color:#fff}
+.bk-btn.btn-edit {background:rgba(255,165,0,.75)}
+.bk-btn.btn-del  {background:rgba(220,38,38,.85);color:#fff}
 .bk-btn.btn-add  {background:#111827;color:#fff;font-size:15px;font-weight:700;width:24px;height:24px;border-radius:6px}
 
 /* ── STATUS BADGES (confirmation tél + présence) ── */
@@ -1178,7 +1182,6 @@ function renderCalendar(){
               <button class="status-btn s-tel${b.confirmed?' on':''}" title="Confirmation téléphonique" onclick="event.stopPropagation();toggleStatus('${k}','confirmed')">📞${b.confirmed?' Confirmé':' Confirm.'}</button>
             </div>
             <div class="bk-actions">
-              <button class="bk-btn btn-edit" title="Modifier"  onclick="event.stopPropagation();editBooking('${k}')">✏️</button>
               <button class="bk-btn btn-del"  title="Supprimer" onclick="event.stopPropagation();delBooking('${k}')">🗑️</button>
               <button class="bk-btn btn-add"  title="Copier"    onclick="event.stopPropagation();startCopyFrom('${k}')">+</button>
             </div>
