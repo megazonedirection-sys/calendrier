@@ -51,7 +51,7 @@ nav{
 .btn-pow:hover{border-color:var(--red);color:var(--red)}
 
 /* ── TOOLBAR ── */
-.toolbar{background:var(--white);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;justify-content:center;gap:12px;position:relative}
+.toolbar{background:var(--white);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;justify-content:center;gap:12px;position:sticky;top:52px;z-index:190;box-shadow:var(--shadow)}
 .date-input-left{position:absolute;left:20px}
 .date-inp{border:1.5px solid var(--border);border-radius:var(--r);padding:5px 9px;font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);background:var(--white);outline:none;cursor:pointer;transition:border-color .15s}
 .date-inp:focus{border-color:var(--accent)}
@@ -195,6 +195,74 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .bk-btn.btn-edit {background:rgba(255,165,0,.35)}
 .bk-btn.btn-del  {background:rgba(220,38,38,.35);color:#fff}
 .bk-btn.btn-add  {background:#111827;color:#fff;font-size:15px;font-weight:700;width:24px;height:24px;border-radius:6px}
+
+/* ── STATUS BADGES (confirmation tél + présence) ── */
+.bk-status{display:flex;align-items:center;gap:3px;flex-shrink:0}
+.status-btn{
+  display:inline-flex;align-items:center;gap:3px;
+  padding:2px 6px;border-radius:10px;border:none;cursor:pointer;
+  font-size:10.5px;font-weight:700;line-height:1.3;
+  transition:all .18s;white-space:nowrap;flex-shrink:0;
+}
+/* État inactif */
+.status-btn.s-tel{background:rgba(0,0,0,.18);color:rgba(255,255,255,.55)}
+.status-btn.s-present{background:rgba(0,0,0,.18);color:rgba(255,255,255,.55)}
+/* Sur fond clair (t-particulier, t-club, t-anniv3, t-weekend, t-job, t-conge, t-message) */
+.t-particulier .status-btn.s-tel,
+.t-club        .status-btn.s-tel,
+.t-anniv3      .status-btn.s-tel,
+.t-weekend     .status-btn.s-tel,
+.t-job         .status-btn.s-tel,
+.t-conge       .status-btn.s-tel,
+.t-message     .status-btn.s-tel,
+.t-jeu3        .status-btn.s-tel,
+.t-bt30        .status-btn.s-tel,
+.t-bt60        .status-btn.s-tel{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
+.t-particulier .status-btn.s-present,
+.t-club        .status-btn.s-present,
+.t-anniv3      .status-btn.s-present,
+.t-weekend     .status-btn.s-present,
+.t-job         .status-btn.s-present,
+.t-conge       .status-btn.s-present,
+.t-message     .status-btn.s-present,
+.t-jeu3        .status-btn.s-present,
+.t-bt30        .status-btn.s-present,
+.t-bt60        .status-btn.s-present{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
+/* État actif — commun à tous les fonds */
+.status-btn.s-tel.on{background:#16a34a;color:#fff;box-shadow:0 0 0 2px rgba(22,163,74,.45)}
+.status-btn.s-present.on{background:#0ea5e9;color:#fff;box-shadow:0 0 0 2px rgba(14,165,233,.45)}
+.status-btn:hover{opacity:.82}
+
+/* ── BANDE PRÉSENCE (bas de la carte) ── */
+.bk-present-strip{
+  position:absolute;bottom:0;left:0;right:0;
+  height:14px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+  cursor:pointer;border-radius:0 0 4px 4px;
+  background:rgba(0,0,0,.15);color:rgba(255,255,255,.5);
+  transition:all .2s;user-select:none;
+}
+.t-particulier .bk-present-strip,
+.t-club        .bk-present-strip,
+.t-anniv3      .bk-present-strip,
+.t-weekend     .bk-present-strip,
+.t-job         .bk-present-strip,
+.t-conge       .bk-present-strip,
+.t-message     .bk-present-strip,
+.t-jeu3        .bk-present-strip,
+.t-bt30        .bk-present-strip,
+.t-bt60        .bk-present-strip{background:rgba(0,0,0,.08);color:rgba(0,0,0,.3)}
+.bk-present-strip:hover{background:rgba(22,163,74,.35);color:#fff}
+/* Carte "présent" activée */
+.bk.is-present{
+  outline:3px solid #16a34a !important;
+  outline-offset:-2px;
+  box-shadow:0 0 0 3px rgba(22,163,74,.25), inset 0 0 0 100px rgba(22,163,74,.12) !important;
+}
+.bk.is-present .bk-present-strip{
+  background:#16a34a;color:#fff;
+}
 
 /* slot-cell fill */
 .slot-cell{min-width:148px;position:relative;cursor:pointer;padding:0 !important}
@@ -512,42 +580,6 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
     <input type="text" class="s-inp" placeholder="Rechercher n° tel" id="sInp">
     <button class="btn-s" onclick="doSearch()">Rechercher</button>
   </div>
-</div>
-
-<!-- LEGEND -->
-<div class="legend-bar">
-  <span style="font-size:11.5px;font-weight:700;color:var(--muted);margin-right:4px">Types :</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#ffffff;border:1px solid #d1d5db"></span>Particulier</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#1a56db"></span>Groupe</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#16a34a"></span>Centre loisirs</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#38bdf8"></span>Club&Asso</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#f97316"></span>Anniversaire</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#f0e6d3;border:1px solid #d4b896"></span>Anniv 3 parties</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#dc2626"></span>EVC</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#7c3aed"></span>Teambooster</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#5eead4"></span>Jeu 3 pour 16€</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#a16207"></span>Vendredi no limit</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#fda4af"></span>WE 11/13 matin</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#d1d5db"></span>Job</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#fef08a;border:1px solid #facc15"></span>Congé</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#111827"></span>Bloqué</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#ffffff;border:1px solid #d1d5db"></span>Message</span>
-  <span style="margin-left:12px;font-size:11.5px;font-weight:700;color:var(--muted)">Gilets :</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#22c55e;border-radius:50%"></span>≥5</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#f97316;border-radius:50%"></span>3-4</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#ef4444;border-radius:50%"></span>1-2</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#111827;border-radius:50%"></span>0</span>
-  <span style="margin-left:16px;font-size:11.5px;font-weight:700;color:var(--muted)">VR :</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#16a34a"></span>VRzone</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#1d4ed8"></span>Escape Game VR</span>
-  <span style="margin-left:16px;font-size:11.5px;font-weight:700;color:var(--muted)">Blind Test :</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#7dd3fc"></span>30 min</span>
-  <span class="leg-item"><span class="leg-dot" style="background:#86efac"></span>60 min</span>
-  <span style="margin-left:16px;font-size:11.5px;font-weight:700;color:var(--muted)">Calendrier :</span>
-  <span class="leg-item">
-    <span class="leg-dot" style="background:repeating-linear-gradient(135deg,#fef9c3 0px,#fef9c3 4px,#fff 4px,#fff 10px);border:1px solid #fde68a"></span>
-    Vacances scolaires (Zone&nbsp;C)
-  </span>
 </div>
 
 <!-- CALENDAR -->
@@ -917,7 +949,7 @@ function buildSlots(){
 
   // From 15:00 : exact times read from screenshot, all 8 cols
   const fixed = [
-    '15:00','15:05','15:25','15:45',
+    '15:00','15:25','15:45',
     '16:05','16:25','16:50',
     '17:10','17:30','17:50',
     '18:15','18:35','18:55',
@@ -1130,7 +1162,7 @@ function renderCalendar(){
 
         const payLabel = {'attente':'⏳ Attente','paye':'✅ Payé','incomplet':'⚠️ Incomplet'};
         const div=document.createElement('div');
-        div.className=`bk ${b.type}${b.evcPart2?' evc-part2':''}${b.vrStep>0?' vr-suite':''}`;
+        div.className=`bk ${b.type}${b.evcPart2?' evc-part2':''}${b.vrStep>0?' vr-suite':''}${b.present?' is-present':''}`;
         div.dataset.key=k;
         div.draggable=true;
         div.innerHTML=`
@@ -1142,12 +1174,16 @@ function renderCalendar(){
           <div class="bk-row3">
             <span class="bk-pers">👥 : ${b.pers}</span>
             <span class="bk-pay-label ${PAY_CLASS[b.pay]||'pay-attente'}">🧾 : ${payLabel[b.pay]||'Attente'}</span>
+            <div class="bk-status">
+              <button class="status-btn s-tel${b.confirmed?' on':''}" title="Confirmation téléphonique" onclick="event.stopPropagation();toggleStatus('${k}','confirmed')">📞${b.confirmed?' Confirmé':' Confirm.'}</button>
+            </div>
             <div class="bk-actions">
               <button class="bk-btn btn-edit" title="Modifier"  onclick="event.stopPropagation();editBooking('${k}')">✏️</button>
               <button class="bk-btn btn-del"  title="Supprimer" onclick="event.stopPropagation();delBooking('${k}')">🗑️</button>
               <button class="bk-btn btn-add"  title="Copier"    onclick="event.stopPropagation();startCopyFrom('${k}')">+</button>
             </div>
-          </div>`;
+          </div>
+          <div class="bk-present-strip" onclick="event.stopPropagation();toggleStatus('${k}','present')">${b.present?'✅ Groupe sur place':'▸ Marquer présent'}</div>`;
         div.addEventListener('click', e=>{ if(!e.target.closest('.bk-btn')) editBooking(k); });
         // Drag start
         div.addEventListener('dragstart', e=>{
@@ -1322,11 +1358,9 @@ function autoUpdateType(){
   const isWeekendMatin = isWeekend && mins >= 11*60 && mins < 13*60;
 
   const sel = document.getElementById('fType');
-  // Week-end matin prime TOUJOURS, même si >= 12 joueurs
+  // Week-end matin : sélection automatique uniquement
   if(isWeekendMatin){
     sel.value = 't-weekend';
-  } else if(pers >= 12){
-    sel.value = 't-groupe';
   }
 }
 
@@ -1537,8 +1571,39 @@ function confirmBooking(){
     }
   } // fin else standard
 
+  // ── Synchronisation paiement sur tous les créneaux liés (même client, même jour) ──
+  syncPayment(date, tel, pay);
+
   closeModal();
   saveBookings();
+}
+
+// ── TOGGLE STATUT (confirmation tél / présence) ───────────────────────────────
+function toggleStatus(key, field){
+  if(!bookings[key]) return;
+  const newVal = !bookings[key][field];
+  // Propager à tous les créneaux du même client le même jour
+  const parts = key.split('|'); // view|date|time|slot
+  const date = parts[1];
+  const tel  = bookings[key].tel;
+  for(const [k, b] of Object.entries(bookings)){
+    const p = k.split('|');
+    if(p[0] === currentView && p[1] === date && b.tel === tel){
+      b[field] = newVal;
+    }
+  }
+  saveBookings();
+}
+
+// ── SYNC PAIEMENT ─────────────────────────────────────────────────────────────
+// Propage le statut de paiement à tous les créneaux du même client (même jour, même vue)
+function syncPayment(date, tel, newPay){
+  for(const [k, b] of Object.entries(bookings)){
+    const parts = k.split('|'); // view|date|time|slot
+    if(parts[0] === currentView && parts[1] === date && b.tel === tel){
+      b.pay = newPay;
+    }
+  }
 }
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
