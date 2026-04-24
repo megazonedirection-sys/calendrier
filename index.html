@@ -216,7 +216,7 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 /* État inactif */
 .status-btn.s-tel{background:rgba(0,0,0,.18);color:rgba(255,255,255,.55)}
 .status-btn.s-present{background:rgba(0,0,0,.18);color:rgba(255,255,255,.55)}
-/* Sur fond clair (t-particulier, t-club, t-anniv3, t-weekend, t-job, t-conge, t-message) */
+/* Sur fond clair (t-particulier, t-club, t-anniv3, t-weekend, t-job, t-conge, t-message, t-centre, t-vrzone) */
 .t-particulier .status-btn.s-tel,
 .t-club        .status-btn.s-tel,
 .t-anniv3      .status-btn.s-tel,
@@ -226,7 +226,9 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-message     .status-btn.s-tel,
 .t-jeu3        .status-btn.s-tel,
 .t-bt30        .status-btn.s-tel,
-.t-bt60        .status-btn.s-tel{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
+.t-bt60        .status-btn.s-tel,
+.t-centre      .status-btn.s-tel,
+.t-vrzone      .status-btn.s-tel{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
 .t-particulier .status-btn.s-present,
 .t-club        .status-btn.s-present,
 .t-anniv3      .status-btn.s-present,
@@ -236,7 +238,9 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-message     .status-btn.s-present,
 .t-jeu3        .status-btn.s-present,
 .t-bt30        .status-btn.s-present,
-.t-bt60        .status-btn.s-present{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
+.t-bt60        .status-btn.s-present,
+.t-centre      .status-btn.s-present,
+.t-vrzone      .status-btn.s-present{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
 /* État actif — commun à tous les fonds */
 .status-btn.s-tel.on{background:#16a34a;color:#fff;box-shadow:0 0 0 2px rgba(22,163,74,.45)}
 .status-btn.s-present.on{background:#0ea5e9;color:#fff;box-shadow:0 0 0 2px rgba(14,165,233,.45)}
@@ -261,7 +265,9 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-message     .bk-present-strip,
 .t-jeu3        .bk-present-strip,
 .t-bt30        .bk-present-strip,
-.t-bt60        .bk-present-strip{background:rgba(0,0,0,.08);color:rgba(0,0,0,.3)}
+.t-bt60        .bk-present-strip,
+.t-centre      .bk-present-strip,
+.t-vrzone      .bk-present-strip{background:rgba(0,0,0,.08);color:rgba(0,0,0,.3)}
 .bk-present-strip:hover{background:rgba(22,163,74,.35);color:#fff}
 /* Carte "présent" activée */
 .bk.is-present{
@@ -279,7 +285,7 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 /* type colors — case entière colorée */
 .t-particulier  {background:#ffffff;color:#111827;border-color:#d1d5db}
 .t-groupe       {background:#1a56db;color:#ffffff;border-color:#1e40af}
-.t-centre       {background:#16a34a;color:#ffffff;border-color:#15803d}
+.t-centre       {background:#bbf7d0;color:#14532d;border-color:#86efac}
 .t-club         {background:#38bdf8;color:#0c4a6e;border-color:#0ea5e9}
 .t-anniv        {background:#f97316;color:#ffffff;border-color:#ea580c}
 .t-anniv3       {background:#f0e6d3;color:#5c3d1e;border-color:#d4b896}
@@ -293,7 +299,7 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-bloque       {background:#111827;color:#f9fafb;border-color:#374151}
 .t-message      {background:#ffffff;color:#374151;border-color:#d1d5db}
 /* VR types */
-.t-vrzone        {background:#16a34a;color:#ffffff;border-color:#15803d}
+.t-vrzone        {background:#ffffff;color:#111827;border-color:#d1d5db}
 .t-escapevr      {background:#1d4ed8;color:#ffffff;border-color:#1e40af}
 /* Blind Test types */
 .t-bt30          {background:#7dd3fc;color:#0c4a6e;border-color:#38bdf8}
