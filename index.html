@@ -599,6 +599,10 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
   <a class="nav-item" id="navVR" onclick="switchView('vr')">🥽 VR</a>
   <a class="nav-item" id="navBT" onclick="switchView('bt')">🎵 Blind Test</a>
   <a class="nav-item" id="navClients" onclick="openClientsPanel()">👤 Clients</a>
+  <a class="nav-item" id="navDemandes" onclick="openDemandesPanel()" style="position:relative">
+    📥 Demandes
+    <span id="demandesBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:10px;font-weight:800;min-width:18px;height:18px;border-radius:9px;align-items:center;justify-content:center;padding:0 4px"></span>
+  </a>
   <div class="nav-spacer"></div>
   <div class="nav-site">Game Zone Montauban<span id="syncDot" title="Synchronisation Firebase"></span></div>
   <button class="btn-pow" title="Déconnexion" onclick="doLogout()">⏻</button>
@@ -752,6 +756,20 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
   <button class="btn-cancel-copy" onclick="cancelCopyMode()">✕ Annuler</button>
 </div>
 
+<!-- DEMANDES PANEL -->
+<div id="demandesOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:999;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
+  <div style="background:#fff;border-radius:14px;width:860px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.18);animation:pop .18s ease">
+    <div style="padding:20px 24px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div>
+        <div style="font-size:18px;font-weight:800">📥 Demandes de réservation en ligne</div>
+        <div style="font-size:13px;color:#64748b;margin-top:2px">Validez ou refusez chaque demande client</div>
+      </div>
+      <button class="btn-close" onclick="document.getElementById('demandesOverlay').style.display='none'">✕</button>
+    </div>
+    <div style="overflow-y:auto;padding:20px 24px;flex:1" id="demandesBody"></div>
+  </div>
+</div>
+
 <!-- ALERT MODAL -->
 <div class="alert-overlay" id="alertOverlay">
   <div class="alert-box">
@@ -831,18 +849,34 @@ function setSyncDot(state){
 }
 
 // ── FIREBASE SYNC ─────────────────────────────────────────────────────────────
+let demandes = {};
+
 function initFirebaseSync(){
   setSyncDot('syncing');
   window._fbListener = db.ref('bookings').on('value', snap => {
     bookings = snap.val() || {};
     setSyncDot('ok');
     renderCalendar();
-    // Scroll automatique initial (une seule fois au 1er chargement)
     if(!_initialScrollDone){
       _initialScrollDone = true;
       requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 120); });
     }
   }, ()=>setSyncDot('error'));
+
+  // Écouter les demandes en ligne
+  db.ref('demandes').on('value', snap => {
+    demandes = snap.val() || {};
+    updateDemandesBadge();
+    renderCalendar();
+  });
+}
+
+function updateDemandesBadge(){
+  const pending = Object.values(demandes).filter(d=>d.status==='pending').length;
+  let badge = document.getElementById('demandesBadge');
+  if(!badge) return;
+  badge.textContent = pending > 0 ? pending : '';
+  badge.style.display = pending > 0 ? 'inline-flex' : 'none';
 }
 
 function saveBookings(){
@@ -1826,6 +1860,135 @@ function openClientsPanel(){
   renderClients();
   document.getElementById('clientsOverlay').classList.add('open');
   setTimeout(()=>document.getElementById('clientsSearch').focus(), 80);
+}
+
+// ── DEMANDES EN LIGNE ─────────────────────────────────────────────────────────
+const ACTIVITE_LABEL = {laser:'🎯 Laser Game', vr:'🥽 Réalité Virtuelle', bt:'🎵 Blind Test'};
+const TYPE_LABEL_D = {
+  't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
+  't-anniv3':'Anniversaire 3 parties','t-evc':'EVC','t-club':'Club & Asso',
+  't-centre':'Centre de loisirs','t-team':'Teambooster'
+};
+
+function openDemandesPanel(){
+  renderDemandes();
+  document.getElementById('demandesOverlay').style.display='flex';
+}
+
+function renderDemandes(){
+  const body = document.getElementById('demandesBody');
+  const list = Object.entries(demandes).sort((a,b)=>b[1].createdAt-a[1].createdAt);
+  const pending = list.filter(([,d])=>d.status==='pending');
+  const done    = list.filter(([,d])=>d.status!=='pending');
+
+  let html = '';
+  if(!pending.length && !done.length){
+    html = '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:15px">Aucune demande reçue pour le moment.</div>';
+  }
+  if(pending.length){
+    html += `<div style="font-size:13px;font-weight:800;color:#0369a1;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">⏳ En attente de validation (${pending.length})</div>`;
+    pending.forEach(([ref,d])=>{ html += demandeCard(ref,d); });
+  }
+  if(done.length){
+    html += `<div style="font-size:13px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin:24px 0 12px">Traitées</div>`;
+    done.forEach(([ref,d])=>{ html += demandeCard(ref,d); });
+  }
+  body.innerHTML = html;
+}
+
+function demandeCard(ref, d){
+  const [y,mo,da] = (d.date||'').split('-');
+  const dateF = da?`${da}/${mo}/${y}`:d.date;
+  const isPending = d.status==='pending';
+  const ago = timeAgo(d.createdAt);
+
+  const borderColor = isPending ? '#f97316' : d.status==='accepted' ? '#16a34a' : '#ef4444';
+  const statusLabel = isPending ? '⏳ En attente' : d.status==='accepted' ? '✅ Acceptée' : '❌ Refusée';
+
+  return `
+  <div style="border:2px solid ${borderColor};border-radius:10px;padding:16px;margin-bottom:12px;background:${isPending?'#fff7ed':'#f8fafc'}">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="font-weight:800;font-size:15px">${d.nom} <span style="font-family:'DM Mono',monospace;font-size:12px;color:#64748b;font-weight:400">${d.tel}</span></div>
+        ${d.mail?`<div style="font-size:12px;color:#64748b">${d.mail}</div>`:''}
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${ACTIVITE_LABEL[d.activite]||d.activite}</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.type]||d.type}</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">👥 ${d.pers} joueurs</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${d.time}</span>
+        </div>
+        ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${d.comment}</div>`:''}
+        <div style="margin-top:6px;font-size:11px;color:#94a3b8">Ref: ${ref} · Reçue ${ago}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+        <span style="font-size:12px;font-weight:700;color:${borderColor};text-align:center">${statusLabel}</span>
+        ${isPending?`
+        <button onclick="accepterDemande('${ref}')" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">✅ Valider</button>
+        <button onclick="refuserDemande('${ref}')" style="padding:8px 16px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">❌ Refuser</button>
+        `:''}
+        <button onclick="supprimerDemande('${ref}')" style="padding:6px 12px;background:#f1f5f9;color:#64748b;border:1.5px solid #e2e8f0;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">🗑 Supprimer</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function timeAgo(ts){
+  if(!ts) return '';
+  const diff = Date.now()-ts;
+  const m = Math.floor(diff/60000);
+  if(m<1) return 'à l\'instant';
+  if(m<60) return `il y a ${m} min`;
+  const h = Math.floor(m/60);
+  if(h<24) return `il y a ${h}h`;
+  return `il y a ${Math.floor(h/24)}j`;
+}
+
+async function accepterDemande(ref){
+  const d = demandes[ref];
+  if(!d) return;
+  // Vérifier disponibilité
+  const key = `${d.activite}|${d.date}|${d.time}|1`;
+  if(bookings[key]){
+    if(!confirm(`Le créneau ${d.time} est déjà pris. Forcer quand même ?`)) return;
+  }
+  // Trouver un slot libre
+  let slot = 1;
+  while(bookings[`${d.activite}|${d.date}|${d.time}|${slot}`]) slot++;
+  // Créer la réservation
+  const bKey = `${d.activite}|${d.date}|${d.time}|${slot}`;
+  bookings[bKey] = {
+    nom: d.nom, tel: d.tel, mail: d.mail||'',
+    pers: d.pers, type: d.type,
+    comment: d.comment ? `[En ligne] ${d.comment}` : '[Réservation en ligne]',
+    pay: 'attente', confirmed: false, present: false
+  };
+  // Marquer comme acceptée
+  await db.ref(`demandes/${ref}/status`).set('accepted');
+  const _w = document.querySelector('.cal-wrap');
+  if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
+  saveBookings();
+  // Naviguer vers la bonne vue et date
+  currentView = d.activite;
+  curDate = new Date(d.date+'T12:00:00');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('nav-active'));
+  document.getElementById(`nav${d.activite.charAt(0).toUpperCase()+d.activite.slice(1)}`).classList.add('nav-active');
+  document.getElementById('demandesOverlay').style.display='none';
+  renderCalendar();
+  alert(`✅ Demande de ${d.nom} validée et ajoutée au planning ${d.activite} du ${d.date} à ${d.time}.`);
+}
+
+async function refuserDemande(ref){
+  if(!confirm('Refuser cette demande ?')) return;
+  await db.ref(`demandes/${ref}/status`).set('refused');
+  renderDemandes();
+}
+
+async function supprimerDemande(ref){
+  if(!confirm('Supprimer définitivement cette demande ?')) return;
+  await db.ref(`demandes/${ref}`).remove();
+  delete demandes[ref];
+  renderDemandes();
+  updateDemandesBadge();
 }
 
 function buildFullClientIndex(){
