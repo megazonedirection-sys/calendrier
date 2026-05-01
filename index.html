@@ -1604,7 +1604,15 @@ function confirmBooking(){
   } else {
     // Comportement standard (laser, BT, édition VR)
     const k = isEdit && key ? key : slotKey(date,time,slot);
-    bookings[k]={tel,nom,mail,comment,pers,type,pay};
+    const existing = bookings[k] || {};
+    bookings[k]={
+      tel, nom, mail, comment, pers, type, pay,
+      // Préserver les statuts opérationnels lors d'une modification
+      confirmed: existing.confirmed || false,
+      present:   existing.present   || false,
+      ...(existing.evcPart2 ? {evcPart2: true} : {}),
+      ...(existing.vrBlock  ? {vrBlock: true, vrCol: existing.vrCol, vrStep: existing.vrStep} : {})
+    };
 
     // ── EVC : doublon automatique (Partie 2) avec 20 min de pause ──────────────
     if(currentView === 'laser' && type === 't-evc' && !isEdit){
@@ -1645,6 +1653,8 @@ function confirmBooking(){
 
   // ── Synchronisation paiement sur tous les créneaux liés (même client, même jour) ──
   syncPayment(date, tel, pay);
+  // ── Synchronisation mail sur toutes les réservations du même nom ──
+  syncMail(nom, mail);
 
   closeModal();
   // Geler la position scroll avant que Firebase déclenche renderCalendar
@@ -1679,6 +1689,18 @@ function syncPayment(date, tel, newPay){
     const parts = k.split('|'); // view|date|time|slot
     if(parts[0] === currentView && parts[1] === date && b.tel === tel){
       b.pay = newPay;
+    }
+  }
+}
+
+// ── SYNC MAIL ─────────────────────────────────────────────────────────────────
+// Propage le mail sur toutes les réservations du même nom (toutes vues, toutes dates)
+function syncMail(nom, newMail){
+  if(!newMail || !nom) return;
+  const nomNorm = nom.trim().toLowerCase();
+  for(const b of Object.values(bookings)){
+    if((b.nom||'').trim().toLowerCase() === nomNorm){
+      b.mail = newMail;
     }
   }
 }
@@ -1964,6 +1986,31 @@ async function accepterDemande(ref){
   };
   // Marquer comme acceptée
   await db.ref(`demandes/${ref}/status`).set('accepted');
+  // Email de confirmation au client via Formspree
+  if(d.mail){
+    const [y,mo,da] = (d.date||'').split('-');
+    const dateF = da ? `${da}/${mo}/${y}` : d.date;
+    const body = new FormData();
+    body.append('_replyto', d.mail);
+    body.append('email', d.mail);
+    body.append('_subject', `✅ Confirmation de réservation – Game Zone Montauban (réf. ${ref})`);
+    body.append('message',
+      `Bonjour ${d.nom},\n\n` +
+      `Votre réservation est confirmée !\n\n` +
+      `📅 Date : ${dateF}\n` +
+      `🕐 Heure : ${d.time}\n` +
+      `🎯 Activité : ${ACTIVITE_LABEL[d.activite]||d.activite}\n` +
+      `👥 Joueurs : ${d.pers} personnes\n` +
+      `📋 Référence : ${ref}\n\n` +
+      `Nous vous attendons avec impatience !\n\n` +
+      `Game Zone Montauban\n` +
+      `📞 05.63.03.79.32`
+    );
+    fetch('https://formspree.io/f/mvzvpdbk', {
+      method:'POST', body,
+      headers:{'Accept':'application/json'}
+    }).catch(e => console.warn('Formspree confirmation:', e));
+  }
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
   saveBookings();
@@ -1979,7 +2026,27 @@ async function accepterDemande(ref){
 
 async function refuserDemande(ref){
   if(!confirm('Refuser cette demande ?')) return;
+  const d = demandes[ref];
   await db.ref(`demandes/${ref}/status`).set('refused');
+  // Email de refus au client via Formspree
+  if(d && d.mail){
+    const body = new FormData();
+    body.append('_replyto', d.mail);
+    body.append('email', d.mail);
+    body.append('_subject', `❌ Demande de réservation – Game Zone Montauban (réf. ${ref})`);
+    body.append('message',
+      `Bonjour ${d.nom},\n\n` +
+      `Nous sommes désolés, nous ne pouvons pas honorer votre demande de réservation (réf. ${ref}).\n\n` +
+      `Le créneau demandé n'est malheureusement plus disponible.\n\n` +
+      `N'hésitez pas à nous contacter pour trouver une alternative :\n` +
+      `📞 05.63.03.79.32\n\n` +
+      `Game Zone Montauban`
+    );
+    fetch('https://formspree.io/f/mvzvpdbk', {
+      method:'POST', body,
+      headers:{'Accept':'application/json'}
+    }).catch(e => console.warn('Formspree refus:', e));
+  }
   renderDemandes();
 }
 
