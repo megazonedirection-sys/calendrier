@@ -9,6 +9,13 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<!-- EmailJS -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js" onload="emailjs.init({publicKey:'DsCuGiMtzFItllTJk'})"></script>
+<script>
+  const EJS_SERVICE    = 'service_hk5x4ah';
+  const EJS_TPL_STAFF  = 'template_y6gp8sg';
+  const EJS_TPL_CLIENT = 'template_bxrcyha';
+</script>
 <style>
 :root {
   --green:#22c55e; --green-dk:#16a34a;
@@ -164,7 +171,7 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .bk-row3{display:flex;align-items:center;gap:8px;width:100%;margin-top:auto;padding-top:6px;flex-wrap:nowrap}
 .bk-pers{display:inline-flex;align-items:center;gap:4px;font-size:17px;font-weight:900;white-space:nowrap;flex-shrink:0}
 .bk-pay-label{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;padding:3px 8px;border-radius:12px;flex-shrink:0;white-space:nowrap}
-.bk-pay-label.pay-paye   {background:rgba(22,163,74,.25);color:#14532d;border:1px solid rgba(22,163,74,.4)}
+.bk-pay-label.pay-paye   {background:#16a34a;color:#fff;border:1px solid #15803d}
 .bk-pay-label.pay-incomplet{background:rgba(220,38,38,.22);color:#7f1d1d;border:1px solid rgba(220,38,38,.4)}
 .bk-pay-label.pay-attente  {background:rgba(0,0,0,.12);color:inherit;border:1px solid rgba(0,0,0,.15)}
 /* sur fond sombre, adapter */
@@ -1986,30 +1993,59 @@ async function accepterDemande(ref){
   };
   // Marquer comme acceptée
   await db.ref(`demandes/${ref}/status`).set('accepted');
-  // Email de confirmation au client via Formspree
+  // Email de confirmation au client via API REST EmailJS
   if(d.mail){
     const [y,mo,da] = (d.date||'').split('-');
     const dateF = da ? `${da}/${mo}/${y}` : d.date;
-    const body = new FormData();
-    body.append('_replyto', d.mail);
-    body.append('email', d.mail);
-    body.append('_subject', `✅ Confirmation de réservation – Game Zone Montauban (réf. ${ref})`);
-    body.append('message',
-      `Bonjour ${d.nom},\n\n` +
-      `Votre réservation est confirmée !\n\n` +
-      `📅 Date : ${dateF}\n` +
-      `🕐 Heure : ${d.time}\n` +
-      `🎯 Activité : ${ACTIVITE_LABEL[d.activite]||d.activite}\n` +
-      `👥 Joueurs : ${d.pers} personnes\n` +
-      `📋 Référence : ${ref}\n\n` +
-      `Nous vous attendons avec impatience !\n\n` +
-      `Game Zone Montauban\n` +
-      `📞 05.63.03.79.32`
-    );
-    fetch('https://formspree.io/f/mvzvpdbk', {
-      method:'POST', body,
-      headers:{'Accept':'application/json'}
-    }).catch(e => console.warn('Formspree confirmation:', e));
+    const activiteLabel = ACTIVITE_LABEL[d.activite] || d.activite;
+    fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  EJS_SERVICE,
+        template_id: EJS_TPL_CLIENT,
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: {
+          to_email: d.mail,
+          ref:      ref,
+          message:
+            `Bonjour ${d.nom} 👋\n\n` +
+            `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
+            `═══════════════════════════════════\n` +
+            `   RÉCAPITULATIF DE VOTRE SÉANCE\n` +
+            `═══════════════════════════════════\n\n` +
+            `📋 Référence    : ${ref}\n` +
+            `🎮 Activité     : ${activiteLabel}\n` +
+            `📅 Date         : ${dateF}\n` +
+            `🕐 Heure        : ${d.time}\n` +
+            `👥 Joueurs      : ${d.pers} personne(s)\n\n` +
+            `───────────────────────────────────\n` +
+            `📌 INFOS PRATIQUES\n` +
+            `───────────────────────────────────\n` +
+            `• Merci d'arriver 15 minutes avant votre créneau\n` +
+            `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
+            `• Le règlement s'effectue sur place (CB, espèces)\n` +
+            `• Prévoir des vêtements confortables pour le Laser Game\n\n` +
+            `───────────────────────────────────\n` +
+            `📍 Game Zone Montauban\n` +
+            `📞 05.63.03.79.32\n\n` +
+            `À très bientôt ! 🎯\n` +
+            `L'équipe Game Zone Montauban`
+        }
+      })
+    }).then(r => {
+      if(r.ok){ 
+        alert('✅ Email de confirmation envoyé à ' + d.mail);
+      } else { 
+        r.text().then(t => {
+          if(t.includes('quota') || t.includes('limit') || t.includes('429')){
+            alert('⚠️ Quota EmailJS atteint (200 emails/mois épuisés).\nL\'email de confirmation n\'a pas pu être envoyé à ' + d.mail + '.\nContactez le client directement par téléphone : ' + d.tel);
+          } else {
+            alert('⚠️ Erreur envoi email : ' + t + '\nContactez le client : ' + d.tel);
+          }
+        });
+      }
+    }).catch(e => alert('⚠️ Erreur réseau — email non envoyé à ' + d.mail + '\nContactez le client : ' + d.tel));
   }
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
@@ -2028,24 +2064,42 @@ async function refuserDemande(ref){
   if(!confirm('Refuser cette demande ?')) return;
   const d = demandes[ref];
   await db.ref(`demandes/${ref}/status`).set('refused');
-  // Email de refus au client via Formspree
+  // Email de refus au client via EmailJS
   if(d && d.mail){
-    const body = new FormData();
-    body.append('_replyto', d.mail);
-    body.append('email', d.mail);
-    body.append('_subject', `❌ Demande de réservation – Game Zone Montauban (réf. ${ref})`);
-    body.append('message',
-      `Bonjour ${d.nom},\n\n` +
-      `Nous sommes désolés, nous ne pouvons pas honorer votre demande de réservation (réf. ${ref}).\n\n` +
-      `Le créneau demandé n'est malheureusement plus disponible.\n\n` +
-      `N'hésitez pas à nous contacter pour trouver une alternative :\n` +
-      `📞 05.63.03.79.32\n\n` +
-      `Game Zone Montauban`
-    );
-    fetch('https://formspree.io/f/mvzvpdbk', {
-      method:'POST', body,
-      headers:{'Accept':'application/json'}
-    }).catch(e => console.warn('Formspree refus:', e));
+    fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  EJS_SERVICE,
+        template_id: EJS_TPL_CLIENT,
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: {
+          to_email: d.mail,
+          ref:      ref,
+          message:
+            `Bonjour ${d.nom} 👋\n\n` +
+            `Merci d'avoir pensé à Game Zone Montauban pour votre prochaine aventure !\n\n` +
+            `Malheureusement, nous ne sommes pas en mesure d'honorer votre demande pour le créneau souhaité (réf. ${ref}). Le créneau demandé n'est plus disponible à cette date.\n\n` +
+            `───────────────────────────────────\n` +
+            `💡 Pas de panique !\n` +
+            `───────────────────────────────────\n` +
+            `Nous serions ravis de trouver une alternative avec vous :\n\n` +
+            `📞 Appelez-nous : 05.63.03.79.32\n` +
+            `🌐 Ou re-déposez une demande directement sur notre site\n\n` +
+            `Nous ferons tout notre possible pour vous trouver un créneau qui vous convient ! 😊\n\n` +
+            `───────────────────────────────────\n` +
+            `📍 Game Zone Montauban\n` +
+            `📞 05.63.03.79.32\n\n` +
+            `À bientôt !\n` +
+            `L'équipe Game Zone Montauban`
+        }
+      })
+    }).catch(e => {
+      console.warn('EmailJS refus:', e);
+      if(String(e).includes('quota') || String(e).includes('429')){
+        alert('⚠️ Quota EmailJS atteint — email de refus non envoyé à ' + d.mail);
+      }
+    });
   }
   renderDemandes();
 }
