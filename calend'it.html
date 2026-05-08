@@ -1094,21 +1094,23 @@ const ALL_SLOTS = buildSlots();
 // Démarre à 10:10, sessions toutes les 30 min
 // Toutes les 60 min (soit toutes les 2 sessions) on ajoute 5 min de décalage
 function buildBTSlots(){
+  // Pattern : 2 sessions de 30 min, puis 15 min de nettoyage, en boucle
+  // Exemple : 10:00, 10:30 → nettoyage 11:00-11:15 → 11:15, 11:45 → nettoyage 12:15 → ...
   const slots = [];
-  // On part de 10h10 en minutes
-  let currentMin = 10*60 + 10;
-  const endMin   = 23*60;
-  let sessionCount = 0; // compte les sessions depuis le dernier décalage horaire
+  let currentMin = 10 * 60; // début à 10h00
+  const endMin   = 23 * 60; // dernier créneau à 23h00
+  let sessionInBlock = 0;   // compte les sessions dans le bloc en cours (max 2)
 
-  while(currentMin < endMin){
-    const h = Math.floor(currentMin/60);
+  while(currentMin <= endMin){
+    const h = Math.floor(currentMin / 60);
     const m = currentMin % 60;
-    slots.push({time:`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cols:1});
-    sessionCount++;
-    currentMin += 30;
-    // Toutes les 2 sessions (= 60 min écoulées) on ajoute 5 min
-    if(sessionCount % 2 === 0){
-      currentMin += 5;
+    slots.push({ time: `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cols: 1 });
+    sessionInBlock++;
+    currentMin += 30; // session suivante dans 30 min
+    // Après 2 sessions, pause nettoyage de 15 min
+    if(sessionInBlock === 2){
+      currentMin += 15;
+      sessionInBlock = 0;
     }
   }
   return slots;
