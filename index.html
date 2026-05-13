@@ -840,7 +840,7 @@ function doLogout(){
 auth.onAuthStateChanged(user => {
   if(user){
     document.getElementById('loginOverlay').classList.add('hidden');
-    initFirebaseSync();
+    migrateSlots().then(() => initFirebaseSync());
   } else {
     document.getElementById('loginOverlay').classList.remove('hidden');
     // Détacher le listener si existant
@@ -858,6 +858,42 @@ function setSyncDot(state){
 // ── FIREBASE SYNC ─────────────────────────────────────────────────────────────
 let demandes = {};
 
+// ── MIGRATION CRÉNEAUX ────────────────────────────────────────────────────────
+// Renomme les clés Firebase des anciens créneaux vers les nouveaux
+async function migrateSlots(){
+  const migrations = [
+    // Laser
+    { view:'laser', oldTime:'17:10', newTime:'17:15' },
+    { view:'laser', oldTime:'17:30', newTime:'17:35' },
+    { view:'laser', oldTime:'17:50', newTime:'17:55' },
+    // VR (+10 min)
+    { view:'vr', oldTime:'17:20', newTime:'17:25' },
+    { view:'vr', oldTime:'17:40', newTime:'17:45' },
+    { view:'vr', oldTime:'18:00', newTime:'18:05' },
+  ];
+  let migrated = 0;
+  const snap = await db.ref('bookings').once('value');
+  const all  = snap.val() || {};
+  const updates = {};
+  for(const [key, val] of Object.entries(all)){
+    const parts = key.split('|'); // view|date|time|slot
+    if(parts.length < 4) continue;
+    const [view, date, time, slot] = parts;
+    const match = migrations.find(m => m.view===view && m.oldTime===time);
+    if(match){
+      const newKey = `${view}|${date}|${match.newTime}|${slot}`;
+      updates[key]    = null;       // supprimer l'ancienne clé
+      updates[newKey] = val;        // créer la nouvelle
+      migrated++;
+    }
+  }
+  if(migrated > 0){
+    await db.ref('bookings').update(updates);
+    console.log(`Migration : ${migrated} réservation(s) déplacée(s)`);
+    alert(`✅ Migration effectuée : ${migrated} réservation(s) déplacée(s) vers les nouveaux créneaux.`);
+  }
+}
+
 function initFirebaseSync(){
   setSyncDot('syncing');
   window._fbListener = db.ref('bookings').on('value', snap => {
@@ -873,9 +909,49 @@ function initFirebaseSync(){
   // Écouter les demandes en ligne
   db.ref('demandes').on('value', snap => {
     demandes = snap.val() || {};
+    // Auto-valider les demandes directes non encore traitées
+    Object.entries(demandes).forEach(([ref, d]) => {
+      if(d.direct && d.status === 'auto-confirmed'){
+        autoValiderDemande(ref, d);
+      }
+    });
     updateDemandesBadge();
     renderCalendar();
   });
+}
+
+// ── AUTO-VALIDATION RÉSERVATIONS DIRECTES ─────────────────────────────────────
+async function autoValiderDemande(ref, d){
+  // Vérifier qu'elle n'est pas déjà dans les bookings
+  const activite = d.activite || 'laser';
+  const date     = d.date || '';
+  const time     = d.time || '';
+  // Trouver un slot libre
+  const MAX = activite==='laser' ? 8 : (activite==='vr' ? 4 : 1);
+  let slot = 1;
+  while(slot <= MAX && bookings[`${activite}|${date}|${time}|${slot}`]) slot++;
+  if(slot > MAX){
+    // Créneau complet — passer en validation manuelle
+    await db.ref(`demandes/${ref}/status`).set('pending');
+    await db.ref(`demandes/${ref}/direct`).set(false);
+    return;
+  }
+  // Créer la réservation
+  bookings[`${activite}|${date}|${time}|${slot}`] = {
+    nom:       d.nom||'',
+    tel:       d.tel||'',
+    mail:      d.mail||'',
+    pers:      d.pers||1,
+    type:      d.type||'t-particulier',
+    comment:   d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]',
+    pay:       'attente',
+    confirmed: false,
+    present:   false
+  };
+  await db.ref(`demandes/${ref}/status`).set('processed');
+  const _w = document.querySelector('.cal-wrap');
+  if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
+  saveBookings();
 }
 
 function updateDemandesBadge(){
@@ -1031,7 +1107,7 @@ function buildSlots(){
   const fixed = [
     '15:00','15:25','15:45',
     '16:05','16:25','16:50',
-    '17:10','17:30','17:50',
+    '17:15','17:35','17:55',
     '18:15','18:35','18:55',
     '19:15','19:40',
   ];
@@ -1050,25 +1126,36 @@ function buildSlots(){
 
 const ALL_SLOTS = buildSlots();
 
+// ── VR SLOTS : même rotation que Laser, décalés de +10 min ───────────────────
+const VR_SLOTS = ALL_SLOTS.map(s => {
+  const [h, m] = s.time.split(':').map(Number);
+  const total  = h * 60 + m + 10;
+  const nh     = Math.floor(total / 60);
+  const nm     = total % 60;
+  return { ...s, time: `${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}` };
+});
+
 // ── BLIND TEST SLOTS ──────────────────────────────────────────────────────────
 // Démarre à 10:10, sessions toutes les 30 min
 // Toutes les 60 min (soit toutes les 2 sessions) on ajoute 5 min de décalage
 function buildBTSlots(){
+  // Pattern : 2 sessions de 30 min, puis 15 min de nettoyage, en boucle
+  // Exemple : 10:00, 10:30 → nettoyage 11:00-11:15 → 11:15, 11:45 → nettoyage 12:15 → ...
   const slots = [];
-  // On part de 10h10 en minutes
-  let currentMin = 10*60 + 10;
-  const endMin   = 23*60;
-  let sessionCount = 0; // compte les sessions depuis le dernier décalage horaire
+  let currentMin = 10 * 60; // début à 10h00
+  const endMin   = 23 * 60; // dernier créneau à 23h00
+  let sessionInBlock = 0;   // compte les sessions dans le bloc en cours (max 2)
 
-  while(currentMin < endMin){
-    const h = Math.floor(currentMin/60);
+  while(currentMin <= endMin){
+    const h = Math.floor(currentMin / 60);
     const m = currentMin % 60;
-    slots.push({time:`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cols:1});
-    sessionCount++;
-    currentMin += 30;
-    // Toutes les 2 sessions (= 60 min écoulées) on ajoute 5 min
-    if(sessionCount % 2 === 0){
-      currentMin += 5;
+    slots.push({ time: `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cols: 1 });
+    sessionInBlock++;
+    currentMin += 30; // session suivante dans 30 min
+    // Après 2 sessions, pause nettoyage de 15 min
+    if(sessionInBlock === 2){
+      currentMin += 15;
+      sessionInBlock = 0;
     }
   }
   return slots;
@@ -1076,7 +1163,7 @@ function buildBTSlots(){
 
 const BT_SLOTS = buildBTSlots();
 
-function getActiveSlots(){ return currentView==='bt' ? BT_SLOTS : ALL_SLOTS; }
+function getActiveSlots(){ return currentView==='bt' ? BT_SLOTS : currentView==='vr' ? VR_SLOTS : ALL_SLOTS; }
 
 function isHourSlot(t){ return t.endsWith(':00'); }
 
@@ -1660,6 +1747,8 @@ function confirmBooking(){
 
   // ── Synchronisation paiement sur tous les créneaux liés (même client, même jour) ──
   syncPayment(date, tel, pay);
+  // ── Synchronisation type sur toutes les réservations du même nom ──
+  syncType(nom, type);
   // ── Synchronisation mail sur toutes les réservations du même nom ──
   syncMail(nom, mail);
 
@@ -1708,6 +1797,18 @@ function syncMail(nom, newMail){
   for(const b of Object.values(bookings)){
     if((b.nom||'').trim().toLowerCase() === nomNorm){
       b.mail = newMail;
+    }
+  }
+}
+
+// ── SYNC TYPE ─────────────────────────────────────────────────────────────────
+// Propage le type sur toutes les réservations du même nom (toutes vues, toutes dates)
+function syncType(nom, newType){
+  if(!newType || !nom) return;
+  const nomNorm = nom.trim().toLowerCase();
+  for(const b of Object.values(bookings)){
+    if((b.nom||'').trim().toLowerCase() === nomNorm){
+      b.type = newType;
     }
   }
 }
