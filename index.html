@@ -859,38 +859,57 @@ function setSyncDot(state){
 let demandes = {};
 
 // ── MIGRATION CRÉNEAUX ────────────────────────────────────────────────────────
-// Renomme les clés Firebase des anciens créneaux vers les nouveaux
 async function migrateSlots(){
-  const migrations = [
-    // Laser
-    { view:'laser', oldTime:'17:10', newTime:'17:15' },
-    { view:'laser', oldTime:'17:30', newTime:'17:35' },
-    { view:'laser', oldTime:'17:50', newTime:'17:55' },
-    // VR (+10 min)
-    { view:'vr', oldTime:'17:20', newTime:'17:25' },
-    { view:'vr', oldTime:'17:40', newTime:'17:45' },
-    { view:'vr', oldTime:'18:00', newTime:'18:05' },
-  ];
-  let migrated = 0;
   const snap = await db.ref('bookings').once('value');
   const all  = snap.val() || {};
   const updates = {};
+  let migrated = 0;
+
+  // Changements laser spécifiques (fixes)
+  const laserFixes = {
+    '17:10':'17:15', '17:30':'17:35', '17:50':'17:55'
+  };
+
   for(const [key, val] of Object.entries(all)){
-    const parts = key.split('|'); // view|date|time|slot
+    const parts = key.split('|');
     if(parts.length < 4) continue;
     const [view, date, time, slot] = parts;
-    const match = migrations.find(m => m.view===view && m.oldTime===time);
-    if(match){
-      const newKey = `${view}|${date}|${match.newTime}|${slot}`;
-      updates[key]    = null;       // supprimer l'ancienne clé
-      updates[newKey] = val;        // créer la nouvelle
+
+    let newTime = null;
+
+    if(view === 'laser' && laserFixes[time]){
+      // Laser : seulement les 3 créneaux modifiés
+      newTime = laserFixes[time];
+    } else if(view === 'vr'){
+      // VR : tous les créneaux décalés de +10 min
+      // Sauf si déjà migré (temps >= 10:10 dans les bons créneaux VR)
+      const vrSlotTimes = new Set(VR_SLOTS.map(s=>s.time));
+      if(!vrSlotTimes.has(time)){
+        // Ce créneau VR n'existe pas dans les nouveaux VR_SLOTS → à migrer
+        const [h, m] = time.split(':').map(Number);
+        const total = h * 60 + m + 10;
+        const nh = Math.floor(total / 60);
+        const nm = total % 60;
+        let candidate = `${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}`;
+        // Cas spéciaux (anciens 17:10→17:25, 17:30→17:45, 17:50→18:05)
+        if(time === '17:10') candidate = '17:25';
+        if(time === '17:30') candidate = '17:45';
+        if(time === '17:50') candidate = '18:05';
+        newTime = candidate;
+      }
+    }
+
+    if(newTime){
+      const newKey = `${view}|${date}|${newTime}|${slot}`;
+      updates[key]    = null;
+      updates[newKey] = val;
       migrated++;
     }
   }
+
   if(migrated > 0){
     await db.ref('bookings').update(updates);
-    console.log(`Migration : ${migrated} réservation(s) déplacée(s)`);
-    alert(`✅ Migration effectuée : ${migrated} réservation(s) déplacée(s) vers les nouveaux créneaux.`);
+    console.log(`Migration : ${migrated} réservation(s) migrée(s)`);
   }
 }
 
@@ -1653,15 +1672,15 @@ function confirmBooking(){
   // ── Auto-remplissage VR (nouvelle réservation uniquement) ───────────────────
   if(currentView==='vr' && !isEdit){
     const durSlots = VR_DURATION[type] || 2;
-    const timeIdx  = ALL_SLOTS.findIndex(s => s.time === time);
+    const timeIdx  = VR_SLOTS.findIndex(s => s.time === time);
 
     // Vérifier les conflits avant d'écrire
     const conflits = [];
     for(let col=1; col<=pers; col++){
       for(let d=0; d<durSlots; d++){
         const tIdx = timeIdx + d;
-        if(tIdx >= ALL_SLOTS.length) break;
-        const t = ALL_SLOTS[tIdx].time;
+        if(tIdx >= VR_SLOTS.length) break;
+        const t = VR_SLOTS[tIdx].time;
         const k2 = `vr|${date}|${t}|${col}`;
         if(bookings[k2]) conflits.push(`Casque ${col} à ${t}`);
       }
@@ -1679,8 +1698,8 @@ function confirmBooking(){
     for(let col=1; col<=pers; col++){
       for(let d=0; d<durSlots; d++){
         const tIdx = timeIdx + d;
-        if(tIdx >= ALL_SLOTS.length) break;
-        const t = ALL_SLOTS[tIdx].time;
+        if(tIdx >= VR_SLOTS.length) break;
+        const t = VR_SLOTS[tIdx].time;
         const k2 = `vr|${date}|${t}|${col}`;
         bookings[k2] = {
           tel, nom, mail,
