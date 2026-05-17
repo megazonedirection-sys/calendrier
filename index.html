@@ -177,9 +177,10 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 /* sur fond sombre, adapter */
 .t-groupe .bk-pay-label.pay-paye,
 .t-centre .bk-pay-label.pay-paye,
-.t-evc    .bk-pay-label.pay-paye,
 .t-team   .bk-pay-label.pay-paye,
 .t-vendredi .bk-pay-label.pay-paye{background:rgba(255,255,255,.2);color:#dcfce7;border-color:rgba(255,255,255,.3)}
+/* EVC payé : vert vif même sur fond rouge */
+.t-evc .bk-pay-label.pay-paye{background:#16a34a;color:#fff;border-color:#15803d}
 .t-groupe .bk-pay-label.pay-incomplet,
 .t-centre .bk-pay-label.pay-incomplet,
 .t-evc    .bk-pay-label.pay-incomplet,
@@ -865,41 +866,65 @@ async function migrateSlots(){
   const updates = {};
   let migrated = 0;
 
-  // Changements laser spécifiques (fixes)
-  const laserFixes = {
-    '17:10':'17:15', '17:30':'17:35', '17:50':'17:55'
+  // Changements laser spécifiques (fixes 17h)
+  const laserFixes = { '17:10':'17:15', '17:30':'17:35', '17:50':'17:55' };
+
+  // Mapping ancien → nouveau pour après-midi laser (25 min dès 01/09/2026)
+  const afternoonMap = {
+    '14:00':'14:00','14:20':'14:25','14:40':'14:50',
+    '15:00':'14:50','15:25':'15:15','15:45':'15:40',
+    '16:05':'16:05','16:25':'16:30','16:50':'16:55',
+    '17:15':'17:20','17:35':'17:45','17:55':'17:45',
+    '18:15':'18:10','18:35':'18:35','18:55':'19:00',
+    '19:15':'19:25','19:40':'19:50','20:00':'19:50',
+    '20:20':'20:15','20:40':'20:40','21:00':'21:05',
+    '21:20':'21:30','21:40':'21:30','22:00':'21:55',
+    '22:20':'22:20','22:40':'22:45','23:00':'22:45'
   };
+
+  // Même mapping pour VR (+10 min sur chaque valeur)
+  const afternoonMapVR = {};
+  Object.entries(afternoonMap).forEach(([oldT, newT])=>{
+    const offset = t => {
+      const [h,m] = t.split(':').map(Number);
+      const tot = h*60+m+10;
+      return `${String(Math.floor(tot/60)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;
+    };
+    afternoonMapVR[offset(oldT)] = offset(newT);
+  });
 
   for(const [key, val] of Object.entries(all)){
     const parts = key.split('|');
     if(parts.length < 4) continue;
     const [view, date, time, slot] = parts;
-
     let newTime = null;
 
     if(view === 'laser' && laserFixes[time]){
-      // Laser : seulement les 3 créneaux modifiés
       newTime = laserFixes[time];
     } else if(view === 'vr'){
-      // VR : tous les créneaux décalés de +10 min
-      // Sauf si déjà migré (temps >= 10:10 dans les bons créneaux VR)
       const vrSlotTimes = new Set(VR_SLOTS.map(s=>s.time));
       if(!vrSlotTimes.has(time)){
-        // Ce créneau VR n'existe pas dans les nouveaux VR_SLOTS → à migrer
         const [h, m] = time.split(':').map(Number);
-        const total = h * 60 + m + 10;
-        const nh = Math.floor(total / 60);
-        const nm = total % 60;
+        const total = h*60+m+10;
+        const nh = Math.floor(total/60), nm = total%60;
         let candidate = `${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}`;
-        // Cas spéciaux (anciens 17:10→17:25, 17:30→17:45, 17:50→18:05)
-        if(time === '17:10') candidate = '17:25';
-        if(time === '17:30') candidate = '17:45';
-        if(time === '17:50') candidate = '18:05';
+        if(time==='17:10') candidate='17:25';
+        if(time==='17:30') candidate='17:45';
+        if(time==='17:50') candidate='18:05';
         newTime = candidate;
       }
     }
 
-    if(newTime){
+    // Migration 25 min après-midi (01/09/2026+, heure >= 14:00)
+    if(!newTime && date >= NEW_SCHEDULE_DATE){
+      const [h] = time.split(':').map(Number);
+      if(h >= 14){
+        if(view==='laser' && afternoonMap[time])   newTime = afternoonMap[time];
+        if(view==='vr'    && afternoonMapVR[time]) newTime = afternoonMapVR[time];
+      }
+    }
+
+    if(newTime && newTime !== time){
       const newKey = `${view}|${date}|${newTime}|${slot}`;
       updates[key]    = null;
       updates[newKey] = val;
@@ -1145,14 +1170,43 @@ function buildSlots(){
 
 const ALL_SLOTS = buildSlots();
 
+// ── NOUVEAU PLANNING 25 MIN (à partir du 01/09/2026) ─────────────────────────
+const NEW_SCHEDULE_DATE = '2026-09-01'; // date d'entrée en vigueur
+
+function buildSlotsNew(){
+  const S = STD_COLS, H = HOUR_COLS;
+  const slots = [];
+  // Matin inchangé : 10:00 → 13:40, toutes les 20 min
+  for(let h=10; h<14; h++){
+    for(let m=0; m<=40; m+=20){
+      slots.push({ time:`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cols:S });
+    }
+  }
+  // Après-midi : 14:00 → 22:45, toutes les 25 min
+  let cur = 14*60;
+  while(cur <= 22*60+45){
+    const h = Math.floor(cur/60), m = cur%60;
+    slots.push({ time:`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cols:H });
+    cur += 25;
+  }
+  return slots;
+}
+
+const ALL_SLOTS_NEW = buildSlotsNew();
+
 // ── VR SLOTS : même rotation que Laser, décalés de +10 min ───────────────────
-const VR_SLOTS = ALL_SLOTS.map(s => {
-  const [h, m] = s.time.split(':').map(Number);
-  const total  = h * 60 + m + 10;
-  const nh     = Math.floor(total / 60);
-  const nm     = total % 60;
-  return { ...s, time: `${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}` };
-});
+function makeVrSlots(base){
+  return base.map(s => {
+    const [h, m] = s.time.split(':').map(Number);
+    const total  = h*60 + m + 10;
+    if(total > 23*60) return null;
+    const nh = Math.floor(total/60), nm = total%60;
+    return { ...s, time:`${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}` };
+  }).filter(Boolean);
+}
+
+const VR_SLOTS     = makeVrSlots(ALL_SLOTS);
+const VR_SLOTS_NEW = makeVrSlots(ALL_SLOTS_NEW);
 
 // ── BLIND TEST SLOTS ──────────────────────────────────────────────────────────
 // Démarre à 10:10, sessions toutes les 30 min
@@ -1182,7 +1236,13 @@ function buildBTSlots(){
 
 const BT_SLOTS = buildBTSlots();
 
-function getActiveSlots(){ return currentView==='bt' ? BT_SLOTS : currentView==='vr' ? VR_SLOTS : ALL_SLOTS; }
+function getActiveSlots(){
+  if(currentView==='bt') return BT_SLOTS;
+  const dateKey = fmtDate(curDate);
+  const isNew = dateKey >= NEW_SCHEDULE_DATE;
+  if(currentView==='vr')    return isNew ? VR_SLOTS_NEW : VR_SLOTS;
+  return isNew ? ALL_SLOTS_NEW : ALL_SLOTS;
+}
 
 function isHourSlot(t){ return t.endsWith(':00'); }
 
@@ -1484,7 +1544,7 @@ function adaptModalForView(){
   // Joueurs max
   document.getElementById('fPers').min = isVR ? 2 : (isBT ? 4 : 1);
   document.getElementById('fPers').max = isVR ? 4 : 24;
-  document.getElementById('fPers').value = isVR ? 2 : (isBT ? 4 : 4);
+  document.getElementById('fPers').value = isVR ? 2 : (isBT ? 4 : 1);
   // Remplacer options type selon vue
   const sel = document.getElementById('fType');
   if(isBT){
@@ -1529,7 +1589,7 @@ function editBooking(key){
   document.getElementById('fNom').value=b.nom||'';
   document.getElementById('fMail').value=b.mail||'';
   document.getElementById('fComment').value=b.comment||'';
-  document.getElementById('fPers').value=b.pers||(isVR?2:4);
+  document.getElementById('fPers').value=b.pers||(isVR?2:1);
   document.getElementById('fType').value=b.type||(isVR?'t-vrzone':'t-particulier');
   document.getElementById('fPay').value=b.pay||'attente';
   document.getElementById('btnCopy').style.display='';
@@ -1539,7 +1599,7 @@ function editBooking(key){
 
 function clearForm(){
   ['fTel','fNom','fMail','fComment'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('fPers').value=4;
+  document.getElementById('fPers').value=1;
   document.getElementById('fType').value='t-particulier';
   document.getElementById('fPay').value='attente';
 }
