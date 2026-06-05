@@ -962,9 +962,29 @@ function initFirebaseSync(){
     updateDemandesBadge();
     renderCalendar();
   });
+  // Écouter les verrous de créneaux (réservations en cours du staff)
+  db.ref('slot_locks').on('value', snap => {
+    const raw = snap.val() || {};
+    const now = Date.now();
+    // Nettoyer les locks expirés
+    slotLocks = {};
+    Object.entries(raw).forEach(([act, dates]) => {
+      Object.entries(dates).forEach(([date, times]) => {
+        Object.entries(times).forEach(([timeKey, lock]) => {
+          if (lock.expires > now) {
+            if (!slotLocks[act]) slotLocks[act] = {};
+            if (!slotLocks[act][date]) slotLocks[act][date] = {};
+            slotLocks[act][date][timeKey] = lock;
+          } else {
+            // Supprimer le lock expiré
+            db.ref(`slot_locks/${act}/${date}/${timeKey}`).remove().catch(() => {});
+          }
+        });
+      });
+    });
+    renderCalendar();
+  });
 }
-
-// ── AUTO-VALIDATION RÉSERVATIONS DIRECTES ─────────────────────────────────────
 async function autoValiderDemande(ref, d){
   // Vérifier qu'elle n'est pas déjà dans les bookings
   const activite = d.activite || 'laser';
@@ -1100,6 +1120,8 @@ function getOpenHours(dateStr){
 let curDate = new Date();
 let bookings = {};   // key: "YYYY-MM-DD|HH:MM|slot" => {tel,nom,mail,comment,pers,type,pay}
 let pendingSlot = null;   // {date,time,slot,isEdit,key}
+let pendingLockPath = null; // chemin Firebase du verrou actif
+let slotLocks = {};   // locks actifs: {dateKey: {HH_MM: {expires}}
 let copySourceKey = null;
 
 // ── CLIENT INDEX (tel → {nom, mail}) ─────────────────────────────────────────
@@ -1406,6 +1428,18 @@ function renderCalendar(){
       td.dataset.time=time;
       td.dataset.slot=s;
 
+      // ── Indicateur verrou staff (réservation en cours) ──
+      const lockTimeKey = time.replace(':', '_');
+      const hasLock = slotLocks[currentView]?.[dateKey]?.[lockTimeKey];
+      if (hasLock && s === 1) {
+        const lockBadge = document.createElement('div');
+        lockBadge.title = '🔒 Un agent est en train de traiter ce créneau';
+        lockBadge.style.cssText = 'position:absolute;top:2px;right:4px;font-size:0.7rem;opacity:0.8;z-index:5;pointer-events:none;';
+        lockBadge.textContent = '🔒';
+        td.style.background = 'rgba(255,200,0,0.08)';
+        td.appendChild(lockBadge);
+      }
+
       const k=slotKey(dateKey,time,s);
 
       if(bookings[k]){
@@ -1525,6 +1559,14 @@ function openNew(date,time,slot){
     }
   }
   pendingSlot={date,time,slot,isEdit:false,key:null};
+
+  // ── Verrou temporaire : signale au formulaire web qu'un agent est sur ce créneau ──
+  const lockKey = time.replace(':', '_');
+  db.ref(`slot_locks/${currentView}/${date}/${lockKey}`).set({
+    expires: Date.now() + 10 * 60 * 1000, // 10 minutes
+    staff: true
+  }).catch(() => {});
+  pendingLockPath = `slot_locks/${currentView}/${date}/${lockKey}`;
   const isVR = currentView==='vr';
   const isBT = currentView==='bt';
   document.getElementById('mTitle').textContent = isBT ? 'Nouvelle réservation Blind Test 🎵' : (isVR ? 'Nouvelle réservation VR 🥽' : 'Nouvelle réservation');
@@ -1686,6 +1728,11 @@ function acKey(e){
 function closeModal(){
   document.getElementById('bkOverlay').classList.remove('open');
   pendingSlot=null;
+  // ── Libérer le verrou si une réservation n'a pas été confirmée ──
+  if (pendingLockPath) {
+    db.ref(pendingLockPath).remove().catch(() => {});
+    pendingLockPath = null;
+  }
 }
 
 // ── CONFIRM ───────────────────────────────────────────────────────────────────
