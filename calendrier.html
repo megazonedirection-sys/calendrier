@@ -1826,10 +1826,8 @@ function confirmBooking(){
 
   // ── Synchronisation paiement sur tous les créneaux liés (même client, même jour) ──
   syncPayment(date, tel, pay);
-  // ── Synchronisation type sur toutes les réservations du même client (téléphone) ──
-  syncType(tel, type);
-  // ── Synchronisation mail sur toutes les réservations du même client (téléphone) ──
-  syncMail(tel, mail);
+  // ── Type et mail : uniquement sur la réservation en cours d'édition ──
+  // (pas de propagation globale sur toutes les réservations du même numéro)
 
   closeModal();
   // Geler la position scroll avant que Firebase déclenche renderCalendar
@@ -1868,36 +1866,13 @@ function syncPayment(date, tel, newPay){
   }
 }
 
-// ── SYNC MAIL ─────────────────────────────────────────────────────────────────
-// Propage le mail sur toutes les réservations du même client (identifié par téléphone, unique)
-function syncMail(tel, newMail){
-  if(!newMail || !tel) return;
-  const telNorm = tel.trim();
-  for(const b of Object.values(bookings)){
-    if((b.tel||'').trim() === telNorm){
-      b.mail = newMail;
-    }
-  }
-}
-
 // ── SYNC TYPE ─────────────────────────────────────────────────────────────────
-// Propage le type sur toutes les réservations du même client (identifié par téléphone, unique)
-function syncType(tel, newType){
-  if(!newType || !tel) return;
-  const telNorm = tel.trim();
-  const affected = [];
-  for(const [k, b] of Object.entries(bookings)){
-    if((b.tel||'').trim() === telNorm){
-      affected.push(`${k} (nom:${b.nom}, tel:${b.tel}, ancien type:${b.type})`);
-      b.type = newType;
-    }
-  }
-  console.log(`syncType appelé avec tel="${telNorm}", newType="${newType}"`);
-  console.log('Réservations affectées:', affected);
-  if(affected.length > 1){
-    alert(`🔍 DEBUG syncType\nTel recherché: "${telNorm}"\nNouveau type: "${newType}"\n${affected.length} réservation(s) affectée(s):\n${affected.join('\n')}`);
-  }
-}
+// Désactivé : la modification du type ne se propage plus aux autres réservations
+function syncType(tel, newType){ /* no-op */ }
+
+// ── SYNC MAIL ─────────────────────────────────────────────────────────────────
+// Désactivé : la modification du mail ne se propage plus aux autres réservations
+function syncMail(tel, newMail){ /* no-op */ }
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 function delBooking(key){
