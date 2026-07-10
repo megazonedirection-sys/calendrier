@@ -1543,7 +1543,7 @@ function adaptModalForView(){
   const isBT = currentView==='bt';
   // Joueurs max
   document.getElementById('fPers').min = isVR ? 2 : (isBT ? 4 : 1);
-  document.getElementById('fPers').max = isVR ? 4 : 24;
+  document.getElementById('fPers').max = isVR ? 4 : (isBT ? 12 : 24);
   document.getElementById('fPers').value = isVR ? 2 : (isBT ? 4 : 1);
   // Remplacer options type selon vue
   const sel = document.getElementById('fType');
@@ -1702,7 +1702,7 @@ function confirmBooking(){
   if(!tel){ document.getElementById('fTel').focus(); return; }
   if(!/^\d{10}$/.test(tel)){ alert('Le numéro de téléphone doit contenir exactement 10 chiffres.'); document.getElementById('fTel').focus(); return; }
   if(!nom){ document.getElementById('fNom').focus(); return; }
-  const maxP = currentView==='vr' ? 4 : 24;
+  const maxP = currentView==='vr' ? 4 : (currentView==='bt' ? 12 : 24);
   if(pers<1||pers>maxP){ alert(`Nombre de joueurs invalide (1-${maxP})`); return; }
 
   // ── Validation minimum par type ─────────────────────────────────────────────
