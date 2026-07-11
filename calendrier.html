@@ -688,6 +688,32 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
           <label>👥 Nombre de joueurs *</label>
           <input type="number" id="fPers" min="1" max="24" value="4" oninput="autoUpdateType()">
         </div>
+        <div class="fg" id="fAgeGroup" style="display:none;">
+          <label>🎯 Répartition par âge (optionnel)</label>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;">
+            <div>
+              <input type="number" id="fEnf79" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Enf. 7-9</div>
+            </div>
+            <div>
+              <input type="number" id="fEnf1012" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Enf. 10-12</div>
+            </div>
+            <div>
+              <input type="number" id="fAdo1315" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Ados 13-15</div>
+            </div>
+            <div>
+              <input type="number" id="fAdo1618" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Ados 16-18</div>
+            </div>
+            <div>
+              <input type="number" id="fAdultes" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Adultes</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:6px">Si renseigné, doit correspondre au nombre total de joueurs.</div>
+        </div>
         <div class="fg">
           <label>🏷️ Type de réservation</label>
           <select id="fType" onchange="onTypeChange()">
@@ -990,7 +1016,8 @@ async function autoValiderDemande(ref, d){
     comment:   d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]',
     pay:       'attente',
     confirmed: false,
-    present:   false
+    present:   false,
+    ...(d.profil ? {profil: d.profil} : {})
   };
   await db.ref(`demandes/${ref}/status`).set('processed');
   const _w = document.querySelector('.cal-wrap');
@@ -1424,6 +1451,7 @@ function renderCalendar(){
           ${b.comment ? `<div class="bk-comment">Commentaire : ${b.comment}</div>` : ''}
           <div class="bk-row3">
             <span class="bk-pers">👥 : ${b.pers}</span>
+            ${b.profil ? `<span style="font-size:11px;font-weight:700;background:rgba(0,0,0,.1);border-radius:8px;padding:2px 6px;">${PROFIL_BADGE_LABEL[b.profil]||''}</span>` : ''}
             <span class="bk-pay-label ${PAY_CLASS[b.pay]||'pay-attente'}">🧾 : ${payLabel[b.pay]||'Attente'}</span>
             <div class="bk-status">
               <button class="status-btn s-tel${b.confirmed?' on':''}" title="Confirmation téléphonique" onclick="event.stopPropagation();toggleStatus('${k}','confirmed')">📞${b.confirmed?' Confirmé':' Confirm.'}</button>
@@ -1572,6 +1600,29 @@ function adaptModalForView(){
   }
   // Ajuster le minimum de joueurs selon le type sélectionné
   updatePersMin();
+  // Répartition d'âge : uniquement pertinente en vue Laser Game
+  document.getElementById('fAgeGroup').style.display = (currentView==='laser') ? '' : 'none';
+}
+
+// Profil du groupe (informatif, cohérent avec la répartition du site web)
+function computeGroupProfile(enfants79, enfants1012, ados1315, ados1618, adultes){
+  if(enfants79 > 0)   return 'famille79';
+  if(enfants1012 > 0) return 'famille1012';
+  if(ados1315 > 0)    return 'ado1315';
+  if(ados1618 > 0)    return 'ado1618';
+  return 'intense';
+}
+
+// Recalcule le total joueurs à partir de la répartition d'âge (Laser Game)
+function onAgeBreakdownChange(){
+  const e79   = parseInt(document.getElementById('fEnf79').value)   || 0;
+  const e1012 = parseInt(document.getElementById('fEnf1012').value) || 0;
+  const ad13  = parseInt(document.getElementById('fAdo1315').value) || 0;
+  const ad16  = parseInt(document.getElementById('fAdo1618').value) || 0;
+  const adu   = parseInt(document.getElementById('fAdultes').value) || 0;
+  const total = e79 + e1012 + ad13 + ad16 + adu;
+  if(total > 0) document.getElementById('fPers').value = total;
+  updatePersMin();
 }
 
 function editBooking(key){
@@ -1592,6 +1643,11 @@ function editBooking(key){
   document.getElementById('fPers').value=b.pers||(isVR?2:1);
   document.getElementById('fType').value=b.type||(isVR?'t-vrzone':'t-particulier');
   document.getElementById('fPay').value=b.pay||'attente';
+  document.getElementById('fEnf79').value   = b.enfants79   || 0;
+  document.getElementById('fEnf1012').value = b.enfants1012 || 0;
+  document.getElementById('fAdo1315').value = b.ados1315    || 0;
+  document.getElementById('fAdo1618').value = b.ados1618    || 0;
+  document.getElementById('fAdultes').value = b.adultes     || 0;
   document.getElementById('btnCopy').style.display='';
   document.getElementById('copyInfo').textContent='Vous pouvez copier cette réservation vers un autre créneau.';
   document.getElementById('bkOverlay').classList.add('open');
@@ -1602,6 +1658,7 @@ function clearForm(){
   document.getElementById('fPers').value=1;
   document.getElementById('fType').value='t-particulier';
   document.getElementById('fPay').value='attente';
+  ['fEnf79','fEnf1012','fAdo1315','fAdo1618','fAdultes'].forEach(id=>document.getElementById(id).value='0');
 }
 
 // ── AUTO TYPE ──────────────────────────────────────────────────────────────────
@@ -1699,6 +1756,22 @@ function confirmBooking(){
   const type=document.getElementById('fType').value;
   const pay=document.getElementById('fPay').value;
 
+  // ── Répartition d'âge (Laser Game uniquement) ──
+  let ageFields = {};
+  if(currentView==='laser'){
+    const e79   = parseInt(document.getElementById('fEnf79').value)   || 0;
+    const e1012 = parseInt(document.getElementById('fEnf1012').value) || 0;
+    const ad13  = parseInt(document.getElementById('fAdo1315').value) || 0;
+    const ad16  = parseInt(document.getElementById('fAdo1618').value) || 0;
+    const adu   = parseInt(document.getElementById('fAdultes').value) || 0;
+    if(e79+e1012+ad13+ad16+adu > 0){
+      ageFields = {
+        enfants79: e79, enfants1012: e1012, ados1315: ad13, ados1618: ad16, adultes: adu,
+        profil: computeGroupProfile(e79, e1012, ad13, ad16, adu)
+      };
+    }
+  }
+
   if(!tel){ document.getElementById('fTel').focus(); return; }
   if(!/^\d{10}$/.test(tel)){ alert('Le numéro de téléphone doit contenir exactement 10 chiffres.'); document.getElementById('fTel').focus(); return; }
   if(!nom){ document.getElementById('fNom').focus(); return; }
@@ -1784,7 +1857,8 @@ function confirmBooking(){
       confirmed: existing.confirmed || false,
       present:   existing.present   || false,
       ...(existing.evcPart2 ? {evcPart2: true} : {}),
-      ...(existing.vrBlock  ? {vrBlock: true, vrCol: existing.vrCol, vrStep: existing.vrStep} : {})
+      ...(existing.vrBlock  ? {vrBlock: true, vrCol: existing.vrCol, vrStep: existing.vrStep} : {}),
+      ...ageFields
     };
 
     // ── EVC : doublon automatique (Partie 2) avec 20 min de pause ──────────────
@@ -2055,6 +2129,7 @@ function openClientsPanel(){
 
 // ── DEMANDES EN LIGNE ─────────────────────────────────────────────────────────
 const ACTIVITE_LABEL = {laser:'🎯 Laser Game', vr:'🥽 Réalité Virtuelle', bt:'🎵 Blind Test'};
+const PROFIL_BADGE_LABEL = {famille79:'👶 Enf. 7-9', famille1012:'🧒 Enf. 10-12', ado1315:'🎫 Ados 13-15', ado1618:'🎫 Ados 16-18', intense:'💪 Adultes'};
 const TYPE_LABEL_D = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
   't-anniv3':'Anniversaire 3 parties','t-evc':'EVC','t-club':'Club & Asso',
@@ -2107,7 +2182,9 @@ function demandeCard(ref, d){
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.type]||d.type}</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">👥 ${d.pers} joueurs</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${d.time}</span>
+          ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
         </div>
+        ${d.autoReason==='enfants_sans_adulte'?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">👶 Enfants présents sans adulte dans le groupe — validation manuelle requise.</div>`:''}
         ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${d.comment}</div>`:''}
         <div style="margin-top:6px;font-size:11px;color:#94a3b8">Ref: ${ref} · Reçue ${ago}</div>
       </div>
@@ -2151,7 +2228,8 @@ async function accepterDemande(ref){
     nom: d.nom, tel: d.tel, mail: d.mail||'',
     pers: d.pers, type: d.type,
     comment: d.comment ? `[En ligne] ${d.comment}` : '[Réservation en ligne]',
-    pay: 'attente', confirmed: false, present: false
+    pay: 'attente', confirmed: false, present: false,
+    ...(d.profil ? {profil: d.profil} : {})
   };
   // Marquer comme acceptée
   await db.ref(`demandes/${ref}/status`).set('accepted');
