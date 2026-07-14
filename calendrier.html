@@ -2149,6 +2149,15 @@ function openClientsPanel(){
 // ── DEMANDES EN LIGNE ─────────────────────────────────────────────────────────
 const ACTIVITE_LABEL = {laser:'🎯 Laser Game', vr:'🥽 Réalité Virtuelle', bt:'🎵 Blind Test'};
 const PROFIL_BADGE_LABEL = {famille79:'👶 Enf. 7-9', famille1012:'🧒 Enf. 10-12', ado1315:'🎫 Ados 13-15', ado1618:'🎫 Ados 16-18', intense:'💪 Adultes'};
+const AUTO_REASON_LABEL = {
+  activite_manuelle:     '📋 Type de prestation nécessitant toujours une validation manuelle (anniversaire, EVG/EVJF…).',
+  enfants_sans_adulte:   '👶 Enfants présents sans adulte dans le groupe — validation manuelle requise.',
+  trop_proche:           '⏰ Demande reçue à moins de 40 min du créneau — validation manuelle requise.',
+  staff_prioritaire:     '👤 Un verrou staff était actif sur ce créneau au moment de la demande.',
+  capacite_insuffisante: '🎯 Le créneau était presque complet au moment de la demande — vérifier la capacité restante.',
+  creneau_complet:       '🎵 Ce créneau Blind Test était déjà occupé au moment de la demande.',
+  erreur_verification:   '🔄 Erreur technique lors de la vérification automatique — à valider manuellement.',
+};
 const TYPE_LABEL_D = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
   't-anniv3':'Anniversaire 3 parties','t-evc':'EVC','t-club':'Club & Asso',
@@ -2203,7 +2212,7 @@ function demandeCard(ref, d){
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${d.time}</span>
           ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
         </div>
-        ${d.autoReason==='enfants_sans_adulte'?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">👶 Enfants présents sans adulte dans le groupe — validation manuelle requise.</div>`:''}
+        ${d.autoReason && AUTO_REASON_LABEL[d.autoReason]?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">${AUTO_REASON_LABEL[d.autoReason]}</div>`:''}
         ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${d.comment}</div>`:''}
         <div style="margin-top:6px;font-size:11px;color:#94a3b8">Ref: ${ref} · Reçue ${ago}</div>
       </div>
