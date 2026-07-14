@@ -865,7 +865,9 @@ function doLogout(){
 
 // ── AUTH STATE ────────────────────────────────────────────────────────────────
 auth.onAuthStateChanged(user => {
-  if(user){
+  // Une session anonyme (ex. héritée de la page de réservation, sur le même
+  // domaine) ne doit jamais être considérée comme une connexion staff valide.
+  if(user && !user.isAnonymous){
     document.getElementById('loginOverlay').classList.add('hidden');
     migrateSlots().then(() => initFirebaseSync());
   } else {
