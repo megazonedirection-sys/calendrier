@@ -1644,6 +1644,19 @@ function onAgeBreakdownChange(){
   updatePersMin();
 }
 
+// Évite de dupliquer la répartition d'âge à chaque ré-édition : si le
+// commentaire est un commentaire structuré ("[Staff] ..." ou "[En ligne] ..."),
+// on ne réaffiche dans le champ libre que la note éventuelle, pas tout le bloc.
+function extractEditableNote(raw){
+  if(!raw) return '';
+  const stripped = raw.replace(/^\[(Staff|En ligne)\]\s*/, '');
+  if(stripped !== raw){
+    const noteMatch = stripped.match(/Note:\s*(.*)$/);
+    return noteMatch ? noteMatch[1].trim() : '';
+  }
+  return raw;
+}
+
 function editBooking(key){
   const b=bookings[key];
   if(!b) return;
@@ -1658,7 +1671,7 @@ function editBooking(key){
   document.getElementById('fTel').value=b.tel||'';
   document.getElementById('fNom').value=b.nom||'';
   document.getElementById('fMail').value=b.mail||'';
-  document.getElementById('fComment').value=b.comment||'';
+  document.getElementById('fComment').value=extractEditableNote(b.comment);
   document.getElementById('fPers').value=b.pers||(isVR?2:1);
   document.getElementById('fType').value=b.type||(isVR?'t-vrzone':'t-particulier');
   document.getElementById('fPay').value=b.pay||'attente';
@@ -1870,8 +1883,23 @@ function confirmBooking(){
     // Comportement standard (laser, BT, édition VR)
     const k = isEdit && key ? key : slotKey(date,time,slot);
     const existing = bookings[k] || {};
+
+    // Si une répartition d'âge a été saisie, on la préfixe au commentaire
+    // avec le même format que les réservations en ligne (mais "[Staff]").
+    let finalComment = comment;
+    if (Object.keys(ageFields).length) {
+      const bp = [];
+      if (ageFields.enfants79)   bp.push(`Enf. 7-9: ${ageFields.enfants79}`);
+      if (ageFields.enfants1012) bp.push(`Enf. 10-12: ${ageFields.enfants1012}`);
+      if (ageFields.ados1315)    bp.push(`Ados 13-15: ${ageFields.ados1315}`);
+      if (ageFields.ados1618)    bp.push(`Ados 16-18: ${ageFields.ados1618}`);
+      if (ageFields.adultes)     bp.push(`Adultes: ${ageFields.adultes}`);
+      if (comment) bp.push(`Note: ${comment}`);
+      finalComment = bp.length ? `[Staff] ${bp.join(' | ')}` : comment;
+    }
+
     bookings[k]={
-      tel, nom, mail, comment, pers, type, pay,
+      tel, nom, mail, comment: finalComment, pers, type, pay,
       // Préserver les statuts opérationnels lors d'une modification
       confirmed: existing.confirmed || false,
       present:   existing.present   || false,
