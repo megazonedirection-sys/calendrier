@@ -960,6 +960,8 @@ async function migrateSlots(){
 
   if(migrated > 0){
     await db.ref('bookings').update(updates);
+    const freshSnap = await db.ref('bookings').once('value');
+    await db.ref('dispo').set(computeDispoFromBookings(freshSnap.val() || {}));
     console.log(`Migration : ${migrated} réservation(s) migrée(s)`);
   }
 }
@@ -1033,11 +1035,26 @@ function updateDemandesBadge(){
   badge.style.display = pending > 0 ? 'inline-flex' : 'none';
 }
 
+// Calcule l'agrégat public de disponibilité (sans aucune donnée personnelle)
+// à partir de l'arbre complet des réservations. Clé = "activite|date|heure",
+// valeur = nombre total de joueurs déjà positionnés sur ce créneau.
+function computeDispoFromBookings(bk){
+  const dispo = {};
+  Object.entries(bk || {}).forEach(([key, b]) => {
+    const parts = key.split('|');
+    if(parts.length < 3) return;
+    const dispoKey = `${parts[0]}|${parts[1]}|${parts[2]}`;
+    dispo[dispoKey] = (dispo[dispoKey] || 0) + (b.pers || 1);
+  });
+  return dispo;
+}
+
 function saveBookings(){
   setSyncDot('syncing');
   db.ref('bookings').set(bookings)
     .then(()=>setSyncDot('ok'))
     .catch(()=>setSyncDot('error'));
+  db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
 }
 
 // ── CONFIG ──────────────────────────────────────────────────────────────────
