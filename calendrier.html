@@ -1467,7 +1467,7 @@ function renderCalendar(){
             <span class="bk-name">Client : ${b.nom||'—'}</span>
             <span class="bk-tel">${b.tel||''}</span>
           </div>
-          ${b.comment ? `<div class="bk-comment">Commentaire : ${b.comment}</div>` : ''}
+          ${b.comment ? `<div class="bk-comment">Commentaire : ${boldBreakdownNumbers(b.comment)}</div>` : ''}
           <div class="bk-row3">
             <span class="bk-pers">👥 : ${b.pers}</span>
             ${b.profil ? `<span style="font-size:11px;font-weight:700;background:rgba(0,0,0,.1);border-radius:8px;padding:2px 6px;">${PROFIL_BADGE_LABEL[b.profil]||''}</span>` : ''}
@@ -2149,6 +2149,12 @@ function openClientsPanel(){
 // ── DEMANDES EN LIGNE ─────────────────────────────────────────────────────────
 const ACTIVITE_LABEL = {laser:'🎯 Laser Game', vr:'🥽 Réalité Virtuelle', bt:'🎵 Blind Test'};
 const PROFIL_BADGE_LABEL = {famille79:'👶 Enf. 7-9', famille1012:'🧒 Enf. 10-12', ado1315:'🎫 Ados 13-15', ado1618:'🎫 Ados 16-18', intense:'💪 Adultes'};
+// Met en gras les chiffres de répartition par âge dans un commentaire
+// (ex. "Enf. 10-12: 1 | Ados 13-15: 1" → le "1" et le second "1" en gras)
+function boldBreakdownNumbers(str){
+  return (str||'').replace(/:\s*(\d+)/g, ': <strong>$1</strong>');
+}
+
 const AUTO_REASON_LABEL = {
   activite_manuelle:     '📋 Type de prestation nécessitant toujours une validation manuelle (anniversaire, EVG/EVJF…).',
   enfants_sans_adulte:   '👶 Enfants présents sans adulte dans le groupe — validation manuelle requise.',
@@ -2213,7 +2219,7 @@ function demandeCard(ref, d){
           ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
         </div>
         ${d.autoReason && AUTO_REASON_LABEL[d.autoReason]?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">${AUTO_REASON_LABEL[d.autoReason]}</div>`:''}
-        ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${d.comment}</div>`:''}
+        ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${boldBreakdownNumbers(d.comment)}</div>`:''}
         <div style="margin-top:6px;font-size:11px;color:#94a3b8">Ref: ${ref} · Reçue ${ago}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
