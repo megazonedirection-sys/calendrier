@@ -983,12 +983,21 @@ function initFirebaseSync(){
   // Écouter les demandes en ligne
   db.ref('demandes').on('value', snap => {
     demandes = snap.val() || {};
-    // Auto-valider les demandes directes non encore traitées
-    Object.entries(demandes).forEach(([ref, d]) => {
-      if(d.direct && d.status === 'auto-confirmed'){
-        autoValiderDemande(ref, d);
+    // Auto-valider les demandes directes non encore traitées.
+    // Les demandes issues d'une même réservation multi-session (même groupId)
+    // sont traitées ensemble pour n'envoyer qu'un seul email au client.
+    const aTraiter = Object.entries(demandes).filter(([ref, d]) => d.direct && d.status === 'auto-confirmed');
+    const groupes = {};
+    const seules = [];
+    aTraiter.forEach(([ref, d]) => {
+      if(d.groupId){
+        (groupes[d.groupId] = groupes[d.groupId] || []).push({ref, d});
+      } else {
+        seules.push({ref, d});
       }
     });
+    seules.forEach(({ref, d}) => autoValiderDemande(ref, d));
+    Object.entries(groupes).forEach(([groupId, membres]) => autoValiderGroupe(groupId, membres));
     updateDemandesBadge();
     renderCalendar();
   });
@@ -999,11 +1008,48 @@ function initFirebaseSync(){
 // ou automatique). notify=true affiche des alertes staff (cas manuel),
 // notify=false journalise silencieusement en console (cas auto-validation,
 // pour ne pas interrompre un agent qui n'a rien demandé activement).
+// Durée standard d'une session par activité (en minutes), utilisée pour
+// calculer l'heure de fin affichée dans les emails clients.
+const SESSION_DURATION_MIN = {
+  'Laser Game': 20,
+  'VR Zone (action, arcade, zombies…)': 20,
+  'Escape Game VR': 60,
+  'Blind Test Musical': 30,
+};
+
+// Ajoute (ou retranche) des minutes à une heure "HH:MM" (gère le passage de minuit)
+function addMinutesToTime(timeStr, minutes){
+  const [h, m] = (timeStr || '0:0').split(':').map(Number);
+  let total = (h || 0) * 60 + (m || 0) + minutes;
+  total = ((total % 1440) + 1440) % 1440;
+  const hh = Math.floor(total / 60), mm = total % 60;
+  return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+}
+
+// Construit le corps du message client à partir des infos de la réservation
+// (utilisé aussi bien pour une session unique que pour un groupe multi-session).
+function buildClientMessage(dateF, heureDebut, heureFin, pers, totalSessions){
+  return (
+    `Bonjour,\n\n` +
+    `Voici un récapitulatif de votre réservation du ${dateF} pour votre sortie au Game Zone.\n` +
+    `Afin de procéder à votre installation et briefing dans les meilleures conditions, merci de vous présenter à ${heureDebut}\n` +
+    `Prévoyez une fin d'activité à ${heureFin}\n` +
+    `Vous avez réservé pour un maximum de ${pers} joueurs, et pour un total de ${totalSessions} parties.\n` +
+    `Nous attirons votre attention sur le fait qu'au-delà de ce nombre, nous ne pourrons vous garantir des places disponibles pour les participants supplémentaires.\n` +
+    `Nous vous rappelons qu'aucune boisson ou nourriture ne sont acceptées dans l'enceinte du centre.\n` +
+    `Ainsi que l'âge minimum est de 7 ans (pour la compréhension du jeu) et la taille minimale de 1.20 m (pour utiliser pleinement le matériel). Le staff Game Zone se réserve le droit de refuser l'accès à l'activité si ces conditions ne sont pas réunies.\n` +
+    `Cordialement,\n` +
+    `Le staff`
+  );
+}
+
 async function sendClientConfirmationEmail(d, ref, notify){
   if(!d.mail) return;
   const [y,mo,da] = (d.date||'').split('-');
   const dateF = da ? `${da}/${mo}/${y}` : d.date;
-  const activiteLabel = ACTIVITE_LABEL[d.activite] || d.activite;
+  const duration = SESSION_DURATION_MIN[d.activiteLabel] || 20;
+  const heureDebut = addMinutesToTime(d.time, -15);
+  const heureFin   = addMinutesToTime(d.time, duration);
   try {
     const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
@@ -1015,29 +1061,7 @@ async function sendClientConfirmationEmail(d, ref, notify){
         template_params: {
           to_email: d.mail,
           ref:      ref,
-          message:
-            `Bonjour ${d.nom} 👋\n\n` +
-            `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
-            `═══════════════════════════════════\n` +
-            `   RÉCAPITULATIF DE VOTRE SÉANCE\n` +
-            `═══════════════════════════════════\n\n` +
-            `📋 Référence    : ${ref}\n` +
-            `🎮 Activité     : ${activiteLabel}\n` +
-            `📅 Date         : ${dateF}\n` +
-            `🕐 Heure        : ${d.time}\n` +
-            `👥 Joueurs      : ${d.pers} personne(s)\n\n` +
-            `───────────────────────────────────\n` +
-            `📌 INFOS PRATIQUES\n` +
-            `───────────────────────────────────\n` +
-            `• Merci d'arriver 15 minutes avant votre créneau\n` +
-            `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
-            `• Le règlement s'effectue sur place (CB, espèces)\n` +
-            `• Prévoir des vêtements confortables pour le Laser Game\n\n` +
-            `───────────────────────────────────\n` +
-            `📍 Game Zone Montauban\n` +
-            `📞 05.63.03.79.32\n\n` +
-            `À très bientôt ! 🎯\n` +
-            `L'équipe Game Zone Montauban`
+          message:  buildClientMessage(dateF, heureDebut, heureFin, d.pers, 1)
         }
       })
     });
@@ -1057,8 +1081,10 @@ async function sendClientConfirmationEmail(d, ref, notify){
   }
 }
 
-async function autoValiderDemande(ref, d){
-  // Vérifier qu'elle n'est pas déjà dans les bookings
+// Crée la réservation dans bookings à partir d'une demande auto-confirmée.
+// Retourne true si la réservation a pu être créée, false si le créneau est
+// complet (bascule alors la demande en validation manuelle).
+async function createBookingFromDemande(ref, d){
   const activite = d.activite || 'laser';
   const date     = d.date || '';
   const time     = d.time || '';
@@ -1070,7 +1096,7 @@ async function autoValiderDemande(ref, d){
     // Créneau complet — passer en validation manuelle
     await db.ref(`demandes/${ref}/status`).set('pending');
     await db.ref(`demandes/${ref}/direct`).set(false);
-    return;
+    return false;
   }
   // Créer la réservation
   bookings[`${activite}|${date}|${time}|${slot}`] = {
@@ -1086,10 +1112,69 @@ async function autoValiderDemande(ref, d){
     ...(d.profil ? {profil: d.profil} : {})
   };
   await db.ref(`demandes/${ref}/status`).set('processed');
+  return true;
+}
+
+async function autoValiderDemande(ref, d){
+  const ok = await createBookingFromDemande(ref, d);
+  if(!ok) return;
   await sendClientConfirmationEmail(d, ref, false);
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
   saveBookings();
+}
+
+// Traite un groupe de demandes issues d'une même réservation multi-session :
+// crée toutes les réservations, puis envoie UN SEUL email de confirmation
+// client reprenant la totalité des sessions (au lieu d'un email par session).
+async function autoValiderGroupe(groupId, membres){
+  const confirmees = [];
+  for(const {ref, d} of membres){
+    const ok = await createBookingFromDemande(ref, d);
+    if(ok) confirmees.push({ref, d});
+  }
+  if(confirmees.length){
+    await sendGroupConfirmationEmail(confirmees);
+    const _w = document.querySelector('.cal-wrap');
+    if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
+    saveBookings();
+  }
+}
+
+// Email de confirmation unique pour une réservation multi-session (Laser Game).
+async function sendGroupConfirmationEmail(membres){
+  const first = membres[0].d;
+  if(!first.mail) return;
+  const [y,mo,da] = (first.date||'').split('-');
+  const dateF = da ? `${da}/${mo}/${y}` : first.date;
+
+  const tries = membres.slice().sort((a,b) => (a.d.time||'').localeCompare(b.d.time||''));
+  const premiere = tries[0].d;
+  const derniere = tries[tries.length - 1].d;
+  const dureeDerniere = SESSION_DURATION_MIN[derniere.activiteLabel] || 20;
+  const heureDebut = addMinutesToTime(premiere.time, -15);
+  const heureFin   = addMinutesToTime(derniere.time, dureeDerniere);
+
+  try {
+    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  EJS_SERVICE,
+        template_id: EJS_TPL_CLIENT,
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: {
+          to_email: first.mail,
+          ref:      membres.map(m => m.ref).join(','),
+          message:  buildClientMessage(dateF, heureDebut, heureFin, first.pers, membres.length)
+        }
+      })
+    });
+    if(r.ok) console.log('✅ Email de confirmation groupé (auto-validation) envoyé à', first.mail);
+    else console.warn('⚠️ Erreur envoi email groupé :', await r.text());
+  } catch(e) {
+    console.warn('⚠️ Erreur réseau — email groupé non envoyé à', first.mail, e);
+  }
 }
 
 function updateDemandesBadge(){
