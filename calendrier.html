@@ -691,11 +691,11 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
         <div class="fg" id="fAgeGroup" style="display:none;">
           <label>🎯 Répartition par âge (optionnel)</label>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;">
-            <div>
+            <div id="fEnf79Wrap">
               <input type="number" id="fEnf79" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
               <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Enf. 7-9</div>
             </div>
-            <div>
+            <div id="fEnf1012Wrap">
               <input type="number" id="fEnf1012" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
               <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Enf. 10-12</div>
             </div>
@@ -1840,6 +1840,29 @@ function adaptModalForView(){
   updatePersMin();
   // Répartition d'âge : uniquement pertinente en vue Laser Game
   document.getElementById('fAgeGroup').style.display = (currentView==='laser') ? '' : 'none';
+  updateAgeGroupVisibility();
+}
+
+// Affiche le bloc "répartition par âge" pour Laser Game, Blind Test, VR Zone
+// et Escape Game VR — en retirant les tranches sous l'âge minimum de chaque
+// activité : VR Zone dès 10 ans, Blind Test et Escape Game VR dès 12 ans.
+function updateAgeGroupVisibility(){
+  const type = document.getElementById('fType') ? document.getElementById('fType').value : '';
+  const isEscape = (currentView === 'vr' && type === 't-escapevr');
+  const show = (currentView === 'laser' || currentView === 'bt' || currentView === 'vr');
+  document.getElementById('fAgeGroup').style.display = show ? '' : 'none';
+  if(!show) return;
+
+  // Laser Game : toutes les tranches (7 ans et +)
+  // VR Zone    : à partir de 10 ans → masque "Enf. 7-9"
+  // Blind Test / Escape Game VR : à partir de 12 ans → masque "Enf. 7-9" et "Enf. 10-12"
+  const hideEnf79   = (currentView === 'bt') || (currentView === 'vr');
+  const hideEnf1012 = (currentView === 'bt') || isEscape;
+
+  document.getElementById('fEnf79Wrap').style.display   = hideEnf79   ? 'none' : '';
+  document.getElementById('fEnf1012Wrap').style.display = hideEnf1012 ? 'none' : '';
+  if(hideEnf79)   document.getElementById('fEnf79').value = '0';
+  if(hideEnf1012) document.getElementById('fEnf1012').value = '0';
 }
 
 // Profil du groupe (informatif, cohérent avec la répartition du site web)
@@ -1899,6 +1922,7 @@ function editBooking(key){
   document.getElementById('fAdo1315').value = b.ados1315    || 0;
   document.getElementById('fAdo1618').value = b.ados1618    || 0;
   document.getElementById('fAdultes').value = b.adultes     || 0;
+  updateAgeGroupVisibility(); // recalcule après avoir défini le vrai type (VR Zone vs Escape)
   document.getElementById('btnCopy').style.display='';
   document.getElementById('copyInfo').textContent='Vous pouvez copier cette réservation vers un autre créneau.';
   document.getElementById('bkOverlay').classList.add('open');
@@ -1933,6 +1957,7 @@ function updatePersMin(){
 function onTypeChange(){
   autoUpdateType();
   updatePersMin();
+  updateAgeGroupVisibility();
 }
 
 // ── AUTOCOMPLETE ─────────────────────────────────────────────────────────────
@@ -2007,9 +2032,9 @@ function confirmBooking(){
   const type=document.getElementById('fType').value;
   const pay=document.getElementById('fPay').value;
 
-  // ── Répartition d'âge (Laser Game uniquement) ──
+  // ── Répartition d'âge (Laser Game, Blind Test, VR Zone, Escape Game VR) ──
   let ageFields = {};
-  if(currentView==='laser'){
+  if(currentView==='laser' || currentView==='bt' || currentView==='vr'){
     const e79   = parseInt(document.getElementById('fEnf79').value)   || 0;
     const e1012 = parseInt(document.getElementById('fEnf1012').value) || 0;
     const ad13  = parseInt(document.getElementById('fAdo1315').value) || 0;
