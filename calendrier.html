@@ -1043,13 +1043,45 @@ function buildClientMessage(dateF, heureDebut, heureFin, pers, totalSessions){
   );
 }
 
+// Ancien texte de confirmation, conservé pour les activités autres que
+// Laser Game en attendant une formulation dédiée pour chacune.
+function buildLegacyClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin, pers){
+  return (
+    `Bonjour ${nom} 👋\n\n` +
+    `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
+    `═══════════════════════════════════\n` +
+    `   RÉCAPITULATIF DE VOTRE SÉANCE\n` +
+    `═══════════════════════════════════\n\n` +
+    `📋 Référence    : ${ref}\n` +
+    `🎮 Activité     : ${activiteLabel}\n` +
+    `📅 Date         : ${dateF}\n` +
+    `🕐 De ${heureDebut} à ${heureFin} (briefing 15 min inclus)\n` +
+    `👥 Joueurs      : ${pers} personne(s)\n\n` +
+    `───────────────────────────────────\n` +
+    `📌 INFOS PRATIQUES\n` +
+    `───────────────────────────────────\n` +
+    `• Merci d'arriver à l'heure de début indiquée ci-dessus (briefing inclus)\n` +
+    `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
+    `• Le règlement s'effectue sur place (CB, espèces)\n\n` +
+    `───────────────────────────────────\n` +
+    `📍 Game Zone Montauban\n` +
+    `📞 05.63.03.79.32\n\n` +
+    `À très bientôt ! 🎯\n` +
+    `L'équipe Game Zone Montauban`
+  );
+}
+
 async function sendClientConfirmationEmail(d, ref, notify){
   if(!d.mail) return;
   const [y,mo,da] = (d.date||'').split('-');
   const dateF = da ? `${da}/${mo}/${y}` : d.date;
+  const activiteLabel = ACTIVITE_LABEL[d.activite] || d.activite;
   const duration = SESSION_DURATION_MIN[d.activiteLabel] || 20;
   const heureDebut = addMinutesToTime(d.time, -15);
   const heureFin   = addMinutesToTime(d.time, duration);
+  const message = (d.activiteLabel === 'Laser Game')
+    ? buildClientMessage(dateF, heureDebut, heureFin, d.pers, 1)
+    : buildLegacyClientMessage(d.nom, ref, activiteLabel, dateF, heureDebut, heureFin, d.pers);
   try {
     const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
@@ -1061,7 +1093,7 @@ async function sendClientConfirmationEmail(d, ref, notify){
         template_params: {
           to_email: d.mail,
           ref:      ref,
-          message:  buildClientMessage(dateF, heureDebut, heureFin, d.pers, 1)
+          message:  message
         }
       })
     });
@@ -1088,29 +1120,38 @@ async function createBookingFromDemande(ref, d){
   const activite = d.activite || 'laser';
   const date     = d.date || '';
   const time     = d.time || '';
-  // Trouver un slot libre
+  const span     = d.slotSpan || 1; // Escape Game VR = 3 créneaux d'affilée pour 1 séance
   const MAX = activite==='laser' ? 8 : (activite==='vr' ? 4 : 1);
+
+  // Tous les créneaux occupés par cette réservation
+  const times = [time];
+  for(let i = 1; i < span; i++) times.push(addMinutesToTime(time, i * 20));
+
+  // Trouver un numéro de slot libre simultanément sur TOUS les créneaux occupés
+  // (évite tout surbook : un slot n'est valide que s'il est libre partout)
   let slot = 1;
-  while(slot <= MAX && bookings[`${activite}|${date}|${time}|${slot}`]) slot++;
+  while(slot <= MAX && times.some(t => bookings[`${activite}|${date}|${t}|${slot}`])) slot++;
   if(slot > MAX){
     // Créneau complet — passer en validation manuelle
     await db.ref(`demandes/${ref}/status`).set('pending');
     await db.ref(`demandes/${ref}/direct`).set(false);
     return false;
   }
-  // Créer la réservation
-  bookings[`${activite}|${date}|${time}|${slot}`] = {
-    nom:       d.nom||'',
-    tel:       d.tel||'',
-    mail:      d.mail||'',
-    pers:      d.pers||1,
-    type:      d.type||'t-particulier',
-    comment:   d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]',
-    pay:       'attente',
-    confirmed: false,
-    present:   false,
-    ...(d.profil ? {profil: d.profil} : {})
-  };
+  // Créer la (ou les) réservation(s)
+  times.forEach((t, i) => {
+    bookings[`${activite}|${date}|${t}|${slot}`] = {
+      nom:       d.nom||'',
+      tel:       d.tel||'',
+      mail:      d.mail||'',
+      pers:      d.pers||1,
+      type:      d.type||'t-particulier',
+      comment:   (d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]') + (span > 1 ? ` [Partie ${i+1}/${span}]` : ''),
+      pay:       'attente',
+      confirmed: false,
+      present:   false,
+      ...(d.profil ? {profil: d.profil} : {})
+    };
+  });
   await db.ref(`demandes/${ref}/status`).set('processed');
   return true;
 }
@@ -1141,7 +1182,8 @@ async function autoValiderGroupe(groupId, membres){
   }
 }
 
-// Email de confirmation unique pour une réservation multi-session (Laser Game).
+// Email de confirmation unique pour une réservation multi-session
+// (Laser Game, VR Zone ou Blind Test Musical).
 async function sendGroupConfirmationEmail(membres){
   const first = membres[0].d;
   if(!first.mail) return;
@@ -1155,6 +1197,35 @@ async function sendGroupConfirmationEmail(membres){
   const heureDebut = addMinutesToTime(premiere.time, -15);
   const heureFin   = addMinutesToTime(derniere.time, dureeDerniere);
 
+  let message;
+  if (first.activiteLabel === 'Laser Game') {
+    message = buildClientMessage(dateF, heureDebut, heureFin, first.pers, membres.length);
+  } else {
+    const activiteLabel = ACTIVITE_LABEL[first.activite] || first.activite;
+    const sessionsTxt = tries.map((m, i) => `   Session ${i+1} : ${m.d.time}`).join('\n');
+    message =
+      `Bonjour ${first.nom} 👋\n\n` +
+      `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
+      `═══════════════════════════════════\n` +
+      `   RÉCAPITULATIF DE VOTRE SÉANCE (${membres.length} sessions)\n` +
+      `═══════════════════════════════════\n\n` +
+      `🎮 Activité     : ${activiteLabel}\n` +
+      `📅 Date         : ${dateF}\n` +
+      `👥 Joueurs      : ${first.pers} personne(s)\n\n` +
+      `🕐 Vos créneaux :\n${sessionsTxt}\n\n` +
+      `───────────────────────────────────\n` +
+      `📌 INFOS PRATIQUES\n` +
+      `───────────────────────────────────\n` +
+      `• Merci d'arriver 15 minutes avant votre première session\n` +
+      `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
+      `• Le règlement s'effectue sur place (CB, espèces)\n\n` +
+      `───────────────────────────────────\n` +
+      `📍 Game Zone Montauban\n` +
+      `📞 05.63.03.79.32\n\n` +
+      `À très bientôt ! 🎯\n` +
+      `L'équipe Game Zone Montauban`;
+  }
+
   try {
     const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
@@ -1166,7 +1237,7 @@ async function sendGroupConfirmationEmail(membres){
         template_params: {
           to_email: first.mail,
           ref:      membres.map(m => m.ref).join(','),
-          message:  buildClientMessage(dateF, heureDebut, heureFin, first.pers, membres.length)
+          message:  message
         }
       })
     });
@@ -1978,6 +2049,30 @@ function confirmBooking(){
     const remaining=MAX_VESTS-usedNow;
     if(pers>remaining){
       showAlert('Capacité maximale atteinte',`Il ne reste que ${remaining} gilet(s) disponible(s) sur ce créneau (max ${MAX_VESTS}). Impossible d'ajouter ${pers} joueurs.`);
+      return;
+    }
+  }
+
+  // Blind Test : une seule réservation autorisée par créneau (aucun surbook, même côté staff)
+  if(currentView==='bt'){
+    const prefixBt = `bt|${date}|${time}|`;
+    const autreBt = Object.keys(bookings).find(k => k.startsWith(prefixBt) && k !== key);
+    if(autreBt){
+      showAlert('Créneau Blind Test déjà occupé', 'Une seule réservation est autorisée par créneau Blind Test. Ce créneau est déjà pris par une autre réservation.');
+      return;
+    }
+  }
+
+  // VR Zone / Escape : vérifier la capacité restante lors d'une MODIFICATION
+  // (la création passe déjà par la vérification détaillée par casque ci-dessous)
+  if(currentView==='vr' && isEdit){
+    let autresPers = 0;
+    const prefixVr = `vr|${date}|${time}|`;
+    Object.entries(bookings).forEach(([k,b]) => {
+      if(k.startsWith(prefixVr) && k !== key) autresPers += (parseInt(b.pers)||0);
+    });
+    if(autresPers + pers > VR_COLS){
+      showAlert('Capacité VR dépassée', `Il ne reste que ${VR_COLS - autresPers} casque(s) disponible(s) sur ce créneau (max ${VR_COLS}).`);
       return;
     }
   }
