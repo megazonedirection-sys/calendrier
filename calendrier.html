@@ -686,7 +686,8 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
         <div class="col-title">Détails réservation</div>
         <div class="fg">
           <label>👥 Nombre de joueurs *</label>
-          <input type="number" id="fPers" min="1" max="24" value="4" oninput="autoUpdateType()">
+          <input type="number" id="fPers" min="1" max="24" value="4" readonly oninput="autoUpdateType()">
+          <div style="font-size:11px;color:#94a3b8;margin-top:4px" id="fPers-hint">Champ indicatif — modifiez la répartition par âge ci-dessous pour changer le nombre.</div>
         </div>
         <div class="fg" id="fAgeGroup" style="display:none;">
           <label>🎯 Répartition par âge (optionnel)</label>
@@ -1121,14 +1122,59 @@ async function createBookingFromDemande(ref, d){
   const date     = d.date || '';
   const time     = d.time || '';
   const span     = d.slotSpan || 1; // Escape Game VR = 3 créneaux d'affilée pour 1 séance
-  const MAX = activite==='laser' ? 8 : (activite==='vr' ? 4 : 1);
+  const pers     = d.pers || 1;
 
   // Tous les créneaux occupés par cette réservation
   const times = [time];
   for(let i = 1; i < span; i++) times.push(addMinutesToTime(time, i * 20));
 
-  // Trouver un numéro de slot libre simultanément sur TOUS les créneaux occupés
-  // (évite tout surbook : un slot n'est valide que s'il est libre partout)
+  // ── VR Zone / Escape Game VR : occuper autant de casques (colonnes) que de
+  // joueurs, simultanément sur tous les créneaux du span (ex: Escape = 3 créneaux) ──
+  if(activite === 'vr'){
+    const nbCols = Math.max(1, Math.min(pers, VR_COLS));
+    let startCol = -1;
+    for(let c = 1; c + nbCols - 1 <= VR_COLS; c++){
+      let libre = true;
+      outer:
+      for(let cc = c; cc < c + nbCols; cc++){
+        for(const t of times){
+          if(bookings[`vr|${date}|${t}|${cc}`]){ libre = false; break outer; }
+        }
+      }
+      if(libre){ startCol = c; break; }
+    }
+    if(startCol === -1){
+      // Pas assez de casques libres simultanément — passer en validation manuelle
+      await db.ref(`demandes/${ref}/status`).set('pending');
+      await db.ref(`demandes/${ref}/direct`).set(false);
+      return false;
+    }
+    for(let col = startCol; col < startCol + nbCols; col++){
+      times.forEach((t, i) => {
+        const parts = [];
+        if(nbCols > 1) parts.push(`Casque ${col - startCol + 1}/${nbCols}`);
+        if(span > 1) parts.push(`Partie ${i + 1}/${span}`);
+        const suffix = parts.length ? ` [${parts.join(', ')}]` : '';
+        bookings[`vr|${date}|${t}|${col}`] = {
+          nom:       d.nom||'',
+          tel:       d.tel||'',
+          mail:      d.mail||'',
+          pers:      d.pers||1,
+          type:      d.type||'t-particulier',
+          comment:   (d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]') + suffix,
+          pay:       'attente',
+          confirmed: false,
+          present:   false,
+          ...(d.profil ? {profil: d.profil} : {})
+        };
+      });
+    }
+    await db.ref(`demandes/${ref}/status`).set('processed');
+    return true;
+  }
+
+  // ── Laser / Blind Test : logique existante (1 seul numéro de slot par créneau) ──
+  const MAX = activite==='laser' ? 8 : 1;
   let slot = 1;
   while(slot <= MAX && times.some(t => bookings[`${activite}|${date}|${t}|${slot}`])) slot++;
   if(slot > MAX){
@@ -1882,7 +1928,7 @@ function onAgeBreakdownChange(){
   const ad16  = parseInt(document.getElementById('fAdo1618').value) || 0;
   const adu   = parseInt(document.getElementById('fAdultes').value) || 0;
   const total = e79 + e1012 + ad13 + ad16 + adu;
-  if(total > 0) document.getElementById('fPers').value = total;
+  document.getElementById('fPers').value = total;
   updatePersMin();
 }
 
@@ -1933,7 +1979,8 @@ function clearForm(){
   document.getElementById('fPers').value=1;
   document.getElementById('fType').value='t-particulier';
   document.getElementById('fPay').value='attente';
-  ['fEnf79','fEnf1012','fAdo1315','fAdo1618','fAdultes'].forEach(id=>document.getElementById(id).value='0');
+  ['fEnf79','fEnf1012','fAdo1315','fAdo1618'].forEach(id=>document.getElementById(id).value='0');
+  document.getElementById('fAdultes').value='1'; // défaut cohérent avec fPers=1
 }
 
 // ── AUTO TYPE ──────────────────────────────────────────────────────────────────
@@ -2215,8 +2262,11 @@ function confirmBooking(){
 
   // ── Synchronisation paiement sur tous les créneaux liés (même client, même jour) ──
   syncPayment(date, tel, pay);
-  // ── Type et mail : uniquement sur la réservation en cours d'édition ──
-  // (pas de propagation globale sur toutes les réservations du même numéro)
+  // ── Email : propagé à toutes les réservations du même client, le même jour
+  // (toutes activités confondues) — jamais aux autres jours.
+  syncMail(tel, date, mail);
+  // ── Type : uniquement sur la réservation en cours d'édition ──
+  // (pas de propagation aux autres réservations du même numéro)
 
   closeModal();
   // Geler la position scroll avant que Firebase déclenche renderCalendar
@@ -2255,13 +2305,19 @@ function syncPayment(date, tel, newPay){
   }
 }
 
-// ── SYNC TYPE ─────────────────────────────────────────────────────────────────
-// Désactivé : la modification du type ne se propage plus aux autres réservations
-function syncType(tel, newType){ /* no-op */ }
-
 // ── SYNC MAIL ─────────────────────────────────────────────────────────────────
-// Désactivé : la modification du mail ne se propage plus aux autres réservations
-function syncMail(tel, newMail){ /* no-op */ }
+// La modification de l'email se propage à toutes les réservations du même
+// client (même numéro de tél.) pour la même journée, toutes activités
+// confondues — mais jamais aux jours ou clients différents.
+function syncMail(tel, date, newMail){
+  if(!tel) return;
+  for(const [k, b] of Object.entries(bookings)){
+    const parts = k.split('|'); // activite|date|time|slot
+    if(parts[1] === date && b.tel === tel){
+      b.mail = newMail;
+    }
+  }
+}
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 function delBooking(key){
