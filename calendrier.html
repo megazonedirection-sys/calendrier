@@ -986,19 +986,27 @@ function initFirebaseSync(){
     demandes = snap.val() || {};
     // Auto-valider les demandes directes non encore traitées.
     // Les demandes issues d'une même réservation multi-session (même groupId)
-    // sont traitées ensemble pour n'envoyer qu'un seul email au client.
-    const aTraiter = Object.entries(demandes).filter(([ref, d]) => d.direct && d.status === 'auto-confirmed');
-    const groupes = {};
+    // sont regroupées AVANT traitement : on attend que TOUTES les sessions du
+    // groupe soient bien arrivées dans Firebase (via groupTotal) avant d'agir,
+    // pour n'envoyer qu'un seul email — sinon une course entre écritures
+    // successives peut déclencher le traitement d'une session avant l'arrivée
+    // des suivantes, et donc un email par session au lieu d'un seul.
+    const parGroupe = {};
     const seules = [];
-    aTraiter.forEach(([ref, d]) => {
+    Object.entries(demandes).forEach(([ref, d]) => {
       if(d.groupId){
-        (groupes[d.groupId] = groupes[d.groupId] || []).push({ref, d});
-      } else {
+        (parGroupe[d.groupId] = parGroupe[d.groupId] || []).push({ref, d});
+      } else if(d.direct && d.status === 'auto-confirmed'){
         seules.push({ref, d});
       }
     });
     seules.forEach(({ref, d}) => autoValiderDemande(ref, d));
-    Object.entries(groupes).forEach(([groupId, membres]) => autoValiderGroupe(groupId, membres));
+    Object.entries(parGroupe).forEach(([groupId, membres]) => {
+      const total = membres[0].d.groupTotal || membres.length;
+      if(membres.length < total) return; // groupe incomplet — on attend les sessions restantes
+      const aConfirmer = membres.filter(m => m.d.direct && m.d.status === 'auto-confirmed');
+      if(aConfirmer.length > 0) autoValiderGroupe(groupId, aConfirmer);
+    });
     updateDemandesBadge();
     renderCalendar();
   });
