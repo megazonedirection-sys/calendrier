@@ -1984,11 +1984,10 @@ function editBooking(key){
 
 function clearForm(){
   ['fTel','fNom','fMail','fComment'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('fPers').value=1;
+  document.getElementById('fPers').value=0;
   document.getElementById('fType').value='t-particulier';
   document.getElementById('fPay').value='attente';
-  ['fEnf79','fEnf1012','fAdo1315','fAdo1618'].forEach(id=>document.getElementById(id).value='0');
-  document.getElementById('fAdultes').value='1'; // défaut cohérent avec fPers=1
+  ['fEnf79','fEnf1012','fAdo1315','fAdo1618','fAdultes'].forEach(id=>document.getElementById(id).value='0');
 }
 
 // ── AUTO TYPE ──────────────────────────────────────────────────────────────────
