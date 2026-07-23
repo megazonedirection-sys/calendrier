@@ -1864,7 +1864,9 @@ function adaptModalForView(){
   // Joueurs max
   document.getElementById('fPers').min = isVR ? 2 : (isBT ? 4 : 1);
   document.getElementById('fPers').max = isVR ? 4 : (isBT ? 12 : 24);
-  document.getElementById('fPers').value = isVR ? 2 : (isBT ? 4 : 1);
+  // Note : la valeur n'est plus réinitialisée ici — elle reste pilotée par la
+  // répartition par âge (0 par défaut tant que rien n'est renseigné), pour
+  // éviter qu'un "1 joueur" ne s'affiche sans qu'aucune répartition n'ait été faite.
   // Remplacer options type selon vue
   const sel = document.getElementById('fType');
   if(isBT){
