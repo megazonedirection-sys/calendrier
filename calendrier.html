@@ -1387,11 +1387,22 @@ function getVacance(dateStr){
   return VACANCES_ZONE_C.find(v => dateStr >= v.start && dateStr <= v.end) || null;
 }
 
+// ── FERMETURE EXCEPTIONNELLE (CONGÉS ANNUELS) ────────────────────────────────
+// Aucune réservation possible sur ces dates, quelle que soit la période.
+const CONGES_ANNUELS = [
+  {start:'2026-08-24', end:'2026-09-11', label:'Congés annuels'},
+];
+
+function getCongeAnnuel(dateStr){
+  return CONGES_ANNUELS.find(c => dateStr >= c.start && dateStr <= c.end) || null;
+}
+
 // ── HORAIRES D'OUVERTURE ──────────────────────────────────────────────────────
 // Retourne {open:false} si journée fermée,
 // {open:true, openMin, closeMin} si jour ouvert avec plage restreinte,
 // null si pas de restriction (période scolaire normale).
 function getOpenHours(dateStr){
+  if(getCongeAnnuel(dateStr)) return { open: false, conge: true };
   const vacance = getVacance(dateStr);
   if(!vacance) return null; // hors vacances : pas de restriction
 
@@ -1635,21 +1646,31 @@ function renderCalendar(){
 
   // ── Vacances scolaires : badge toolbar + classe table ──
   const vacance = getVacance(dateKey);
+  const conge = getCongeAnnuel(dateKey);
   const tbl = document.getElementById('calTbl');
   let vacBadge = document.getElementById('vacanceBadge');
-  if(vacance){
+  if(!vacBadge){
+    vacBadge = document.createElement('span');
+    vacBadge.id = 'vacanceBadge';
+    vacBadge.className = 'vacances-badge';
+    document.getElementById('cur-date').after(vacBadge);
+  }
+  if(conge){
     tbl.classList.add('vacances-active');
-    if(!vacBadge){
-      vacBadge = document.createElement('span');
-      vacBadge.id = 'vacanceBadge';
-      vacBadge.className = 'vacances-badge';
-      document.getElementById('cur-date').after(vacBadge);
-    }
+    tbl.classList.add('conges-active');
+    vacBadge.textContent = `🚫 Fermé — ${conge.label} (jusqu'au ${conge.end.split('-').reverse().join('/')})`;
+    vacBadge.style.cssText = 'background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;';
+    vacBadge.style.display = '';
+  } else if(vacance){
+    tbl.classList.add('vacances-active');
+    tbl.classList.remove('conges-active');
     vacBadge.textContent = `🎒 Vacances scolaires — ${vacance.label}`;
+    vacBadge.style.cssText = '';
     vacBadge.style.display = '';
   } else {
     tbl.classList.remove('vacances-active');
-    if(vacBadge) vacBadge.style.display = 'none';
+    tbl.classList.remove('conges-active');
+    vacBadge.style.display = 'none';
   }
 
   const isBT = currentView === 'bt';
