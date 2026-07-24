@@ -1871,10 +1871,12 @@ function adaptModalForView(){
   const sel = document.getElementById('fType');
   if(isBT){
     sel.innerHTML = `<option value="t-bt30">🎵 30 minutes</option>
-       <option value="t-bt60">🎵 60 minutes (2 créneaux)</option>`;
+       <option value="t-bt60">🎵 60 minutes (2 créneaux)</option>
+       <option value="t-message">Message</option>`;
   } else if(isVR){
     sel.innerHTML = `<option value="t-vrzone">VRzone</option>
-       <option value="t-escapevr">Escape Game VR</option>`;
+       <option value="t-escapevr">Escape Game VR</option>
+       <option value="t-message">Message</option>`;
   } else {
     sel.innerHTML = `<option value="t-particulier">Particulier</option>
        <option value="t-groupe">Groupe</option>
