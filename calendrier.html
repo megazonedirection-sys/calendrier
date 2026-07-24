@@ -693,23 +693,23 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
           <label>🎯 Répartition par âge (optionnel)</label>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;">
             <div id="fEnf79Wrap">
-              <input type="number" id="fEnf79" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <input type="number" id="fEnf79" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
               <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Enf. 7-9</div>
             </div>
             <div id="fEnf1012Wrap">
-              <input type="number" id="fEnf1012" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <input type="number" id="fEnf1012" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
               <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Enf. 10-12</div>
             </div>
             <div>
-              <input type="number" id="fAdo1315" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <input type="number" id="fAdo1315" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
               <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Ados 13-15</div>
             </div>
             <div>
-              <input type="number" id="fAdo1618" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <input type="number" id="fAdo1618" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
               <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Ados 16-18</div>
             </div>
             <div>
-              <input type="number" id="fAdultes" min="0" max="24" value="0" oninput="onAgeBreakdownChange()">
+              <input type="number" id="fAdultes" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
               <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Adultes</div>
             </div>
           </div>
@@ -1931,13 +1931,26 @@ function computeGroupProfile(enfants79, enfants1012, ados1315, ados1618, adultes
 }
 
 // Recalcule le total joueurs à partir de la répartition d'âge (Laser Game)
-function onAgeBreakdownChange(){
+function onAgeBreakdownChange(changedEl){
   const e79   = parseInt(document.getElementById('fEnf79').value)   || 0;
   const e1012 = parseInt(document.getElementById('fEnf1012').value) || 0;
   const ad13  = parseInt(document.getElementById('fAdo1315').value) || 0;
   const ad16  = parseInt(document.getElementById('fAdo1618').value) || 0;
   const adu   = parseInt(document.getElementById('fAdultes').value) || 0;
-  const total = e79 + e1012 + ad13 + ad16 + adu;
+  let total = e79 + e1012 + ad13 + ad16 + adu;
+
+  // Plafond réel selon l'activité : 24 (Laser), 4 (VR/Escape), 12 (Blind Test) —
+  // le même souci qu'on avait corrigé côté client (chaque champ seul pouvait
+  // aller jusqu'à 24, quelle que soit l'activité réellement sélectionnée).
+  const max = currentView === 'vr' ? 4 : (currentView === 'bt' ? 12 : 24);
+
+  if (changedEl && total > max) {
+    const currentVal = parseInt(changedEl.value) || 0;
+    const excedent = total - max;
+    changedEl.value = Math.max(0, currentVal - excedent);
+    return onAgeBreakdownChange();
+  }
+
   document.getElementById('fPers').value = total;
   updatePersMin();
 }
