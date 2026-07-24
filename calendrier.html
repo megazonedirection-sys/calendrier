@@ -2007,7 +2007,11 @@ function updatePersMin(){
   const min = MIN_PERS_BY_TYPE[type] || baseMin;
   const inp = document.getElementById('fPers');
   inp.min = min;
-  if((parseInt(inp.value)||0) < min) inp.value = min;
+  const cur = parseInt(inp.value) || 0;
+  // 0 = rien renseigné pour l'instant (répartition vide) — on ne force pas de
+  // valeur par défaut ici, seule une valeur partielle (>0 mais insuffisante)
+  // est ramenée au minimum requis.
+  if(cur > 0 && cur < min) inp.value = min;
 }
 
 function onTypeChange(){
