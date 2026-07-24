@@ -1167,7 +1167,7 @@ async function createBookingFromDemande(ref, d){
           nom:       d.nom||'',
           tel:       d.tel||'',
           mail:      d.mail||'',
-          pers:      d.pers||1,
+          pers:      1, // 1 personne par casque — le total du groupe reste visible via "Casque X/Y"
           type:      d.type||'t-particulier',
           comment:   (d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]') + suffix,
           pay:       'attente',
@@ -2199,7 +2199,7 @@ function confirmBooking(){
           comment: comment
             ? (d > 0 ? `${comment} (suite — casque ${col})` : comment)
             : (d > 0 ? `Suite ${durMin} min — casque ${col}` : ''),
-          pers, type, pay,
+          pers: 1, type, pay, // 1 personne par casque — le total du groupe reste visible via "casque X"
           vrBlock: true,
           vrCol: col,
           vrStep: d
