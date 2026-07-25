@@ -2660,27 +2660,59 @@ function timeAgo(ts){
 async function accepterDemande(ref){
   const d = demandes[ref];
   if(!d) return;
-  // Vérifier disponibilité
-  const key = `${d.activite}|${d.date}|${d.time}|1`;
-  if(bookings[key]){
-    if(!confirm(`Le créneau ${d.time} est déjà pris. Forcer quand même ?`)) return;
+
+  // Si cette demande fait partie d'un groupe multi-session, on valide et
+  // envoie l'email pour TOUT le groupe en une fois (pas une par une).
+  if(d.groupId && enCoursTraitement.has(d.groupId)) return;
+  if(!d.groupId && enCoursTraitement.has(ref)) return;
+  enCoursTraitement.add(d.groupId || ref);
+
+  const membres = d.groupId
+    ? Object.entries(demandes)
+        .filter(([r, dd]) => dd.groupId === d.groupId && dd.status === 'pending')
+        .map(([r, dd]) => ({ref: r, d: dd}))
+    : [{ref, d}];
+
+  // Vérifier disponibilité (première session comme aperçu — un conflit
+  // individuel reste possible par la suite via createBookingFromDemande)
+  const keyPreview = `${d.activite}|${d.date}|${d.time}|1`;
+  if(bookings[keyPreview]){
+    if(!confirm(`Le créneau ${d.time} est déjà pris. Forcer quand même ?`)) { enCoursTraitement.delete(d.groupId || ref); return; }
   }
-  // Trouver un slot libre
-  let slot = 1;
-  while(bookings[`${d.activite}|${d.date}|${d.time}|${slot}`]) slot++;
-  // Créer la réservation
-  const bKey = `${d.activite}|${d.date}|${d.time}|${slot}`;
-  bookings[bKey] = {
-    nom: d.nom, tel: d.tel, mail: d.mail||'',
-    pers: d.pers, type: d.type,
-    comment: d.comment ? `[En ligne] ${d.comment}` : '[Réservation en ligne]',
-    pay: 'attente', confirmed: false, present: false,
-    ...(d.profil ? {profil: d.profil} : {})
-  };
-  // Marquer comme acceptée
-  await db.ref(`demandes/${ref}/status`).set('accepted');
-  // Email de confirmation au client via API REST EmailJS
-  await sendClientConfirmationEmail(d, ref, true);
+
+  const confirmees = [];
+  for(const {ref: r, d: dd} of membres){
+    let ok = await createBookingFromDemande(r, dd);
+    if(!ok){
+      // La validation manuelle peut forcer un créneau même si la capacité
+      // normale est dépassée (le staff a déjà confirmé vouloir forcer) —
+      // on crée directement la réservation sur un numéro de slot libre,
+      // sans plafond, comme le comportement historique de cette fonction.
+      const span = dd.slotSpan || 1;
+      const times = [dd.time];
+      for(let i=1;i<span;i++) times.push(addMinutesToTime(dd.time, i*20));
+      let slot = 1;
+      while(times.some(t => bookings[`${dd.activite}|${dd.date}|${t}|${slot}`])) slot++;
+      times.forEach(t => {
+        bookings[`${dd.activite}|${dd.date}|${t}|${slot}`] = {
+          nom: dd.nom, tel: dd.tel, mail: dd.mail||'',
+          pers: dd.pers, type: dd.type,
+          comment: dd.comment ? `[En ligne] ${dd.comment}` : '[Réservation en ligne]',
+          pay: 'attente', confirmed: false, present: false,
+          ...(dd.profil ? {profil: dd.profil} : {})
+        };
+      });
+      ok = true;
+    }
+    await db.ref(`demandes/${r}/status`).set('accepted');
+    if(ok) confirmees.push({ref: r, d: dd});
+  }
+
+  if(confirmees.length){
+    if(confirmees.length > 1) await sendGroupConfirmationEmail(confirmees);
+    else await sendClientConfirmationEmail(confirmees[0].d, confirmees[0].ref, true);
+  }
+
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
   saveBookings();
@@ -2691,7 +2723,9 @@ async function accepterDemande(ref){
   document.getElementById(`nav${d.activite.charAt(0).toUpperCase()+d.activite.slice(1)}`).classList.add('nav-active');
   document.getElementById('demandesOverlay').style.display='none';
   renderCalendar();
-  alert(`✅ Demande de ${d.nom} validée et ajoutée au planning ${d.activite} du ${d.date} à ${d.time}.`);
+  alert(membres.length > 1
+    ? `✅ ${membres.length} sessions de ${d.nom} validées et ajoutées au planning ${d.activite} du ${d.date}.`
+    : `✅ Demande de ${d.nom} validée et ajoutée au planning ${d.activite} du ${d.date} à ${d.time}.`);
 }
 
 async function refuserDemande(ref){
