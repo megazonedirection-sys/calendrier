@@ -1210,7 +1210,16 @@ async function createBookingFromDemande(ref, d){
   return true;
 }
 
+// Verrou anti-réentrance : chaque écriture de statut ("processed") déclenche
+// un nouvel événement 'value' sur /demandes, qui pourrait relancer le
+// traitement d'un groupe encore en cours (ou d'une demande déjà en cours de
+// traitement) avant la fin de la boucle précédente — créant des réservations
+// en double. On mémorise ce qui est déjà en cours pour l'ignorer.
+const enCoursTraitement = new Set();
+
 async function autoValiderDemande(ref, d){
+  if(enCoursTraitement.has(ref)) return;
+  enCoursTraitement.add(ref);
   const ok = await createBookingFromDemande(ref, d);
   if(!ok) return;
   await sendClientConfirmationEmail(d, ref, false);
@@ -1223,6 +1232,8 @@ async function autoValiderDemande(ref, d){
 // crée toutes les réservations, puis envoie UN SEUL email de confirmation
 // client reprenant la totalité des sessions (au lieu d'un email par session).
 async function autoValiderGroupe(groupId, membres){
+  if(enCoursTraitement.has(groupId)) return;
+  enCoursTraitement.add(groupId);
   const confirmees = [];
   for(const {ref, d} of membres){
     const ok = await createBookingFromDemande(ref, d);
