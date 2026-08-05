@@ -966,21 +966,41 @@ function initFirebaseSync(){
 
 // ── AUTO-VALIDATION RÉSERVATIONS DIRECTES ─────────────────────────────────────
 async function autoValiderDemande(ref, d){
-  // Vérifier qu'elle n'est pas déjà dans les bookings
   const activite = d.activite || 'laser';
   const date     = d.date || '';
   const time     = d.time || '';
-  // Trouver un slot libre
   const MAX = activite==='laser' ? 8 : (activite==='vr' ? 4 : 1);
-  let slot = 1;
-  while(slot <= MAX && bookings[`${activite}|${date}|${time}|${slot}`]) slot++;
+
+  // Chercher la colonne déjà utilisée par ce client ce jour-là (même activité)
+  let preferredSlot = null;
+  if(d.tel){
+    const telNorm = d.tel.trim();
+    for(const [k, b] of Object.entries(bookings)){
+      const parts = k.split('|');
+      if(parts[0]===activite && parts[1]===date && (b.tel||'').trim()===telNorm){
+        const candidate = parseInt(parts[3]);
+        // Vérifier que cette colonne est libre sur ce créneau
+        if(!bookings[`${activite}|${date}|${time}|${candidate}`]){
+          preferredSlot = candidate;
+        }
+        break;
+      }
+    }
+  }
+
+  // Utiliser la colonne préférée ou chercher la 1ère libre
+  let slot = preferredSlot;
+  if(!slot){
+    slot = 1;
+    while(slot <= MAX && bookings[`${activite}|${date}|${time}|${slot}`]) slot++;
+  }
+
   if(slot > MAX){
-    // Créneau complet — passer en validation manuelle
     await db.ref(`demandes/${ref}/status`).set('pending');
     await db.ref(`demandes/${ref}/direct`).set(false);
     return;
   }
-  // Créer la réservation
+
   bookings[`${activite}|${date}|${time}|${slot}`] = {
     nom:       d.nom||'',
     tel:       d.tel||'',
