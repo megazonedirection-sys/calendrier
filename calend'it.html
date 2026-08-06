@@ -2007,8 +2007,44 @@ function syncType(tel, newType){
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 function delBooking(key){
-  if(!confirm('Supprimer cette réservation ?')) return;
+  const b = bookings[key];
+  if(!b) return;
+
+  // Chercher les autres sessions du même groupe (même tel, même date, même vue)
+  const parts = key.split('|');
+  const [view, date] = parts;
+  const tel = (b.tel||'').trim();
+  const autresSessions = Object.keys(bookings).filter(k => {
+    if(k === key) return false;
+    const p = k.split('|');
+    return p[0]===view && p[1]===date && (bookings[k].tel||'').trim()===tel;
+  });
+
+  let supprimerTout = false;
+  if(autresSessions.length > 0){
+    const nbTotal = autresSessions.length + 1;
+    const choix = confirm(
+      `Ce groupe a ${nbTotal} session(s) réservée(s) ce jour.\n\n` +
+      `✅ OK → Supprimer TOUTES les sessions du groupe\n` +
+      `❌ Annuler → Supprimer uniquement cette session`
+    );
+    if(choix === true){
+      supprimerTout = true;
+    } else if(choix === false){
+      // L'utilisateur a cliqué "Annuler" = supprimer seulement cette session
+      // On demande confirmation explicite
+      if(!confirm('Supprimer uniquement cette session ?')) return;
+    }
+  } else {
+    if(!confirm('Supprimer cette réservation ?')) return;
+  }
+
+  // Supprimer
   delete bookings[key];
+  if(supprimerTout){
+    autresSessions.forEach(k => delete bookings[k]);
+  }
+
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop = _w.scrollTop; _savedScrollLeft = _w.scrollLeft; }
   saveBookings();
