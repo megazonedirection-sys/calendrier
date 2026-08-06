@@ -841,7 +841,7 @@ function doLogout(){
 auth.onAuthStateChanged(user => {
   if(user){
     document.getElementById('loginOverlay').classList.add('hidden');
-    migrateSlots().then(() => initFirebaseSync());
+    migrateSlots().then(() => migrateColumns()).then(() => initFirebaseSync());
   } else {
     document.getElementById('loginOverlay').classList.remove('hidden');
     // Détacher le listener si existant
@@ -860,6 +860,61 @@ function setSyncDot(state){
 let demandes = {};
 
 // ── MIGRATION CRÉNEAUX ────────────────────────────────────────────────────────
+// ── MIGRATION COLONNES ────────────────────────────────────────────────────────
+// Regroupe les sessions existantes du même client dans la même colonne
+async function migrateColumns(){
+  const snap = await db.ref('bookings').once('value');
+  const all  = snap.val() || {};
+  const updates = {};
+  let fixed = 0;
+
+  // Grouper par vue|date|tel → trouver la colonne de référence (1ère resa)
+  const clientCols = {}; // clé: "view|date|tel" → colonne de référence
+
+  // 1er passage : trouver la colonne de référence par client/jour
+  for(const [k] of Object.entries(all)){
+    const parts = k.split('|');
+    if(parts.length < 4) continue;
+    const [view, date, time, slot] = parts;
+    const b = all[k];
+    if(!b || !b.tel) continue;
+    const clientKey = `${view}|${date}|${b.tel.trim()}`;
+    if(!clientCols[clientKey]){
+      clientCols[clientKey] = { refSlot: parseInt(slot), bookings: [] };
+    }
+    // Garder la colonne la plus basse comme référence
+    if(parseInt(slot) < clientCols[clientKey].refSlot){
+      clientCols[clientKey].refSlot = parseInt(slot);
+    }
+    clientCols[clientKey].bookings.push({ k, view, date, time, slot: parseInt(slot), b });
+  }
+
+  // 2ème passage : corriger les sessions hors colonne de référence
+  for(const [clientKey, info] of Object.entries(clientCols)){
+    if(info.bookings.length <= 1) continue; // rien à corriger
+    const refSlot = info.refSlot;
+
+    for(const entry of info.bookings){
+      if(entry.slot === refSlot) continue; // déjà dans la bonne colonne
+
+      // Vérifier que la colonne de référence est libre sur ce créneau
+      const newKey = `${entry.view}|${entry.date}|${entry.time}|${refSlot}`;
+      if(all[newKey] && all[newKey].tel !== entry.b.tel) continue; // occupée par quelqu'un d'autre
+
+      if(!all[newKey]){ // seulement si vraiment libre
+        updates[entry.k]  = null;
+        updates[newKey]   = entry.b;
+        fixed++;
+      }
+    }
+  }
+
+  if(fixed > 0){
+    await db.ref('bookings').update(updates);
+    console.log(`Migration colonnes : ${fixed} session(s) réalignée(s)`);
+  }
+}
+
 async function migrateSlots(){
   const snap = await db.ref('bookings').once('value');
   const all  = snap.val() || {};
