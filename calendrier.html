@@ -662,7 +662,7 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
           <div class="ac-wrap">
             <input type="tel" id="fTel" placeholder="06 12 34 56 78" maxlength="10"
               autocomplete="off"
-              oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);if(this.value.length===10){acSearch(this.value);applyPreferredSlot(this.value);}else acClose()"
+              oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);if(this.value.length===10)acSearch(this.value);else acClose()"
               onkeydown="acKey(event)"
               onblur="setTimeout(acClose,180)">
             <div class="ac-list" id="acList"></div>
@@ -686,7 +686,34 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
         <div class="col-title">Détails réservation</div>
         <div class="fg">
           <label>👥 Nombre de joueurs *</label>
-          <input type="number" id="fPers" min="1" max="24" value="4" oninput="autoUpdateType()">
+          <input type="number" id="fPers" min="1" max="24" value="4" readonly oninput="autoUpdateType()">
+          <div style="font-size:11px;color:#94a3b8;margin-top:4px" id="fPers-hint">Champ indicatif — modifiez la répartition par âge ci-dessous pour changer le nombre.</div>
+        </div>
+        <div class="fg" id="fAgeGroup" style="display:none;">
+          <label>🎯 Répartition par âge (optionnel)</label>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;">
+            <div id="fEnf79Wrap">
+              <input type="number" id="fEnf79" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Enf. 7-9</div>
+            </div>
+            <div id="fEnf1012Wrap">
+              <input type="number" id="fEnf1012" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Enf. 10-12</div>
+            </div>
+            <div>
+              <input type="number" id="fAdo1315" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Ados 13-15</div>
+            </div>
+            <div>
+              <input type="number" id="fAdo1618" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Ados 16-18</div>
+            </div>
+            <div>
+              <input type="number" id="fAdultes" min="0" max="24" value="0" oninput="onAgeBreakdownChange(this)">
+              <div style="font-size:10px;text-align:center;color:#64748b;margin-top:2px">Adultes</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:6px">Si renseigné, doit correspondre au nombre total de joueurs.</div>
         </div>
         <div class="fg">
           <label>🏷️ Type de réservation</label>
@@ -839,9 +866,11 @@ function doLogout(){
 
 // ── AUTH STATE ────────────────────────────────────────────────────────────────
 auth.onAuthStateChanged(user => {
-  if(user){
+  // Une session anonyme (ex. héritée de la page de réservation, sur le même
+  // domaine) ne doit jamais être considérée comme une connexion staff valide.
+  if(user && !user.isAnonymous){
     document.getElementById('loginOverlay').classList.add('hidden');
-    migrateSlots().then(() => migrateColumns()).then(() => initFirebaseSync());
+    migrateSlots().then(() => initFirebaseSync());
   } else {
     document.getElementById('loginOverlay').classList.remove('hidden');
     // Détacher le listener si existant
@@ -860,61 +889,6 @@ function setSyncDot(state){
 let demandes = {};
 
 // ── MIGRATION CRÉNEAUX ────────────────────────────────────────────────────────
-// ── MIGRATION COLONNES ────────────────────────────────────────────────────────
-// Regroupe les sessions existantes du même client dans la même colonne
-async function migrateColumns(){
-  const snap = await db.ref('bookings').once('value');
-  const all  = snap.val() || {};
-  const updates = {};
-  let fixed = 0;
-
-  // Grouper par vue|date|tel → trouver la colonne de référence (1ère resa)
-  const clientCols = {}; // clé: "view|date|tel" → colonne de référence
-
-  // 1er passage : trouver la colonne de référence par client/jour
-  for(const [k] of Object.entries(all)){
-    const parts = k.split('|');
-    if(parts.length < 4) continue;
-    const [view, date, time, slot] = parts;
-    const b = all[k];
-    if(!b || !b.tel) continue;
-    const clientKey = `${view}|${date}|${b.tel.trim()}`;
-    if(!clientCols[clientKey]){
-      clientCols[clientKey] = { refSlot: parseInt(slot), bookings: [] };
-    }
-    // Garder la colonne la plus basse comme référence
-    if(parseInt(slot) < clientCols[clientKey].refSlot){
-      clientCols[clientKey].refSlot = parseInt(slot);
-    }
-    clientCols[clientKey].bookings.push({ k, view, date, time, slot: parseInt(slot), b });
-  }
-
-  // 2ème passage : corriger les sessions hors colonne de référence
-  for(const [clientKey, info] of Object.entries(clientCols)){
-    if(info.bookings.length <= 1) continue; // rien à corriger
-    const refSlot = info.refSlot;
-
-    for(const entry of info.bookings){
-      if(entry.slot === refSlot) continue; // déjà dans la bonne colonne
-
-      // Vérifier que la colonne de référence est libre sur ce créneau
-      const newKey = `${entry.view}|${entry.date}|${entry.time}|${refSlot}`;
-      if(all[newKey] && all[newKey].tel !== entry.b.tel) continue; // occupée par quelqu'un d'autre
-
-      if(!all[newKey]){ // seulement si vraiment libre
-        updates[entry.k]  = null;
-        updates[newKey]   = entry.b;
-        fixed++;
-      }
-    }
-  }
-
-  if(fixed > 0){
-    await db.ref('bookings').update(updates);
-    console.log(`Migration colonnes : ${fixed} session(s) réalignée(s)`);
-  }
-}
-
 async function migrateSlots(){
   const snap = await db.ref('bookings').once('value');
   const all  = snap.val() || {};
@@ -989,6 +963,8 @@ async function migrateSlots(){
 
   if(migrated > 0){
     await db.ref('bookings').update(updates);
+    const freshSnap = await db.ref('bookings').once('value');
+    await db.ref('dispo').set(computeDispoFromBookings(freshSnap.val() || {}));
     console.log(`Migration : ${migrated} réservation(s) migrée(s)`);
   }
 }
@@ -1008,11 +984,28 @@ function initFirebaseSync(){
   // Écouter les demandes en ligne
   db.ref('demandes').on('value', snap => {
     demandes = snap.val() || {};
-    // Auto-valider les demandes directes non encore traitées
+    // Auto-valider les demandes directes non encore traitées.
+    // Les demandes issues d'une même réservation multi-session (même groupId)
+    // sont regroupées AVANT traitement : on attend que TOUTES les sessions du
+    // groupe soient bien arrivées dans Firebase (via groupTotal) avant d'agir,
+    // pour n'envoyer qu'un seul email — sinon une course entre écritures
+    // successives peut déclencher le traitement d'une session avant l'arrivée
+    // des suivantes, et donc un email par session au lieu d'un seul.
+    const parGroupe = {};
+    const seules = [];
     Object.entries(demandes).forEach(([ref, d]) => {
-      if(d.direct && d.status === 'auto-confirmed'){
-        autoValiderDemande(ref, d);
+      if(d.groupId){
+        (parGroupe[d.groupId] = parGroupe[d.groupId] || []).push({ref, d});
+      } else if(d.direct && d.status === 'auto-confirmed'){
+        seules.push({ref, d});
       }
+    });
+    seules.forEach(({ref, d}) => autoValiderDemande(ref, d));
+    Object.entries(parGroupe).forEach(([groupId, membres]) => {
+      const total = membres[0].d.groupTotal || membres.length;
+      if(membres.length < total) return; // groupe incomplet — on attend les sessions restantes
+      const aConfirmer = membres.filter(m => m.d.direct && m.d.status === 'auto-confirmed');
+      if(aConfirmer.length > 0) autoValiderGroupe(groupId, aConfirmer);
     });
     updateDemandesBadge();
     renderCalendar();
@@ -1020,57 +1013,304 @@ function initFirebaseSync(){
 }
 
 // ── AUTO-VALIDATION RÉSERVATIONS DIRECTES ─────────────────────────────────────
-async function autoValiderDemande(ref, d){
+// Envoie l'email de confirmation au client (réservation en ligne, manuelle
+// ou automatique). notify=true affiche des alertes staff (cas manuel),
+// notify=false journalise silencieusement en console (cas auto-validation,
+// pour ne pas interrompre un agent qui n'a rien demandé activement).
+// Durée standard d'une session par activité (en minutes), utilisée pour
+// calculer l'heure de fin affichée dans les emails clients.
+const SESSION_DURATION_MIN = {
+  'Laser Game': 20,
+  'VR Zone (action, arcade, zombies…)': 20,
+  'Escape Game VR': 60,
+  'Blind Test Musical': 30,
+};
+
+// Ajoute (ou retranche) des minutes à une heure "HH:MM" (gère le passage de minuit)
+function addMinutesToTime(timeStr, minutes){
+  const [h, m] = (timeStr || '0:0').split(':').map(Number);
+  let total = (h || 0) * 60 + (m || 0) + minutes;
+  total = ((total % 1440) + 1440) % 1440;
+  const hh = Math.floor(total / 60), mm = total % 60;
+  return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+}
+
+// Construit le corps du message client à partir des infos de la réservation
+// (utilisé aussi bien pour une session unique que pour un groupe multi-session).
+function buildClientMessage(dateF, heureDebut, heureFin, pers, totalSessions){
+  return (
+    `Bonjour,\n\n` +
+    `Voici un récapitulatif de votre réservation du ${dateF} pour votre sortie au Game Zone.\n` +
+    `Afin de procéder à votre installation et briefing dans les meilleures conditions, merci de vous présenter à ${heureDebut}\n` +
+    `Prévoyez une fin d'activité à ${heureFin}\n` +
+    `Vous avez réservé pour un maximum de ${pers} joueurs, et pour un total de ${totalSessions} parties.\n` +
+    `Nous attirons votre attention sur le fait qu'au-delà de ce nombre, nous ne pourrons vous garantir des places disponibles pour les participants supplémentaires.\n` +
+    `Nous vous rappelons qu'aucune boisson ou nourriture ne sont acceptées dans l'enceinte du centre.\n` +
+    `Ainsi que l'âge minimum est de 7 ans (pour la compréhension du jeu) et la taille minimale de 1.20 m (pour utiliser pleinement le matériel). Le staff Game Zone se réserve le droit de refuser l'accès à l'activité si ces conditions ne sont pas réunies.\n` +
+    `Cordialement,\n` +
+    `Le staff`
+  );
+}
+
+// Ancien texte de confirmation, conservé pour les activités autres que
+// Laser Game en attendant une formulation dédiée pour chacune.
+function buildLegacyClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin, pers){
+  return (
+    `Bonjour ${nom} 👋\n\n` +
+    `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
+    `═══════════════════════════════════\n` +
+    `   RÉCAPITULATIF DE VOTRE SÉANCE\n` +
+    `═══════════════════════════════════\n\n` +
+    `📋 Référence    : ${ref}\n` +
+    `🎮 Activité     : ${activiteLabel}\n` +
+    `📅 Date         : ${dateF}\n` +
+    `🕐 De ${heureDebut} à ${heureFin} (briefing 15 min inclus)\n` +
+    `👥 Joueurs      : ${pers} personne(s)\n\n` +
+    `───────────────────────────────────\n` +
+    `📌 INFOS PRATIQUES\n` +
+    `───────────────────────────────────\n` +
+    `• Merci d'arriver à l'heure de début indiquée ci-dessus (briefing inclus)\n` +
+    `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
+    `• Le règlement s'effectue sur place (CB, espèces)\n\n` +
+    `───────────────────────────────────\n` +
+    `📍 Game Zone Montauban\n` +
+    `📞 05.63.03.79.32\n\n` +
+    `À très bientôt ! 🎯\n` +
+    `L'équipe Game Zone Montauban`
+  );
+}
+
+async function sendClientConfirmationEmail(d, ref, notify){
+  if(!d.mail) return;
+  const [y,mo,da] = (d.date||'').split('-');
+  const dateF = da ? `${da}/${mo}/${y}` : d.date;
+  const activiteLabel = ACTIVITE_LABEL[d.activite] || d.activite;
+  const duration = SESSION_DURATION_MIN[d.activiteLabel] || 20;
+  const heureDebut = addMinutesToTime(d.time, -15);
+  const heureFin   = addMinutesToTime(d.time, duration);
+  const message = (d.activiteLabel === 'Laser Game')
+    ? buildClientMessage(dateF, heureDebut, heureFin, d.pers, 1)
+    : buildLegacyClientMessage(d.nom, ref, activiteLabel, dateF, heureDebut, heureFin, d.pers);
+  try {
+    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  EJS_SERVICE,
+        template_id: EJS_TPL_CLIENT,
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: {
+          to_email: d.mail,
+          ref:      ref,
+          message:  message
+        }
+      })
+    });
+    if(r.ok){
+      if(notify) alert('✅ Email de confirmation envoyé à ' + d.mail);
+      else console.log('✅ Email de confirmation (auto-validation) envoyé à', d.mail);
+    } else {
+      const t = await r.text();
+      const msg = (t.includes('quota') || t.includes('limit') || t.includes('429'))
+        ? `⚠️ Quota EmailJS atteint (200 emails/mois épuisés). L'email n'a pas pu être envoyé à ${d.mail}. Contactez le client : ${d.tel}`
+        : `⚠️ Erreur envoi email : ${t}. Contactez le client : ${d.tel}`;
+      if(notify) alert(msg); else console.warn(msg);
+    }
+  } catch(e) {
+    const msg = `⚠️ Erreur réseau — email non envoyé à ${d.mail}. Contactez le client : ${d.tel}`;
+    if(notify) alert(msg); else console.warn(msg, e);
+  }
+}
+
+// Crée la réservation dans bookings à partir d'une demande auto-confirmée.
+// Retourne true si la réservation a pu être créée, false si le créneau est
+// complet (bascule alors la demande en validation manuelle).
+async function createBookingFromDemande(ref, d){
   const activite = d.activite || 'laser';
   const date     = d.date || '';
   const time     = d.time || '';
-  const MAX = activite==='laser' ? 8 : (activite==='vr' ? 4 : 1);
+  const span     = d.slotSpan || 1; // Escape Game VR = 3 créneaux d'affilée pour 1 séance
+  const pers     = d.pers || 1;
 
-  // Chercher la colonne déjà utilisée par ce client ce jour-là (même activité)
-  let preferredSlot = null;
-  if(d.tel){
-    const telNorm = d.tel.trim();
-    for(const [k, b] of Object.entries(bookings)){
-      const parts = k.split('|');
-      if(parts[0]===activite && parts[1]===date && (b.tel||'').trim()===telNorm){
-        const candidate = parseInt(parts[3]);
-        // Vérifier que cette colonne est libre sur ce créneau
-        if(!bookings[`${activite}|${date}|${time}|${candidate}`]){
-          preferredSlot = candidate;
+  // Tous les créneaux occupés par cette réservation
+  const times = [time];
+  for(let i = 1; i < span; i++) times.push(addMinutesToTime(time, i * 20));
+
+  // ── VR Zone / Escape Game VR : occuper autant de casques (colonnes) que de
+  // joueurs, simultanément sur tous les créneaux du span (ex: Escape = 3 créneaux) ──
+  if(activite === 'vr'){
+    const nbCols = Math.max(1, Math.min(pers, VR_COLS));
+    let startCol = -1;
+    for(let c = 1; c + nbCols - 1 <= VR_COLS; c++){
+      let libre = true;
+      outer:
+      for(let cc = c; cc < c + nbCols; cc++){
+        for(const t of times){
+          if(bookings[`vr|${date}|${t}|${cc}`]){ libre = false; break outer; }
         }
-        break;
       }
+      if(libre){ startCol = c; break; }
     }
+    if(startCol === -1){
+      // Pas assez de casques libres simultanément — passer en validation manuelle
+      await db.ref(`demandes/${ref}/status`).set('pending');
+      await db.ref(`demandes/${ref}/direct`).set(false);
+      return false;
+    }
+    for(let col = startCol; col < startCol + nbCols; col++){
+      times.forEach((t, i) => {
+        const parts = [];
+        if(nbCols > 1) parts.push(`Casque ${col - startCol + 1}/${nbCols}`);
+        if(span > 1) parts.push(`Partie ${i + 1}/${span}`);
+        const suffix = parts.length ? ` [${parts.join(', ')}]` : '';
+        bookings[`vr|${date}|${t}|${col}`] = {
+          nom:       d.nom||'',
+          tel:       d.tel||'',
+          mail:      d.mail||'',
+          pers:      1, // 1 personne par casque — le total du groupe reste visible via "Casque X/Y"
+          type:      d.type||'t-particulier',
+          comment:   (d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]') + suffix,
+          pay:       'attente',
+          confirmed: false,
+          present:   false,
+          ...(d.profil ? {profil: d.profil} : {})
+        };
+      });
+    }
+    await db.ref(`demandes/${ref}/status`).set('processed');
+    return true;
   }
 
-  // Utiliser la colonne préférée ou chercher la 1ère libre
-  let slot = preferredSlot;
-  if(!slot){
-    slot = 1;
-    while(slot <= MAX && bookings[`${activite}|${date}|${time}|${slot}`]) slot++;
-  }
-
+  // ── Laser / Blind Test : logique existante (1 seul numéro de slot par créneau) ──
+  const MAX = activite==='laser' ? 8 : 1;
+  let slot = 1;
+  while(slot <= MAX && times.some(t => bookings[`${activite}|${date}|${t}|${slot}`])) slot++;
   if(slot > MAX){
+    // Créneau complet — passer en validation manuelle
     await db.ref(`demandes/${ref}/status`).set('pending');
     await db.ref(`demandes/${ref}/direct`).set(false);
-    return;
+    return false;
   }
-
-  bookings[`${activite}|${date}|${time}|${slot}`] = {
-    nom:       d.nom||'',
-    tel:       d.tel||'',
-    mail:      d.mail||'',
-    pers:      d.pers||1,
-    type:      d.type||'t-particulier',
-    comment:   d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]',
-    pay:       'attente',
-    confirmed: false,
-    present:   false
-  };
+  // Créer la (ou les) réservation(s)
+  times.forEach((t, i) => {
+    bookings[`${activite}|${date}|${t}|${slot}`] = {
+      nom:       d.nom||'',
+      tel:       d.tel||'',
+      mail:      d.mail||'',
+      pers:      d.pers||1,
+      type:      d.type||'t-particulier',
+      comment:   (d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]') + (span > 1 ? ` [Partie ${i+1}/${span}]` : ''),
+      pay:       'attente',
+      confirmed: false,
+      present:   false,
+      ...(d.profil ? {profil: d.profil} : {})
+    };
+  });
   await db.ref(`demandes/${ref}/status`).set('processed');
+  return true;
+}
+
+// Verrou anti-réentrance : chaque écriture de statut ("processed") déclenche
+// un nouvel événement 'value' sur /demandes, qui pourrait relancer le
+// traitement d'un groupe encore en cours (ou d'une demande déjà en cours de
+// traitement) avant la fin de la boucle précédente — créant des réservations
+// en double. On mémorise ce qui est déjà en cours pour l'ignorer.
+const enCoursTraitement = new Set();
+
+async function autoValiderDemande(ref, d){
+  if(enCoursTraitement.has(ref)) return;
+  enCoursTraitement.add(ref);
+  const ok = await createBookingFromDemande(ref, d);
+  if(!ok) return;
+  await sendClientConfirmationEmail(d, ref, false);
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
   saveBookings();
+}
+
+// Traite un groupe de demandes issues d'une même réservation multi-session :
+// crée toutes les réservations, puis envoie UN SEUL email de confirmation
+// client reprenant la totalité des sessions (au lieu d'un email par session).
+async function autoValiderGroupe(groupId, membres){
+  if(enCoursTraitement.has(groupId)) return;
+  enCoursTraitement.add(groupId);
+  const confirmees = [];
+  for(const {ref, d} of membres){
+    const ok = await createBookingFromDemande(ref, d);
+    if(ok) confirmees.push({ref, d});
+  }
+  if(confirmees.length){
+    await sendGroupConfirmationEmail(confirmees);
+    const _w = document.querySelector('.cal-wrap');
+    if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
+    saveBookings();
+  }
+}
+
+// Email de confirmation unique pour une réservation multi-session
+// (Laser Game, VR Zone ou Blind Test Musical).
+async function sendGroupConfirmationEmail(membres){
+  const first = membres[0].d;
+  if(!first.mail) return;
+  const [y,mo,da] = (first.date||'').split('-');
+  const dateF = da ? `${da}/${mo}/${y}` : first.date;
+
+  const tries = membres.slice().sort((a,b) => (a.d.time||'').localeCompare(b.d.time||''));
+  const premiere = tries[0].d;
+  const derniere = tries[tries.length - 1].d;
+  const dureeDerniere = SESSION_DURATION_MIN[derniere.activiteLabel] || 20;
+  const heureDebut = addMinutesToTime(premiere.time, -15);
+  const heureFin   = addMinutesToTime(derniere.time, dureeDerniere);
+
+  let message;
+  if (first.activiteLabel === 'Laser Game') {
+    message = buildClientMessage(dateF, heureDebut, heureFin, first.pers, membres.length);
+  } else {
+    const activiteLabel = ACTIVITE_LABEL[first.activite] || first.activite;
+    const sessionsTxt = tries.map((m, i) => `   Session ${i+1} : ${m.d.time}`).join('\n');
+    message =
+      `Bonjour ${first.nom} 👋\n\n` +
+      `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
+      `═══════════════════════════════════\n` +
+      `   RÉCAPITULATIF DE VOTRE SÉANCE (${membres.length} sessions)\n` +
+      `═══════════════════════════════════\n\n` +
+      `🎮 Activité     : ${activiteLabel}\n` +
+      `📅 Date         : ${dateF}\n` +
+      `👥 Joueurs      : ${first.pers} personne(s)\n\n` +
+      `🕐 Vos créneaux :\n${sessionsTxt}\n\n` +
+      `───────────────────────────────────\n` +
+      `📌 INFOS PRATIQUES\n` +
+      `───────────────────────────────────\n` +
+      `• Merci d'arriver 15 minutes avant votre première session\n` +
+      `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
+      `• Le règlement s'effectue sur place (CB, espèces)\n\n` +
+      `───────────────────────────────────\n` +
+      `📍 Game Zone Montauban\n` +
+      `📞 05.63.03.79.32\n\n` +
+      `À très bientôt ! 🎯\n` +
+      `L'équipe Game Zone Montauban`;
+  }
+
+  try {
+    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  EJS_SERVICE,
+        template_id: EJS_TPL_CLIENT,
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: {
+          to_email: first.mail,
+          ref:      membres.map(m => m.ref).join(','),
+          message:  message
+        }
+      })
+    });
+    if(r.ok) console.log('✅ Email de confirmation groupé (auto-validation) envoyé à', first.mail);
+    else console.warn('⚠️ Erreur envoi email groupé :', await r.text());
+  } catch(e) {
+    console.warn('⚠️ Erreur réseau — email groupé non envoyé à', first.mail, e);
+  }
 }
 
 function updateDemandesBadge(){
@@ -1081,11 +1321,26 @@ function updateDemandesBadge(){
   badge.style.display = pending > 0 ? 'inline-flex' : 'none';
 }
 
+// Calcule l'agrégat public de disponibilité (sans aucune donnée personnelle)
+// à partir de l'arbre complet des réservations. Clé = "activite|date|heure",
+// valeur = nombre total de joueurs déjà positionnés sur ce créneau.
+function computeDispoFromBookings(bk){
+  const dispo = {};
+  Object.entries(bk || {}).forEach(([key, b]) => {
+    const parts = key.split('|');
+    if(parts.length < 3) return;
+    const dispoKey = `${parts[0]}|${parts[1]}|${parts[2]}`;
+    dispo[dispoKey] = (dispo[dispoKey] || 0) + (b.pers || 1);
+  });
+  return dispo;
+}
+
 function saveBookings(){
   setSyncDot('syncing');
   db.ref('bookings').set(bookings)
     .then(()=>setSyncDot('ok'))
     .catch(()=>setSyncDot('error'));
+  db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
 }
 
 // ── CONFIG ──────────────────────────────────────────────────────────────────
@@ -1143,11 +1398,22 @@ function getVacance(dateStr){
   return VACANCES_ZONE_C.find(v => dateStr >= v.start && dateStr <= v.end) || null;
 }
 
+// ── FERMETURE EXCEPTIONNELLE (CONGÉS ANNUELS) ────────────────────────────────
+// Aucune réservation possible sur ces dates, quelle que soit la période.
+const CONGES_ANNUELS = [
+  {start:'2026-08-24', end:'2026-09-11', label:'Congés annuels'},
+];
+
+function getCongeAnnuel(dateStr){
+  return CONGES_ANNUELS.find(c => dateStr >= c.start && dateStr <= c.end) || null;
+}
+
 // ── HORAIRES D'OUVERTURE ──────────────────────────────────────────────────────
 // Retourne {open:false} si journée fermée,
 // {open:true, openMin, closeMin} si jour ouvert avec plage restreinte,
 // null si pas de restriction (période scolaire normale).
 function getOpenHours(dateStr){
+  if(getCongeAnnuel(dateStr)) return { open: false, conge: true };
   const vacance = getVacance(dateStr);
   if(!vacance) return null; // hors vacances : pas de restriction
 
@@ -1391,21 +1657,31 @@ function renderCalendar(){
 
   // ── Vacances scolaires : badge toolbar + classe table ──
   const vacance = getVacance(dateKey);
+  const conge = getCongeAnnuel(dateKey);
   const tbl = document.getElementById('calTbl');
   let vacBadge = document.getElementById('vacanceBadge');
-  if(vacance){
+  if(!vacBadge){
+    vacBadge = document.createElement('span');
+    vacBadge.id = 'vacanceBadge';
+    vacBadge.className = 'vacances-badge';
+    document.getElementById('cur-date').after(vacBadge);
+  }
+  if(conge){
     tbl.classList.add('vacances-active');
-    if(!vacBadge){
-      vacBadge = document.createElement('span');
-      vacBadge.id = 'vacanceBadge';
-      vacBadge.className = 'vacances-badge';
-      document.getElementById('cur-date').after(vacBadge);
-    }
+    tbl.classList.add('conges-active');
+    vacBadge.textContent = `🚫 Fermé — ${conge.label} (jusqu'au ${conge.end.split('-').reverse().join('/')})`;
+    vacBadge.style.cssText = 'background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;';
+    vacBadge.style.display = '';
+  } else if(vacance){
+    tbl.classList.add('vacances-active');
+    tbl.classList.remove('conges-active');
     vacBadge.textContent = `🎒 Vacances scolaires — ${vacance.label}`;
+    vacBadge.style.cssText = '';
     vacBadge.style.display = '';
   } else {
     tbl.classList.remove('vacances-active');
-    if(vacBadge) vacBadge.style.display = 'none';
+    tbl.classList.remove('conges-active');
+    vacBadge.style.display = 'none';
   }
 
   const isBT = currentView === 'bt';
@@ -1496,9 +1772,10 @@ function renderCalendar(){
             <span class="bk-name">Client : ${b.nom||'—'}</span>
             <span class="bk-tel">${b.tel||''}</span>
           </div>
-          ${b.comment ? `<div class="bk-comment">Commentaire : ${b.comment}</div>` : ''}
+          ${b.comment ? `<div class="bk-comment">Commentaire : ${boldBreakdownNumbers(b.comment)}</div>` : ''}
           <div class="bk-row3">
             <span class="bk-pers">👥 : ${b.pers}</span>
+            ${b.profil ? `<span style="font-size:11px;font-weight:700;background:rgba(0,0,0,.1);border-radius:8px;padding:2px 6px;">${PROFIL_BADGE_LABEL[b.profil]||''}</span>` : ''}
             <span class="bk-pay-label ${PAY_CLASS[b.pay]||'pay-attente'}">🧾 : ${payLabel[b.pay]||'Attente'}</span>
             <div class="bk-status">
               <button class="status-btn s-tel${b.confirmed?' on':''}" title="Confirmation téléphonique" onclick="event.stopPropagation();toggleStatus('${k}','confirmed')">📞${b.confirmed?' Confirmé':' Confirm.'}</button>
@@ -1587,20 +1864,6 @@ function renderCalendar(){
 }
 
 // ── MODAL OPEN / CLOSE ────────────────────────────────────────────────────────
-// ── COLONNE PREFEREE ─────────────────────────────────────────────────────────
-// Retourne la colonne déjà utilisée par ce client (tel) sur ce jour, ou null
-function findPreferredSlot(date, tel){
-  if(!tel) return null;
-  const telNorm = tel.trim();
-  for(const [k, b] of Object.entries(bookings)){
-    const parts = k.split('|');
-    if(parts[0]===currentView && parts[1]===date && (b.tel||'').trim()===telNorm){
-      return parseInt(parts[3]); // retourne le numéro de colonne existant
-    }
-  }
-  return null;
-}
-
 function openNew(date,time,slot){
   // Avertissement si créneau hors horaires d'ouverture
   const oh = getOpenHours(date);
@@ -1632,16 +1895,20 @@ function adaptModalForView(){
   const isBT = currentView==='bt';
   // Joueurs max
   document.getElementById('fPers').min = isVR ? 2 : (isBT ? 4 : 1);
-  document.getElementById('fPers').max = isVR ? 4 : 24;
-  document.getElementById('fPers').value = isVR ? 2 : (isBT ? 4 : 1);
+  document.getElementById('fPers').max = isVR ? 4 : (isBT ? 12 : 24);
+  // Note : la valeur n'est plus réinitialisée ici — elle reste pilotée par la
+  // répartition par âge (0 par défaut tant que rien n'est renseigné), pour
+  // éviter qu'un "1 joueur" ne s'affiche sans qu'aucune répartition n'ait été faite.
   // Remplacer options type selon vue
   const sel = document.getElementById('fType');
   if(isBT){
     sel.innerHTML = `<option value="t-bt30">🎵 30 minutes</option>
-       <option value="t-bt60">🎵 60 minutes (2 créneaux)</option>`;
+       <option value="t-bt60">🎵 60 minutes (2 créneaux)</option>
+       <option value="t-message">Message</option>`;
   } else if(isVR){
     sel.innerHTML = `<option value="t-vrzone">VRzone</option>
-       <option value="t-escapevr">Escape Game VR</option>`;
+       <option value="t-escapevr">Escape Game VR</option>
+       <option value="t-message">Message</option>`;
   } else {
     sel.innerHTML = `<option value="t-particulier">Particulier</option>
        <option value="t-groupe">Groupe</option>
@@ -1661,6 +1928,78 @@ function adaptModalForView(){
   }
   // Ajuster le minimum de joueurs selon le type sélectionné
   updatePersMin();
+  // Répartition d'âge : uniquement pertinente en vue Laser Game
+  document.getElementById('fAgeGroup').style.display = (currentView==='laser') ? '' : 'none';
+  updateAgeGroupVisibility();
+}
+
+// Affiche le bloc "répartition par âge" pour Laser Game, Blind Test, VR Zone
+// et Escape Game VR — en retirant les tranches sous l'âge minimum de chaque
+// activité : VR Zone dès 10 ans, Blind Test et Escape Game VR dès 12 ans.
+function updateAgeGroupVisibility(){
+  const type = document.getElementById('fType') ? document.getElementById('fType').value : '';
+  const isEscape = (currentView === 'vr' && type === 't-escapevr');
+  const show = (currentView === 'laser' || currentView === 'bt' || currentView === 'vr');
+  document.getElementById('fAgeGroup').style.display = show ? '' : 'none';
+  if(!show) return;
+
+  // Laser Game : toutes les tranches (7 ans et +)
+  // VR Zone    : à partir de 10 ans → masque "Enf. 7-9"
+  // Blind Test / Escape Game VR : à partir de 12 ans → masque "Enf. 7-9" et "Enf. 10-12"
+  const hideEnf79   = (currentView === 'bt') || (currentView === 'vr');
+  const hideEnf1012 = (currentView === 'bt') || isEscape;
+
+  document.getElementById('fEnf79Wrap').style.display   = hideEnf79   ? 'none' : '';
+  document.getElementById('fEnf1012Wrap').style.display = hideEnf1012 ? 'none' : '';
+  if(hideEnf79)   document.getElementById('fEnf79').value = '0';
+  if(hideEnf1012) document.getElementById('fEnf1012').value = '0';
+}
+
+// Profil du groupe (informatif, cohérent avec la répartition du site web)
+function computeGroupProfile(enfants79, enfants1012, ados1315, ados1618, adultes){
+  if(enfants79 > 0)   return 'famille79';
+  if(enfants1012 > 0) return 'famille1012';
+  if(ados1315 > 0)    return 'ado1315';
+  if(ados1618 > 0)    return 'ado1618';
+  return 'intense';
+}
+
+// Recalcule le total joueurs à partir de la répartition d'âge (Laser Game)
+function onAgeBreakdownChange(changedEl){
+  const e79   = parseInt(document.getElementById('fEnf79').value)   || 0;
+  const e1012 = parseInt(document.getElementById('fEnf1012').value) || 0;
+  const ad13  = parseInt(document.getElementById('fAdo1315').value) || 0;
+  const ad16  = parseInt(document.getElementById('fAdo1618').value) || 0;
+  const adu   = parseInt(document.getElementById('fAdultes').value) || 0;
+  let total = e79 + e1012 + ad13 + ad16 + adu;
+
+  // Plafond réel selon l'activité : 24 (Laser), 4 (VR/Escape), 12 (Blind Test) —
+  // le même souci qu'on avait corrigé côté client (chaque champ seul pouvait
+  // aller jusqu'à 24, quelle que soit l'activité réellement sélectionnée).
+  const max = currentView === 'vr' ? 4 : (currentView === 'bt' ? 12 : 24);
+
+  if (changedEl && total > max) {
+    const currentVal = parseInt(changedEl.value) || 0;
+    const excedent = total - max;
+    changedEl.value = Math.max(0, currentVal - excedent);
+    return onAgeBreakdownChange();
+  }
+
+  document.getElementById('fPers').value = total;
+  updatePersMin();
+}
+
+// Évite de dupliquer la répartition d'âge à chaque ré-édition : si le
+// commentaire est un commentaire structuré ("[Staff] ..." ou "[En ligne] ..."),
+// on ne réaffiche dans le champ libre que la note éventuelle, pas tout le bloc.
+function extractEditableNote(raw){
+  if(!raw) return '';
+  const stripped = raw.replace(/^\[(Staff|En ligne)\]\s*/, '');
+  if(stripped !== raw){
+    const noteMatch = stripped.match(/Note:\s*(.*)$/);
+    return noteMatch ? noteMatch[1].trim() : '';
+  }
+  return raw;
 }
 
 function editBooking(key){
@@ -1677,10 +2016,16 @@ function editBooking(key){
   document.getElementById('fTel').value=b.tel||'';
   document.getElementById('fNom').value=b.nom||'';
   document.getElementById('fMail').value=b.mail||'';
-  document.getElementById('fComment').value=b.comment||'';
+  document.getElementById('fComment').value=extractEditableNote(b.comment);
   document.getElementById('fPers').value=b.pers||(isVR?2:1);
   document.getElementById('fType').value=b.type||(isVR?'t-vrzone':'t-particulier');
   document.getElementById('fPay').value=b.pay||'attente';
+  document.getElementById('fEnf79').value   = b.enfants79   || 0;
+  document.getElementById('fEnf1012').value = b.enfants1012 || 0;
+  document.getElementById('fAdo1315').value = b.ados1315    || 0;
+  document.getElementById('fAdo1618').value = b.ados1618    || 0;
+  document.getElementById('fAdultes').value = b.adultes     || 0;
+  updateAgeGroupVisibility(); // recalcule après avoir défini le vrai type (VR Zone vs Escape)
   document.getElementById('btnCopy').style.display='';
   document.getElementById('copyInfo').textContent='Vous pouvez copier cette réservation vers un autre créneau.';
   document.getElementById('bkOverlay').classList.add('open');
@@ -1688,9 +2033,10 @@ function editBooking(key){
 
 function clearForm(){
   ['fTel','fNom','fMail','fComment'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('fPers').value=1;
+  document.getElementById('fPers').value=0;
   document.getElementById('fType').value='t-particulier';
   document.getElementById('fPay').value='attente';
+  ['fEnf79','fEnf1012','fAdo1315','fAdo1618','fAdultes'].forEach(id=>document.getElementById(id).value='0');
 }
 
 // ── AUTO TYPE ──────────────────────────────────────────────────────────────────
@@ -1708,12 +2054,17 @@ function updatePersMin(){
   const min = MIN_PERS_BY_TYPE[type] || baseMin;
   const inp = document.getElementById('fPers');
   inp.min = min;
-  if((parseInt(inp.value)||0) < min) inp.value = min;
+  const cur = parseInt(inp.value) || 0;
+  // 0 = rien renseigné pour l'instant (répartition vide) — on ne force pas de
+  // valeur par défaut ici, seule une valeur partielle (>0 mais insuffisante)
+  // est ramenée au minimum requis.
+  if(cur > 0 && cur < min) inp.value = min;
 }
 
 function onTypeChange(){
   autoUpdateType();
   updatePersMin();
+  updateAgeGroupVisibility();
 }
 
 // ── AUTOCOMPLETE ─────────────────────────────────────────────────────────────
@@ -1739,28 +2090,11 @@ function acSearch(val){
   list.classList.add('open');
 }
 
-function applyPreferredSlot(tel){
-  if(!pendingSlot || pendingSlot.isEdit) return;
-  const preferred = findPreferredSlot(pendingSlot.date, tel);
-  if(!preferred) return;
-  // Vérifier que la colonne préférée est libre sur ce créneau
-  const prefKey = `${currentView}|${pendingSlot.date}|${pendingSlot.time}|${preferred}`;
-  if(!bookings[prefKey] && preferred !== pendingSlot.slot){
-    pendingSlot.slot = preferred;
-    const isBT = currentView==='bt';
-    const isVR = currentView==='vr';
-    const label = isBT ? 'Blind Test' : (isVR ? 'Casque VR' : 'Réservation');
-    document.getElementById('mSub').textContent =
-      `${dispDate(curDate)} — ${pendingSlot.time} — ${label} n°${preferred} (même colonne que ses autres sessions)`;
-  }
-}
-
 function acSelect(i){
   const [tel, c] = acResults[i];
   document.getElementById('fTel').value = tel;
   document.getElementById('fNom').value = c.nom;
   document.getElementById('fMail').value = c.mail||'';
-  applyPreferredSlot(tel);
   acClose();
 }
 
@@ -1805,10 +2139,26 @@ function confirmBooking(){
   const type=document.getElementById('fType').value;
   const pay=document.getElementById('fPay').value;
 
+  // ── Répartition d'âge (Laser Game, Blind Test, VR Zone, Escape Game VR) ──
+  let ageFields = {};
+  if(currentView==='laser' || currentView==='bt' || currentView==='vr'){
+    const e79   = parseInt(document.getElementById('fEnf79').value)   || 0;
+    const e1012 = parseInt(document.getElementById('fEnf1012').value) || 0;
+    const ad13  = parseInt(document.getElementById('fAdo1315').value) || 0;
+    const ad16  = parseInt(document.getElementById('fAdo1618').value) || 0;
+    const adu   = parseInt(document.getElementById('fAdultes').value) || 0;
+    if(e79+e1012+ad13+ad16+adu > 0){
+      ageFields = {
+        enfants79: e79, enfants1012: e1012, ados1315: ad13, ados1618: ad16, adultes: adu,
+        profil: computeGroupProfile(e79, e1012, ad13, ad16, adu)
+      };
+    }
+  }
+
   if(!tel){ document.getElementById('fTel').focus(); return; }
   if(!/^\d{10}$/.test(tel)){ alert('Le numéro de téléphone doit contenir exactement 10 chiffres.'); document.getElementById('fTel').focus(); return; }
   if(!nom){ document.getElementById('fNom').focus(); return; }
-  const maxP = currentView==='vr' ? 4 : 24;
+  const maxP = currentView==='vr' ? 4 : (currentView==='bt' ? 12 : 24);
   if(pers<1||pers>maxP){ alert(`Nombre de joueurs invalide (1-${maxP})`); return; }
 
   // ── Validation minimum par type ─────────────────────────────────────────────
@@ -1831,6 +2181,30 @@ function confirmBooking(){
     const remaining=MAX_VESTS-usedNow;
     if(pers>remaining){
       showAlert('Capacité maximale atteinte',`Il ne reste que ${remaining} gilet(s) disponible(s) sur ce créneau (max ${MAX_VESTS}). Impossible d'ajouter ${pers} joueurs.`);
+      return;
+    }
+  }
+
+  // Blind Test : une seule réservation autorisée par créneau (aucun surbook, même côté staff)
+  if(currentView==='bt'){
+    const prefixBt = `bt|${date}|${time}|`;
+    const autreBt = Object.keys(bookings).find(k => k.startsWith(prefixBt) && k !== key);
+    if(autreBt){
+      showAlert('Créneau Blind Test déjà occupé', 'Une seule réservation est autorisée par créneau Blind Test. Ce créneau est déjà pris par une autre réservation.');
+      return;
+    }
+  }
+
+  // VR Zone / Escape : vérifier la capacité restante lors d'une MODIFICATION
+  // (la création passe déjà par la vérification détaillée par casque ci-dessous)
+  if(currentView==='vr' && isEdit){
+    let autresPers = 0;
+    const prefixVr = `vr|${date}|${time}|`;
+    Object.entries(bookings).forEach(([k,b]) => {
+      if(k.startsWith(prefixVr) && k !== key) autresPers += (parseInt(b.pers)||0);
+    });
+    if(autresPers + pers > VR_COLS){
+      showAlert('Capacité VR dépassée', `Il ne reste que ${VR_COLS - autresPers} casque(s) disponible(s) sur ce créneau (max ${VR_COLS}).`);
       return;
     }
   }
@@ -1872,7 +2246,7 @@ function confirmBooking(){
           comment: comment
             ? (d > 0 ? `${comment} (suite — casque ${col})` : comment)
             : (d > 0 ? `Suite ${durMin} min — casque ${col}` : ''),
-          pers, type, pay,
+          pers: 1, type, pay, // 1 personne par casque — le total du groupe reste visible via "casque X"
           vrBlock: true,
           vrCol: col,
           vrStep: d
@@ -1884,13 +2258,29 @@ function confirmBooking(){
     // Comportement standard (laser, BT, édition VR)
     const k = isEdit && key ? key : slotKey(date,time,slot);
     const existing = bookings[k] || {};
+
+    // Si une répartition d'âge a été saisie, on la préfixe au commentaire
+    // avec le même format que les réservations en ligne (mais "[Staff]").
+    let finalComment = comment;
+    if (Object.keys(ageFields).length) {
+      const bp = [];
+      if (ageFields.enfants79)   bp.push(`Enf. 7-9: ${ageFields.enfants79}`);
+      if (ageFields.enfants1012) bp.push(`Enf. 10-12: ${ageFields.enfants1012}`);
+      if (ageFields.ados1315)    bp.push(`Ados 13-15: ${ageFields.ados1315}`);
+      if (ageFields.ados1618)    bp.push(`Ados 16-18: ${ageFields.ados1618}`);
+      if (ageFields.adultes)     bp.push(`Adultes: ${ageFields.adultes}`);
+      if (comment) bp.push(`Note: ${comment}`);
+      finalComment = bp.length ? `[Staff] ${bp.join(' | ')}` : comment;
+    }
+
     bookings[k]={
-      tel, nom, mail, comment, pers, type, pay,
+      tel, nom, mail, comment: finalComment, pers, type, pay,
       // Préserver les statuts opérationnels lors d'une modification
       confirmed: existing.confirmed || false,
       present:   existing.present   || false,
       ...(existing.evcPart2 ? {evcPart2: true} : {}),
-      ...(existing.vrBlock  ? {vrBlock: true, vrCol: existing.vrCol, vrStep: existing.vrStep} : {})
+      ...(existing.vrBlock  ? {vrBlock: true, vrCol: existing.vrCol, vrStep: existing.vrStep} : {}),
+      ...ageFields
     };
 
     // ── EVC : doublon automatique (Partie 2) avec 20 min de pause ──────────────
@@ -1932,10 +2322,11 @@ function confirmBooking(){
 
   // ── Synchronisation paiement sur tous les créneaux liés (même client, même jour) ──
   syncPayment(date, tel, pay);
-  // ── Synchronisation type sur toutes les réservations du même client (téléphone) ──
-  syncType(tel, type);
-  // ── Synchronisation mail sur toutes les réservations du même client (téléphone) ──
-  syncMail(tel, mail);
+  // ── Email : propagé à toutes les réservations du même client, le même jour
+  // (toutes activités confondues) — jamais aux autres jours.
+  syncMail(tel, date, mail);
+  // ── Type : uniquement sur la réservation en cours d'édition ──
+  // (pas de propagation aux autres réservations du même numéro)
 
   closeModal();
   // Geler la position scroll avant que Firebase déclenche renderCalendar
@@ -1975,76 +2366,23 @@ function syncPayment(date, tel, newPay){
 }
 
 // ── SYNC MAIL ─────────────────────────────────────────────────────────────────
-// Propage le mail sur toutes les réservations du même client (identifié par téléphone, unique)
-function syncMail(tel, newMail){
-  if(!newMail || !tel) return;
-  const telNorm = tel.trim();
-  for(const b of Object.values(bookings)){
-    if((b.tel||'').trim() === telNorm){
+// La modification de l'email se propage à toutes les réservations du même
+// client (même numéro de tél.) pour la même journée, toutes activités
+// confondues — mais jamais aux jours ou clients différents.
+function syncMail(tel, date, newMail){
+  if(!tel) return;
+  for(const [k, b] of Object.entries(bookings)){
+    const parts = k.split('|'); // activite|date|time|slot
+    if(parts[1] === date && b.tel === tel){
       b.mail = newMail;
     }
   }
 }
 
-// ── SYNC TYPE ─────────────────────────────────────────────────────────────────
-// Propage le type sur toutes les réservations du même client (identifié par téléphone, unique)
-function syncType(tel, newType){
-  if(!newType || !tel) return;
-  const telNorm = tel.trim();
-  const affected = [];
-  for(const [k, b] of Object.entries(bookings)){
-    if((b.tel||'').trim() === telNorm){
-      affected.push(`${k} (nom:${b.nom}, tel:${b.tel}, ancien type:${b.type})`);
-      b.type = newType;
-    }
-  }
-  console.log(`syncType appelé avec tel="${telNorm}", newType="${newType}"`);
-  console.log('Réservations affectées:', affected);
-  if(affected.length > 1){
-    alert(`🔍 DEBUG syncType\nTel recherché: "${telNorm}"\nNouveau type: "${newType}"\n${affected.length} réservation(s) affectée(s):\n${affected.join('\n')}`);
-  }
-}
-
 // ── DELETE ────────────────────────────────────────────────────────────────────
 function delBooking(key){
-  const b = bookings[key];
-  if(!b) return;
-
-  // Chercher les autres sessions du même groupe (même tel, même date, même vue)
-  const parts = key.split('|');
-  const [view, date] = parts;
-  const tel = (b.tel||'').trim();
-  const autresSessions = Object.keys(bookings).filter(k => {
-    if(k === key) return false;
-    const p = k.split('|');
-    return p[0]===view && p[1]===date && (bookings[k].tel||'').trim()===tel;
-  });
-
-  let supprimerTout = false;
-  if(autresSessions.length > 0){
-    const nbTotal = autresSessions.length + 1;
-    const choix = confirm(
-      `Ce groupe a ${nbTotal} session(s) réservée(s) ce jour.\n\n` +
-      `✅ OK → Supprimer TOUTES les sessions du groupe\n` +
-      `❌ Annuler → Supprimer uniquement cette session`
-    );
-    if(choix === true){
-      supprimerTout = true;
-    } else if(choix === false){
-      // L'utilisateur a cliqué "Annuler" = supprimer seulement cette session
-      // On demande confirmation explicite
-      if(!confirm('Supprimer uniquement cette session ?')) return;
-    }
-  } else {
-    if(!confirm('Supprimer cette réservation ?')) return;
-  }
-
-  // Supprimer
+  if(!confirm('Supprimer cette réservation ?')) return;
   delete bookings[key];
-  if(supprimerTout){
-    autresSessions.forEach(k => delete bookings[k]);
-  }
-
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop = _w.scrollTop; _savedScrollLeft = _w.scrollLeft; }
   saveBookings();
@@ -2222,6 +2560,22 @@ function openClientsPanel(){
 
 // ── DEMANDES EN LIGNE ─────────────────────────────────────────────────────────
 const ACTIVITE_LABEL = {laser:'🎯 Laser Game', vr:'🥽 Réalité Virtuelle', bt:'🎵 Blind Test'};
+const PROFIL_BADGE_LABEL = {famille79:'👶 Enf. 7-9', famille1012:'🧒 Enf. 10-12', ado1315:'🎫 Ados 13-15', ado1618:'🎫 Ados 16-18', intense:'💪 Adultes'};
+// Met en gras les chiffres de répartition par âge dans un commentaire
+// (ex. "Enf. 10-12: 1 | Ados 13-15: 1" → le "1" et le second "1" en gras)
+function boldBreakdownNumbers(str){
+  return (str||'').replace(/:\s*(\d+)/g, ': <strong>$1</strong>');
+}
+
+const AUTO_REASON_LABEL = {
+  activite_manuelle:     '📋 Type de prestation nécessitant toujours une validation manuelle (anniversaire, EVG/EVJF…).',
+  enfants_sans_adulte:   '👶 Enfants présents sans adulte dans le groupe — validation manuelle requise.',
+  trop_proche:           '⏰ Demande reçue à moins de 40 min du créneau — validation manuelle requise.',
+  staff_prioritaire:     '👤 Un verrou staff était actif sur ce créneau au moment de la demande.',
+  capacite_insuffisante: '🎯 Le créneau était presque complet au moment de la demande — vérifier la capacité restante.',
+  creneau_complet:       '🎵 Ce créneau Blind Test était déjà occupé au moment de la demande.',
+  erreur_verification:   '🔄 Erreur technique lors de la vérification automatique — à valider manuellement.',
+};
 const TYPE_LABEL_D = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
   't-anniv3':'Anniversaire 3 parties','t-evc':'EVC','t-club':'Club & Asso',
@@ -2274,8 +2628,10 @@ function demandeCard(ref, d){
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.type]||d.type}</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">👥 ${d.pers} joueurs</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${d.time}</span>
+          ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
         </div>
-        ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${d.comment}</div>`:''}
+        ${d.autoReason && AUTO_REASON_LABEL[d.autoReason]?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">${AUTO_REASON_LABEL[d.autoReason]}</div>`:''}
+        ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${boldBreakdownNumbers(d.comment)}</div>`:''}
         <div style="margin-top:6px;font-size:11px;color:#94a3b8">Ref: ${ref} · Reçue ${ago}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
@@ -2304,78 +2660,59 @@ function timeAgo(ts){
 async function accepterDemande(ref){
   const d = demandes[ref];
   if(!d) return;
-  // Vérifier disponibilité
-  const key = `${d.activite}|${d.date}|${d.time}|1`;
-  if(bookings[key]){
-    if(!confirm(`Le créneau ${d.time} est déjà pris. Forcer quand même ?`)) return;
+
+  // Si cette demande fait partie d'un groupe multi-session, on valide et
+  // envoie l'email pour TOUT le groupe en une fois (pas une par une).
+  if(d.groupId && enCoursTraitement.has(d.groupId)) return;
+  if(!d.groupId && enCoursTraitement.has(ref)) return;
+  enCoursTraitement.add(d.groupId || ref);
+
+  const membres = d.groupId
+    ? Object.entries(demandes)
+        .filter(([r, dd]) => dd.groupId === d.groupId && dd.status === 'pending')
+        .map(([r, dd]) => ({ref: r, d: dd}))
+    : [{ref, d}];
+
+  // Vérifier disponibilité (première session comme aperçu — un conflit
+  // individuel reste possible par la suite via createBookingFromDemande)
+  const keyPreview = `${d.activite}|${d.date}|${d.time}|1`;
+  if(bookings[keyPreview]){
+    if(!confirm(`Le créneau ${d.time} est déjà pris. Forcer quand même ?`)) { enCoursTraitement.delete(d.groupId || ref); return; }
   }
-  // Trouver un slot libre
-  let slot = 1;
-  while(bookings[`${d.activite}|${d.date}|${d.time}|${slot}`]) slot++;
-  // Créer la réservation
-  const bKey = `${d.activite}|${d.date}|${d.time}|${slot}`;
-  bookings[bKey] = {
-    nom: d.nom, tel: d.tel, mail: d.mail||'',
-    pers: d.pers, type: d.type,
-    comment: d.comment ? `[En ligne] ${d.comment}` : '[Réservation en ligne]',
-    pay: 'attente', confirmed: false, present: false
-  };
-  // Marquer comme acceptée
-  await db.ref(`demandes/${ref}/status`).set('accepted');
-  // Email de confirmation au client via API REST EmailJS
-  if(d.mail){
-    const [y,mo,da] = (d.date||'').split('-');
-    const dateF = da ? `${da}/${mo}/${y}` : d.date;
-    const activiteLabel = ACTIVITE_LABEL[d.activite] || d.activite;
-    fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id:  EJS_SERVICE,
-        template_id: EJS_TPL_CLIENT,
-        user_id:     'DsCuGiMtzFItllTJk',
-        template_params: {
-          to_email: d.mail,
-          ref:      ref,
-          message:
-            `Bonjour ${d.nom} 👋\n\n` +
-            `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
-            `═══════════════════════════════════\n` +
-            `   RÉCAPITULATIF DE VOTRE SÉANCE\n` +
-            `═══════════════════════════════════\n\n` +
-            `📋 Référence    : ${ref}\n` +
-            `🎮 Activité     : ${activiteLabel}\n` +
-            `📅 Date         : ${dateF}\n` +
-            `🕐 Heure        : ${d.time}\n` +
-            `👥 Joueurs      : ${d.pers} personne(s)\n\n` +
-            `───────────────────────────────────\n` +
-            `📌 INFOS PRATIQUES\n` +
-            `───────────────────────────────────\n` +
-            `• Merci d'arriver 15 minutes avant votre créneau\n` +
-            `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
-            `• Le règlement s'effectue sur place (CB, espèces)\n` +
-            `• Prévoir des vêtements confortables pour le Laser Game\n\n` +
-            `───────────────────────────────────\n` +
-            `📍 Game Zone Montauban\n` +
-            `📞 05.63.03.79.32\n\n` +
-            `À très bientôt ! 🎯\n` +
-            `L'équipe Game Zone Montauban`
-        }
-      })
-    }).then(r => {
-      if(r.ok){ 
-        alert('✅ Email de confirmation envoyé à ' + d.mail);
-      } else { 
-        r.text().then(t => {
-          if(t.includes('quota') || t.includes('limit') || t.includes('429')){
-            alert('⚠️ Quota EmailJS atteint (200 emails/mois épuisés).\nL\'email de confirmation n\'a pas pu être envoyé à ' + d.mail + '.\nContactez le client directement par téléphone : ' + d.tel);
-          } else {
-            alert('⚠️ Erreur envoi email : ' + t + '\nContactez le client : ' + d.tel);
-          }
-        });
-      }
-    }).catch(e => alert('⚠️ Erreur réseau — email non envoyé à ' + d.mail + '\nContactez le client : ' + d.tel));
+
+  const confirmees = [];
+  for(const {ref: r, d: dd} of membres){
+    let ok = await createBookingFromDemande(r, dd);
+    if(!ok){
+      // La validation manuelle peut forcer un créneau même si la capacité
+      // normale est dépassée (le staff a déjà confirmé vouloir forcer) —
+      // on crée directement la réservation sur un numéro de slot libre,
+      // sans plafond, comme le comportement historique de cette fonction.
+      const span = dd.slotSpan || 1;
+      const times = [dd.time];
+      for(let i=1;i<span;i++) times.push(addMinutesToTime(dd.time, i*20));
+      let slot = 1;
+      while(times.some(t => bookings[`${dd.activite}|${dd.date}|${t}|${slot}`])) slot++;
+      times.forEach(t => {
+        bookings[`${dd.activite}|${dd.date}|${t}|${slot}`] = {
+          nom: dd.nom, tel: dd.tel, mail: dd.mail||'',
+          pers: dd.pers, type: dd.type,
+          comment: dd.comment ? `[En ligne] ${dd.comment}` : '[Réservation en ligne]',
+          pay: 'attente', confirmed: false, present: false,
+          ...(dd.profil ? {profil: dd.profil} : {})
+        };
+      });
+      ok = true;
+    }
+    await db.ref(`demandes/${r}/status`).set('accepted');
+    if(ok) confirmees.push({ref: r, d: dd});
   }
+
+  if(confirmees.length){
+    if(confirmees.length > 1) await sendGroupConfirmationEmail(confirmees);
+    else await sendClientConfirmationEmail(confirmees[0].d, confirmees[0].ref, true);
+  }
+
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
   saveBookings();
@@ -2386,7 +2723,9 @@ async function accepterDemande(ref){
   document.getElementById(`nav${d.activite.charAt(0).toUpperCase()+d.activite.slice(1)}`).classList.add('nav-active');
   document.getElementById('demandesOverlay').style.display='none';
   renderCalendar();
-  alert(`✅ Demande de ${d.nom} validée et ajoutée au planning ${d.activite} du ${d.date} à ${d.time}.`);
+  alert(membres.length > 1
+    ? `✅ ${membres.length} sessions de ${d.nom} validées et ajoutées au planning ${d.activite} du ${d.date}.`
+    : `✅ Demande de ${d.nom} validée et ajoutée au planning ${d.activite} du ${d.date} à ${d.time}.`);
 }
 
 async function refuserDemande(ref){
