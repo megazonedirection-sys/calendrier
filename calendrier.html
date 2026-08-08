@@ -1037,24 +1037,14 @@ function addMinutesToTime(timeStr, minutes){
 
 // Construit le corps du message client à partir des infos de la réservation
 // (utilisé aussi bien pour une session unique que pour un groupe multi-session).
-function buildClientMessage(dateF, heureDebut, heureFin, pers, totalSessions){
-  return (
-    `Bonjour,\n\n` +
-    `Voici un récapitulatif de votre réservation du ${dateF} pour votre sortie au Game Zone.\n` +
-    `Afin de procéder à votre installation et briefing dans les meilleures conditions, merci de vous présenter à ${heureDebut}\n` +
-    `Prévoyez une fin d'activité à ${heureFin}\n` +
-    `Vous avez réservé pour un maximum de ${pers} joueurs, et pour un total de ${totalSessions} parties.\n` +
-    `Nous attirons votre attention sur le fait qu'au-delà de ce nombre, nous ne pourrons vous garantir des places disponibles pour les participants supplémentaires.\n` +
-    `Nous vous rappelons qu'aucune boisson ou nourriture ne sont acceptées dans l'enceinte du centre.\n` +
-    `Ainsi que l'âge minimum est de 7 ans (pour la compréhension du jeu) et la taille minimale de 1.20 m (pour utiliser pleinement le matériel). Le staff Game Zone se réserve le droit de refuser l'accès à l'activité si ces conditions ne sont pas réunies.\n` +
-    `Cordialement,\n` +
-    `Le staff`
-  );
-}
-
-// Ancien texte de confirmation, conservé pour les activités autres que
-// Laser Game en attendant une formulation dédiée pour chacune.
-function buildLegacyClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin, pers){
+// Modèle de confirmation client unique, utilisé pour toutes les activités
+// (Laser, VR, Escape, Blind Test). Indique désormais aussi le nombre de
+// sessions réservées, ou le nom de l'offre spéciale si applicable
+// (All Play / Just Play / Four Play).
+function buildClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin, pers, totalSessions, offerLabel){
+  const sessionsLine = offerLabel
+    ? `🎯 Offre réservée  : ${offerLabel} (${totalSessions} partie${totalSessions > 1 ? 's' : ''})\n`
+    : `🔢 Sessions        : ${totalSessions} partie${totalSessions > 1 ? 's' : ''}\n`;
   return (
     `Bonjour ${nom} 👋\n\n` +
     `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
@@ -1065,7 +1055,8 @@ function buildLegacyClientMessage(nom, ref, activiteLabel, dateF, heureDebut, he
     `🎮 Activité     : ${activiteLabel}\n` +
     `📅 Date         : ${dateF}\n` +
     `🕐 De ${heureDebut} à ${heureFin} (briefing 15 min inclus)\n` +
-    `👥 Joueurs      : ${pers} personne(s)\n\n` +
+    `👥 Joueurs      : ${pers} personne(s)\n` +
+    sessionsLine + `\n` +
     `───────────────────────────────────\n` +
     `📌 INFOS PRATIQUES\n` +
     `───────────────────────────────────\n` +
@@ -1088,9 +1079,7 @@ async function sendClientConfirmationEmail(d, ref, notify){
   const duration = SESSION_DURATION_MIN[d.activiteLabel] || 20;
   const heureDebut = addMinutesToTime(d.time, -15);
   const heureFin   = addMinutesToTime(d.time, duration);
-  const message = (d.activiteLabel === 'Laser Game')
-    ? buildClientMessage(dateF, heureDebut, heureFin, d.pers, 1)
-    : buildLegacyClientMessage(d.nom, ref, activiteLabel, dateF, heureDebut, heureFin, d.pers);
+  const message = buildClientMessage(d.nom, ref, activiteLabel, dateF, heureDebut, heureFin, d.pers, 1, d.offerLabel || null);
   try {
     const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
@@ -1173,7 +1162,8 @@ async function createBookingFromDemande(ref, d){
           pay:       'attente',
           confirmed: false,
           present:   false,
-          ...(d.profil ? {profil: d.profil} : {})
+          ...(d.profil ? {profil: d.profil} : {}),
+          ...(d.groupId ? {groupId: d.groupId} : {})
         };
       });
     }
@@ -1203,7 +1193,8 @@ async function createBookingFromDemande(ref, d){
       pay:       'attente',
       confirmed: false,
       present:   false,
-      ...(d.profil ? {profil: d.profil} : {})
+      ...(d.profil ? {profil: d.profil} : {}),
+      ...(d.groupId ? {groupId: d.groupId} : {})
     };
   });
   await db.ref(`demandes/${ref}/status`).set('processed');
@@ -1261,35 +1252,9 @@ async function sendGroupConfirmationEmail(membres){
   const dureeDerniere = SESSION_DURATION_MIN[derniere.activiteLabel] || 20;
   const heureDebut = addMinutesToTime(premiere.time, -15);
   const heureFin   = addMinutesToTime(derniere.time, dureeDerniere);
+  const activiteLabel = ACTIVITE_LABEL[first.activite] || first.activite;
 
-  let message;
-  if (first.activiteLabel === 'Laser Game') {
-    message = buildClientMessage(dateF, heureDebut, heureFin, first.pers, membres.length);
-  } else {
-    const activiteLabel = ACTIVITE_LABEL[first.activite] || first.activite;
-    const sessionsTxt = tries.map((m, i) => `   Session ${i+1} : ${m.d.time}`).join('\n');
-    message =
-      `Bonjour ${first.nom} 👋\n\n` +
-      `Super nouvelle ! Votre réservation à Game Zone Montauban est officiellement confirmée. On a hâte de vous accueillir ! 🎉\n\n` +
-      `═══════════════════════════════════\n` +
-      `   RÉCAPITULATIF DE VOTRE SÉANCE (${membres.length} sessions)\n` +
-      `═══════════════════════════════════\n\n` +
-      `🎮 Activité     : ${activiteLabel}\n` +
-      `📅 Date         : ${dateF}\n` +
-      `👥 Joueurs      : ${first.pers} personne(s)\n\n` +
-      `🕐 Vos créneaux :\n${sessionsTxt}\n\n` +
-      `───────────────────────────────────\n` +
-      `📌 INFOS PRATIQUES\n` +
-      `───────────────────────────────────\n` +
-      `• Merci d'arriver 15 minutes avant votre première session\n` +
-      `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
-      `• Le règlement s'effectue sur place (CB, espèces)\n\n` +
-      `───────────────────────────────────\n` +
-      `📍 Game Zone Montauban\n` +
-      `📞 05.63.03.79.32\n\n` +
-      `À très bientôt ! 🎯\n` +
-      `L'équipe Game Zone Montauban`;
-  }
+  const message = buildClientMessage(first.nom, membres.map(m => m.ref).join(','), activiteLabel, dateF, heureDebut, heureFin, first.pers, membres.length, first.offerLabel || null);
 
   try {
     const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
@@ -1401,7 +1366,7 @@ function getVacance(dateStr){
 // ── FERMETURE EXCEPTIONNELLE (CONGÉS ANNUELS) ────────────────────────────────
 // Aucune réservation possible sur ces dates, quelle que soit la période.
 const CONGES_ANNUELS = [
-  {start:'2026-08-24', end:'2026-09-11', label:'Congés annuels'},
+  {start:'2026-08-24', end:'2026-09-08', label:'Congés annuels'},
 ];
 
 function getCongeAnnuel(dateStr){
@@ -2381,6 +2346,33 @@ function syncMail(tel, date, newMail){
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 function delBooking(key){
+  const b = bookings[key];
+  const groupId = b && b.groupId;
+
+  if(groupId){
+    // Trouver toutes les autres sessions du même groupe (réservation multi-session)
+    const autresClesGroupe = Object.keys(bookings).filter(k => k !== key && bookings[k].groupId === groupId);
+    if(autresClesGroupe.length > 0){
+      const total = autresClesGroupe.length + 1;
+      const toutAnnuler = confirm(
+        `Cette réservation fait partie d'un groupe de ${total} sessions.\n\n` +
+        `OK = Annuler les ${total} sessions du groupe\n` +
+        `Annuler (ce message) = Annuler uniquement cette session`
+      );
+      if(toutAnnuler){
+        delete bookings[key];
+        autresClesGroupe.forEach(k => delete bookings[k]);
+      } else {
+        if(!confirm('Confirmer l\'annulation de cette seule session ?')) return;
+        delete bookings[key];
+      }
+      const _w = document.querySelector('.cal-wrap');
+      if(_w){ _savedScrollTop = _w.scrollTop; _savedScrollLeft = _w.scrollLeft; }
+      saveBookings();
+      return;
+    }
+  }
+
   if(!confirm('Supprimer cette réservation ?')) return;
   delete bookings[key];
   const _w = document.querySelector('.cal-wrap');
@@ -2699,7 +2691,8 @@ async function accepterDemande(ref){
           pers: dd.pers, type: dd.type,
           comment: dd.comment ? `[En ligne] ${dd.comment}` : '[Réservation en ligne]',
           pay: 'attente', confirmed: false, present: false,
-          ...(dd.profil ? {profil: dd.profil} : {})
+          ...(dd.profil ? {profil: dd.profil} : {}),
+          ...(dd.groupId ? {groupId: dd.groupId} : {})
         };
       });
       ok = true;
