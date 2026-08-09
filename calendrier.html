@@ -1114,7 +1114,7 @@ async function sendClientConfirmationEmail(d, ref, notify){
 // Crée la réservation dans bookings à partir d'une demande auto-confirmée.
 // Retourne true si la réservation a pu être créée, false si le créneau est
 // complet (bascule alors la demande en validation manuelle).
-async function createBookingFromDemande(ref, d){
+async function createBookingFromDemande(ref, d, forcedSlot){
   const activite = d.activite || 'laser';
   const date     = d.date || '';
   const time     = d.time || '';
@@ -1130,15 +1130,19 @@ async function createBookingFromDemande(ref, d){
   if(activite === 'vr'){
     const nbCols = Math.max(1, Math.min(pers, VR_COLS));
     let startCol = -1;
-    for(let c = 1; c + nbCols - 1 <= VR_COLS; c++){
-      let libre = true;
-      outer:
-      for(let cc = c; cc < c + nbCols; cc++){
-        for(const t of times){
-          if(bookings[`vr|${date}|${t}|${cc}`]){ libre = false; break outer; }
+    if(forcedSlot && forcedSlot + nbCols - 1 <= VR_COLS){
+      startCol = forcedSlot; // colonne imposée (alignement avec les autres sessions du groupe)
+    } else {
+      for(let c = 1; c + nbCols - 1 <= VR_COLS; c++){
+        let libre = true;
+        outer:
+        for(let cc = c; cc < c + nbCols; cc++){
+          for(const t of times){
+            if(bookings[`vr|${date}|${t}|${cc}`]){ libre = false; break outer; }
+          }
         }
+        if(libre){ startCol = c; break; }
       }
-      if(libre){ startCol = c; break; }
     }
     if(startCol === -1){
       // Pas assez de casques libres simultanément — passer en validation manuelle
@@ -1174,7 +1178,11 @@ async function createBookingFromDemande(ref, d){
   // ── Laser / Blind Test : logique existante (1 seul numéro de slot par créneau) ──
   const MAX = activite==='laser' ? 8 : 1;
   let slot = 1;
-  while(slot <= MAX && times.some(t => bookings[`${activite}|${date}|${t}|${slot}`])) slot++;
+  if(forcedSlot && forcedSlot <= MAX && !times.some(t => bookings[`${activite}|${date}|${t}|${forcedSlot}`])){
+    slot = forcedSlot; // colonne imposée (alignement avec les autres sessions du groupe)
+  } else {
+    while(slot <= MAX && times.some(t => bookings[`${activite}|${date}|${t}|${slot}`])) slot++;
+  }
   if(slot > MAX){
     // Créneau complet — passer en validation manuelle
     await db.ref(`demandes/${ref}/status`).set('pending');
@@ -1222,12 +1230,44 @@ async function autoValiderDemande(ref, d){
 // Traite un groupe de demandes issues d'une même réservation multi-session :
 // crée toutes les réservations, puis envoie UN SEUL email de confirmation
 // client reprenant la totalité des sessions (au lieu d'un email par session).
+// Calcule un numéro de colonne (slot/casque) libre simultanément sur TOUS
+// les créneaux occupés par le groupe, pour que chaque session s'affiche
+// dans la même colonne d'une ligne à l'autre — plus simple à lire.
+function computeGroupSlot(membres){
+  const first = membres[0].d;
+  const activite = first.activite || 'laser';
+  const date = first.date || '';
+  const MAX = activite === 'vr' ? VR_COLS : (activite === 'laser' ? 8 : 1);
+  const nbCols = activite === 'vr' ? Math.max(1, Math.min(first.pers || 1, VR_COLS)) : 1;
+
+  // Tous les créneaux (avec leur éventuel span) occupés par le groupe
+  const allTimes = [];
+  membres.forEach(({d}) => {
+    const span = d.slotSpan || 1;
+    allTimes.push(d.time);
+    for(let i = 1; i < span; i++) allTimes.push(addMinutesToTime(d.time, i * 20));
+  });
+
+  for(let c = 1; c + nbCols - 1 <= MAX; c++){
+    let libre = true;
+    outer:
+    for(let cc = c; cc < c + nbCols; cc++){
+      for(const t of allTimes){
+        if(bookings[`${activite}|${date}|${t}|${cc}`]){ libre = false; break outer; }
+      }
+    }
+    if(libre) return c;
+  }
+  return null; // aucune colonne commune libre — chaque session gardera son propre calcul
+}
+
 async function autoValiderGroupe(groupId, membres){
   if(enCoursTraitement.has(groupId)) return;
   enCoursTraitement.add(groupId);
+  const slotCommun = computeGroupSlot(membres);
   const confirmees = [];
   for(const {ref, d} of membres){
-    const ok = await createBookingFromDemande(ref, d);
+    const ok = await createBookingFromDemande(ref, d, slotCommun);
     if(ok) confirmees.push({ref, d});
   }
   if(confirmees.length){
@@ -2672,9 +2712,10 @@ async function accepterDemande(ref){
     if(!confirm(`Le créneau ${d.time} est déjà pris. Forcer quand même ?`)) { enCoursTraitement.delete(d.groupId || ref); return; }
   }
 
+  const slotCommun = computeGroupSlot(membres);
   const confirmees = [];
   for(const {ref: r, d: dd} of membres){
-    let ok = await createBookingFromDemande(r, dd);
+    let ok = await createBookingFromDemande(r, dd, slotCommun);
     if(!ok){
       // La validation manuelle peut forcer un créneau même si la capacité
       // normale est dépassée (le staff a déjà confirmé vouloir forcer) —
@@ -2684,7 +2725,11 @@ async function accepterDemande(ref){
       const times = [dd.time];
       for(let i=1;i<span;i++) times.push(addMinutesToTime(dd.time, i*20));
       let slot = 1;
-      while(times.some(t => bookings[`${dd.activite}|${dd.date}|${t}|${slot}`])) slot++;
+      if(slotCommun && !times.some(t => bookings[`${dd.activite}|${dd.date}|${t}|${slotCommun}`])){
+        slot = slotCommun;
+      } else {
+        while(times.some(t => bookings[`${dd.activite}|${dd.date}|${t}|${slot}`])) slot++;
+      }
       times.forEach(t => {
         bookings[`${dd.activite}|${dd.date}|${t}|${slot}`] = {
           nom: dd.nom, tel: dd.tel, mail: dd.mail||'',
