@@ -982,6 +982,18 @@ function initFirebaseSync(){
   }, ()=>setSyncDot('error'));
 
   // Écouter les demandes en ligne
+// File d'attente globale : garantit qu'un seul traitement (groupe ou demande
+// isolée) est en cours à la fois, jamais deux en parallèle. Sans ça, deux
+// clients différents auto-confirmés à quelques instants d'intervalle peuvent
+// se marcher dessus pendant qu'ils calculent chacun leur colonne libre —
+// l'un lit encore l'état d'avant que l'autre ait fini d'écrire, ce qui peut
+// désaligner les sessions d'un même groupe sur des colonnes différentes.
+let traitementQueue = Promise.resolve();
+function enqueueTraitement(fn){
+  traitementQueue = traitementQueue.then(fn).catch(e => console.warn('Erreur traitement demande:', e));
+  return traitementQueue;
+}
+
   db.ref('demandes').on('value', snap => {
     demandes = snap.val() || {};
     // Auto-valider les demandes directes non encore traitées.
@@ -1000,12 +1012,12 @@ function initFirebaseSync(){
         seules.push({ref, d});
       }
     });
-    seules.forEach(({ref, d}) => autoValiderDemande(ref, d));
+    seules.forEach(({ref, d}) => enqueueTraitement(() => autoValiderDemande(ref, d)));
     Object.entries(parGroupe).forEach(([groupId, membres]) => {
       const total = membres[0].d.groupTotal || membres.length;
       if(membres.length < total) return; // groupe incomplet — on attend les sessions restantes
       const aConfirmer = membres.filter(m => m.d.direct && m.d.status === 'auto-confirmed');
-      if(aConfirmer.length > 0) autoValiderGroupe(groupId, aConfirmer);
+      if(aConfirmer.length > 0) enqueueTraitement(() => autoValiderGroupe(groupId, aConfirmer));
     });
     updateDemandesBadge();
     renderCalendar();
@@ -2219,6 +2231,20 @@ function confirmBooking(){
     const durSlots = VR_DURATION[type] || 2;
     const timeIdx  = VR_SLOTS.findIndex(s => s.time === time);
 
+    // Si une répartition d'âge a été saisie, on la préfixe au commentaire
+    // avec le même format que les réservations en ligne (mais "[Staff]").
+    let finalCommentVr = comment;
+    if (Object.keys(ageFields).length) {
+      const bp = [];
+      if (ageFields.enfants79)   bp.push(`Enf. 7-9: ${ageFields.enfants79}`);
+      if (ageFields.enfants1012) bp.push(`Enf. 10-12: ${ageFields.enfants1012}`);
+      if (ageFields.ados1315)    bp.push(`Ados 13-15: ${ageFields.ados1315}`);
+      if (ageFields.ados1618)    bp.push(`Ados 16-18: ${ageFields.ados1618}`);
+      if (ageFields.adultes)     bp.push(`Adultes: ${ageFields.adultes}`);
+      if (comment) bp.push(`Note: ${comment}`);
+      finalCommentVr = bp.length ? `[Staff] ${bp.join(' | ')}` : comment;
+    }
+
     // Vérifier les conflits avant d'écrire
     const conflits = [];
     for(let col=1; col<=pers; col++){
@@ -2248,13 +2274,14 @@ function confirmBooking(){
         const k2 = `vr|${date}|${t}|${col}`;
         bookings[k2] = {
           tel, nom, mail,
-          comment: comment
-            ? (d > 0 ? `${comment} (suite — casque ${col})` : comment)
+          comment: finalCommentVr
+            ? (d > 0 ? `${finalCommentVr} (suite — casque ${col})` : finalCommentVr)
             : (d > 0 ? `Suite ${durMin} min — casque ${col}` : ''),
           pers: 1, type, pay, // 1 personne par casque — le total du groupe reste visible via "casque X"
           vrBlock: true,
           vrCol: col,
-          vrStep: d
+          vrStep: d,
+          ...ageFields
         };
       }
     }
@@ -2690,6 +2717,10 @@ function timeAgo(ts){
 }
 
 async function accepterDemande(ref){
+  return enqueueTraitement(() => accepterDemandeInner(ref));
+}
+
+async function accepterDemandeInner(ref){
   const d = demandes[ref];
   if(!d) return;
 
