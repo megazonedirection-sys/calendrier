@@ -1432,7 +1432,16 @@ function getCongeAnnuel(dateStr){
 function getOpenHours(dateStr){
   if(getCongeAnnuel(dateStr)) return { open: false, conge: true };
   const vacance = getVacance(dateStr);
-  if(!vacance) return null; // hors vacances : pas de restriction
+  if(!vacance){
+    // Hors vacances scolaires : à partir du 12/09/2026, les week-ends
+    // ouvrent à 14h (matinée grisée) — samedi jusqu'à 22h15, dimanche jusqu'à 19h.
+    if(dateStr >= '2026-09-12'){
+      const dow = new Date(dateStr + 'T12:00:00').getDay();
+      if(dow === 6) return { open:true, openMin:14*60, closeMin:22*60+15 };
+      if(dow === 0) return { open:true, openMin:14*60, closeMin:19*60 };
+    }
+    return null; // pas de restriction les autres jours
+  }
 
   const d   = new Date(dateStr + 'T12:00:00');
   const dow = d.getDay(); // 0=Dim 1=Lun … 6=Sam
