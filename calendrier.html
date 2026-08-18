@@ -48,6 +48,12 @@ nav{
 .nav-logo svg{width:18px;height:18px}
 .nav-item{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;transition:background .13s;white-space:nowrap;text-decoration:none}
 .nav-item:hover{background:var(--bg)}
+@keyframes nav-incomplet-blink{
+  0%,100%{background:rgba(220,38,38,.85);color:#fff;box-shadow:0 0 8px rgba(220,38,38,.6)}
+  50%{background:rgba(220,38,38,.15);color:var(--text);box-shadow:none}
+}
+.nav-item.nav-incomplet{animation:nav-incomplet-blink 1s ease-in-out infinite;border-radius:6px}
+.nav-item.nav-incomplet.nav-active{animation:nav-incomplet-blink 1s ease-in-out infinite}
 .nav-spacer{flex:1}
 .theme-toggle{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--muted);margin-right:10px;white-space:nowrap}
 .tog{width:34px;height:18px;background:#334155;border-radius:9px;position:relative;cursor:pointer;transition:background .2s}
@@ -975,6 +981,7 @@ function initFirebaseSync(){
     bookings = snap.val() || {};
     setSyncDot('ok');
     renderCalendar();
+    updateIncompletAlerts();
     if(!_initialScrollDone){
       _initialScrollDone = true;
       requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 120); });
@@ -1328,6 +1335,24 @@ async function sendGroupConfirmationEmail(membres){
   } catch(e) {
     console.warn('⚠️ Erreur réseau — email groupé non envoyé à', first.mail, e);
   }
+}
+
+// Fait clignoter l'onglet Laser/VR/Blind Test dès que cette activité a au
+// moins une réservation avec un paiement "incomplet", pour alerter l'agent
+// même s'il n'est pas en train de consulter cette vue.
+function updateIncompletAlerts(){
+  const parActivite = { laser:false, vr:false, bt:false };
+  Object.entries(bookings).forEach(([k, b]) => {
+    if(b.pay !== 'incomplet') return;
+    const activite = k.split('|')[0];
+    if(activite in parActivite) parActivite[activite] = true;
+  });
+  const map = { laser:'navLaser', vr:'navVR', bt:'navBT' };
+  Object.entries(map).forEach(([activite, id]) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.classList.toggle('nav-incomplet', parActivite[activite]);
+  });
 }
 
 function updateDemandesBadge(){
