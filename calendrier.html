@@ -48,12 +48,6 @@ nav{
 .nav-logo svg{width:18px;height:18px}
 .nav-item{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;transition:background .13s;white-space:nowrap;text-decoration:none}
 .nav-item:hover{background:var(--bg)}
-@keyframes nav-incomplet-blink{
-  0%,100%{background:rgba(220,38,38,.85);color:#fff;box-shadow:0 0 8px rgba(220,38,38,.6)}
-  50%{background:rgba(220,38,38,.15);color:var(--text);box-shadow:none}
-}
-.nav-item.nav-incomplet{animation:nav-incomplet-blink 1s ease-in-out infinite;border-radius:6px}
-.nav-item.nav-incomplet.nav-active{animation:nav-incomplet-blink 1s ease-in-out infinite}
 .nav-spacer{flex:1}
 .theme-toggle{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--muted);margin-right:10px;white-space:nowrap}
 .tog{width:34px;height:18px;background:#334155;border-radius:9px;position:relative;cursor:pointer;transition:background .2s}
@@ -178,7 +172,11 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .bk-pers{display:inline-flex;align-items:center;gap:4px;font-size:17px;font-weight:900;white-space:nowrap;flex-shrink:0}
 .bk-pay-label{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;padding:3px 8px;border-radius:12px;flex-shrink:0;white-space:nowrap}
 .bk-pay-label.pay-paye   {background:#16a34a;color:#fff;border:1px solid #15803d}
-.bk-pay-label.pay-incomplet{background:rgba(220,38,38,.22);color:#7f1d1d;border:1px solid rgba(220,38,38,.4)}
+@keyframes pay-incomplet-blink{
+  0%,100%{background:rgba(220,38,38,.9);color:#fff;box-shadow:0 0 6px rgba(220,38,38,.7)}
+  50%{background:rgba(220,38,38,.22);color:#7f1d1d;box-shadow:none}
+}
+.bk-pay-label.pay-incomplet{animation:pay-incomplet-blink 1s ease-in-out infinite;border:1px solid rgba(220,38,38,.4)}
 .bk-pay-label.pay-attente  {background:rgba(0,0,0,.12);color:inherit;border:1px solid rgba(0,0,0,.15)}
 /* sur fond sombre, adapter */
 .t-groupe .bk-pay-label.pay-paye,
@@ -971,7 +969,6 @@ async function migrateSlots(){
     await db.ref('bookings').update(updates);
     const freshSnap = await db.ref('bookings').once('value');
     await db.ref('dispo').set(computeDispoFromBookings(freshSnap.val() || {}));
-    console.log(`Migration : ${migrated} réservation(s) migrée(s)`);
   }
 }
 
@@ -981,7 +978,6 @@ function initFirebaseSync(){
     bookings = snap.val() || {};
     setSyncDot('ok');
     renderCalendar();
-    updateIncompletAlerts();
     if(!_initialScrollDone){
       _initialScrollDone = true;
       requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 120); });
@@ -1116,7 +1112,6 @@ async function sendClientConfirmationEmail(d, ref, notify){
     });
     if(r.ok){
       if(notify) alert('✅ Email de confirmation envoyé à ' + d.mail);
-      else console.log('✅ Email de confirmation (auto-validation) envoyé à', d.mail);
     } else {
       const t = await r.text();
       const msg = (t.includes('quota') || t.includes('limit') || t.includes('429'))
@@ -1330,29 +1325,10 @@ async function sendGroupConfirmationEmail(membres){
         }
       })
     });
-    if(r.ok) console.log('✅ Email de confirmation groupé (auto-validation) envoyé à', first.mail);
-    else console.warn('⚠️ Erreur envoi email groupé :', await r.text());
+    if(!r.ok) console.warn('⚠️ Erreur envoi email groupé :', await r.text());
   } catch(e) {
     console.warn('⚠️ Erreur réseau — email groupé non envoyé à', first.mail, e);
   }
-}
-
-// Fait clignoter l'onglet Laser/VR/Blind Test dès que cette activité a au
-// moins une réservation avec un paiement "incomplet", pour alerter l'agent
-// même s'il n'est pas en train de consulter cette vue.
-function updateIncompletAlerts(){
-  const parActivite = { laser:false, vr:false, bt:false };
-  Object.entries(bookings).forEach(([k, b]) => {
-    if(b.pay !== 'incomplet') return;
-    const activite = k.split('|')[0];
-    if(activite in parActivite) parActivite[activite] = true;
-  });
-  const map = { laser:'navLaser', vr:'navVR', bt:'navBT' };
-  Object.entries(map).forEach(([activite, id]) => {
-    const el = document.getElementById(id);
-    if(!el) return;
-    el.classList.toggle('nav-incomplet', parActivite[activite]);
-  });
 }
 
 function updateDemandesBadge(){
@@ -1458,13 +1434,11 @@ function getOpenHours(dateStr){
   if(getCongeAnnuel(dateStr)) return { open: false, conge: true };
   const vacance = getVacance(dateStr);
   if(!vacance){
-    // Hors vacances scolaires : à partir du 12/09/2026, les week-ends
-    // ouvrent à 14h (matinée grisée) — samedi jusqu'à 22h15, dimanche jusqu'à 19h.
-    if(dateStr >= '2026-09-12'){
-      const dow = new Date(dateStr + 'T12:00:00').getDay();
-      if(dow === 6) return { open:true, openMin:14*60, closeMin:22*60+15 };
-      if(dow === 0) return { open:true, openMin:14*60, closeMin:19*60 };
-    }
+    // Hors vacances scolaires : les week-ends ouvrent à 14h (matinée grisée)
+    // — samedi jusqu'à 22h15, dimanche jusqu'à 19h.
+    const dow = new Date(dateStr + 'T12:00:00').getDay();
+    if(dow === 6) return { open:true, openMin:14*60, closeMin:22*60+15 };
+    if(dow === 0) return { open:true, openMin:14*60, closeMin:19*60 };
     return null; // pas de restriction les autres jours
   }
 
@@ -2263,11 +2237,7 @@ function confirmBooking(){
   // ── Auto-remplissage VR (nouvelle réservation uniquement) ───────────────────
   if(currentView==='vr' && !isEdit){
     const durSlots = VR_DURATION[type] || 2;
-    // Planning VR dépendant de la date (nouveau planning 25 min à partir du
-    // 01/09/2026) — même logique que getActiveSlots(), pour éviter un
-    // décalage avec les créneaux réellement affichés dans la grille.
-    const vrSlots  = date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
-    const timeIdx  = vrSlots.findIndex(s => s.time === time);
+    const timeIdx  = VR_SLOTS.findIndex(s => s.time === time);
 
     // Si une répartition d'âge a été saisie, on la préfixe au commentaire
     // avec le même format que les réservations en ligne (mais "[Staff]").
@@ -2288,8 +2258,8 @@ function confirmBooking(){
     for(let col=1; col<=pers; col++){
       for(let d=0; d<durSlots; d++){
         const tIdx = timeIdx + d;
-        if(tIdx >= vrSlots.length) break;
-        const t = vrSlots[tIdx].time;
+        if(tIdx >= VR_SLOTS.length) break;
+        const t = VR_SLOTS[tIdx].time;
         const k2 = `vr|${date}|${t}|${col}`;
         if(bookings[k2]) conflits.push(`Casque ${col} à ${t}`);
       }
@@ -2307,8 +2277,8 @@ function confirmBooking(){
     for(let col=1; col<=pers; col++){
       for(let d=0; d<durSlots; d++){
         const tIdx = timeIdx + d;
-        if(tIdx >= vrSlots.length) break;
-        const t = vrSlots[tIdx].time;
+        if(tIdx >= VR_SLOTS.length) break;
+        const t = VR_SLOTS[tIdx].time;
         const k2 = `vr|${date}|${t}|${col}`;
         bookings[k2] = {
           tel, nom, mail,
@@ -2619,8 +2589,6 @@ function confirmVest(){
 }
 
 // ── STUB (dark mode retiré) ───────────────────────────────────────────────────
-function toggleDark(){}
-
 function changeDay(d){ curDate.setDate(curDate.getDate()+d); renderCalendar(); }
 function goToday(){
   curDate=new Date();
@@ -2635,11 +2603,6 @@ function doSearch(){
   const found=Object.entries(bookings).filter(([k,v])=>v.tel&&v.tel.includes(q));
   if(!found.length){ alert('Aucune réservation pour ce numéro.'); return; }
   alert(`${found.length} réservation(s) :\n`+found.map(([k,v])=>`${k.split('|')[1]} — ${v.nom} (${v.pers}p)`).join('\n'));
-}
-
-function toggleDark(){
-  document.body.classList.toggle('dark');
-  document.getElementById('togBtn').classList.toggle('on');
 }
 
 // Close overlays on backdrop
