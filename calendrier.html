@@ -1353,12 +1353,97 @@ function computeDispoFromBookings(bk){
   return dispo;
 }
 
-function saveBookings(){
+// Sauvegarde toutes les réservations, avec deux protections :
+// 1) Garde-fou : si l'écriture ferait chuter drastiquement le nombre de
+//    réservations par rapport à ce qui existe déjà sur le serveur, on
+//    demande une confirmation explicite avant de continuer (évite qu'un bug
+//    ou une coupure réseau n'efface tout d'un coup sans avertissement).
+// 2) Sauvegarde horodatée : avant chaque écriture, l'état précédent (tel
+//    qu'il était sur le serveur) est conservé dans backups_bookings/<horodatage>,
+//    avec purge automatique des sauvegardes de plus de 7 jours.
+async function saveBookings(){
   setSyncDot('syncing');
-  db.ref('bookings').set(bookings)
-    .then(()=>setSyncDot('ok'))
-    .catch(()=>setSyncDot('error'));
+  try {
+    const snap = await db.ref('bookings').once('value');
+    const serverBookings = snap.val() || {};
+    const oldCount = Object.keys(serverBookings).length;
+    const newCount = Object.keys(bookings).length;
+
+    // Garde-fou anti-écrasement massif
+    if (oldCount >= 5 && newCount < oldCount * 0.3) {
+      const ok = confirm(
+        `⚠️ ATTENTION : cette action ferait passer le nombre de réservations de ${oldCount} à ${newCount} d'un coup.\n\n` +
+        `Ça ressemble à une perte de données accidentelle plutôt qu'à une action volontaire.\n\n` +
+        `Confirmer quand même cette sauvegarde ?`
+      );
+      if (!ok) {
+        // On annule l'écriture et on recharge l'état réel du serveur, pour ne
+        // pas rester avec un état local potentiellement erroné.
+        bookings = serverBookings;
+        renderCalendar();
+        setSyncDot('error');
+        return;
+      }
+    }
+
+    // Sauvegarde de sécurité de l'état précédent avant écrasement
+    if (oldCount > 0) {
+      db.ref(`backups_bookings/${Date.now()}`).set(serverBookings).catch(()=>{});
+      purgeOldBackups();
+    }
+
+    await db.ref('bookings').set(bookings);
+    setSyncDot('ok');
+  } catch(e) {
+    setSyncDot('error');
+  }
   db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
+}
+
+// Purge les sauvegardes horodatées de plus de 7 jours (fire-and-forget,
+// n'empêche jamais la sauvegarde principale en cas d'échec).
+function purgeOldBackups(){
+  const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  db.ref('backups_bookings').once('value').then(snap => {
+    const data = snap.val() || {};
+    Object.keys(data).forEach(ts => {
+      const t = parseInt(ts, 10);
+      if (!isNaN(t) && t < limite) db.ref(`backups_bookings/${ts}`).remove().catch(()=>{});
+    });
+  }).catch(()=>{});
+}
+
+// ── OUTILS DE SECOURS (à utiliser depuis la console du navigateur en cas de
+// besoin, ex: après une perte de données accidentelle) ──────────────────────
+// listerSauvegardes() : affiche les sauvegardes disponibles avec leur date et
+// le nombre de réservations qu'elles contiennent.
+// restaurerSauvegarde(timestamp) : restaure une sauvegarde précise (le
+// timestamp exact affiché par listerSauvegardes()) à la place des
+// réservations actuelles, après confirmation.
+async function listerSauvegardes(){
+  const snap = await db.ref('backups_bookings').once('value');
+  const data = snap.val() || {};
+  const liste = Object.keys(data).sort((a,b) => b - a).map(ts => ({
+    timestamp: ts,
+    date: new Date(parseInt(ts,10)).toLocaleString('fr-FR'),
+    nbReservations: Object.keys(data[ts] || {}).length
+  }));
+  console.table(liste);
+  console.log('Pour restaurer une sauvegarde : restaurerSauvegarde("TIMESTAMP") avec le timestamp exact ci-dessus.');
+  return liste;
+}
+
+async function restaurerSauvegarde(timestamp){
+  const snap = await db.ref(`backups_bookings/${timestamp}`).once('value');
+  const data = snap.val();
+  if(!data){ console.warn('Aucune sauvegarde trouvée pour ce timestamp.'); return; }
+  const nb = Object.keys(data).length;
+  if(!confirm(`Restaurer cette sauvegarde du ${new Date(parseInt(timestamp,10)).toLocaleString('fr-FR')} (${nb} réservations) ?\n\nÇa remplacera TOUTES les réservations actuelles.`)) return;
+  bookings = data;
+  await db.ref('bookings').set(bookings);
+  await db.ref('dispo').set(computeDispoFromBookings(bookings));
+  renderCalendar();
+  console.log('✅ Sauvegarde restaurée.');
 }
 
 // ── CONFIG ──────────────────────────────────────────────────────────────────
