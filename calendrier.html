@@ -2322,7 +2322,11 @@ function confirmBooking(){
   // ── Auto-remplissage VR (nouvelle réservation uniquement) ───────────────────
   if(currentView==='vr' && !isEdit){
     const durSlots = VR_DURATION[type] || 2;
-    const timeIdx  = VR_SLOTS.findIndex(s => s.time === time);
+    // Utiliser le planning VR correspondant à la date réservée (avant/après le
+    // changement d'horaires du 01/09/2026) — sinon le créneau affiché (nouveau
+    // planning) ne se retrouve pas dans l'ancienne liste, et tout plante en silence.
+    const activeVrSlots = date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
+    const timeIdx  = activeVrSlots.findIndex(s => s.time === time);
 
     // Si une répartition d'âge a été saisie, on la préfixe au commentaire
     // avec le même format que les réservations en ligne (mais "[Staff]").
@@ -2343,8 +2347,8 @@ function confirmBooking(){
     for(let col=1; col<=pers; col++){
       for(let d=0; d<durSlots; d++){
         const tIdx = timeIdx + d;
-        if(tIdx >= VR_SLOTS.length) break;
-        const t = VR_SLOTS[tIdx].time;
+        if(tIdx >= activeVrSlots.length) break;
+        const t = activeVrSlots[tIdx].time;
         const k2 = `vr|${date}|${t}|${col}`;
         if(bookings[k2]) conflits.push(`Casque ${col} à ${t}`);
       }
@@ -2362,8 +2366,8 @@ function confirmBooking(){
     for(let col=1; col<=pers; col++){
       for(let d=0; d<durSlots; d++){
         const tIdx = timeIdx + d;
-        if(tIdx >= VR_SLOTS.length) break;
-        const t = VR_SLOTS[tIdx].time;
+        if(tIdx >= activeVrSlots.length) break;
+        const t = activeVrSlots[tIdx].time;
         const k2 = `vr|${date}|${t}|${col}`;
         bookings[k2] = {
           tel, nom, mail,
