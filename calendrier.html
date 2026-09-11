@@ -969,6 +969,7 @@ async function migrateSlots(){
     await db.ref('bookings').update(updates);
     const freshSnap = await db.ref('bookings').once('value');
     await db.ref('dispo').set(computeDispoFromBookings(freshSnap.val() || {}));
+    await db.ref('dispo_profil').set(computeProfilFlagsFromBookings(freshSnap.val() || {}));
   }
 }
 
@@ -1353,6 +1354,25 @@ function computeDispoFromBookings(bk){
   return dispo;
 }
 
+// Calcule, pour chaque créneau Laser, quel(s) profil(s) de groupe y sont déjà
+// présents (ex: "famille1012", "intense"...) — sans AUCUNE donnée personnelle,
+// uniquement pour permettre au formulaire public de vérifier la compatibilité
+// d'un nouveau groupe avec ce qui est déjà réservé sur ce créneau.
+function computeProfilFlagsFromBookings(bk){
+  const flags = {};
+  Object.entries(bk || {}).forEach(([key, b]) => {
+    const parts = key.split('|');
+    if(parts.length < 3 || parts[0] !== 'laser') return;
+    const slotKeyStr = `${parts[0]}|${parts[1]}|${parts[2]}`;
+    // Une réservation sans répartition connue est considérée comme "intense"
+    // (adultes) par défaut — hypothèse la plus sûre, ça ne bloque jamais à tort.
+    const profil = b.profil || 'intense';
+    if(!flags[slotKeyStr]) flags[slotKeyStr] = {};
+    flags[slotKeyStr][profil] = true;
+  });
+  return flags;
+}
+
 // Sauvegarde toutes les réservations, avec deux protections :
 // 1) Garde-fou : si l'écriture ferait chuter drastiquement le nombre de
 //    réservations par rapport à ce qui existe déjà sur le serveur, on
@@ -1398,6 +1418,7 @@ async function saveBookings(){
     setSyncDot('error');
   }
   db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
+  db.ref('dispo_profil').set(computeProfilFlagsFromBookings(bookings)).catch(()=>{});
 }
 
 // Purge les sauvegardes horodatées de plus de 7 jours (fire-and-forget,
@@ -1442,6 +1463,7 @@ async function restaurerSauvegarde(timestamp){
   bookings = data;
   await db.ref('bookings').set(bookings);
   await db.ref('dispo').set(computeDispoFromBookings(bookings));
+  await db.ref('dispo_profil').set(computeProfilFlagsFromBookings(bookings));
   renderCalendar();
   console.log('✅ Sauvegarde restaurée.');
 }
@@ -2732,7 +2754,7 @@ function boldBreakdownNumbers(str){
 
 const AUTO_REASON_LABEL = {
   activite_manuelle:     '📋 Type de prestation nécessitant toujours une validation manuelle (anniversaire, EVG/EVJF…).',
-  enfants_sans_adulte:   '👶 Enfants présents sans adulte dans le groupe — validation manuelle requise.',
+  profil_incompatible_creneau: '🧩 Composition différente du groupe déjà présent sur ce créneau — à vérifier avant validation.',
   trop_proche:           '⏰ Demande reçue à moins de 40 min du créneau — validation manuelle requise.',
   staff_prioritaire:     '👤 Un verrou staff était actif sur ce créneau au moment de la demande.',
   capacite_insuffisante: '🎯 Le créneau était presque complet au moment de la demande — vérifier la capacité restante.',
