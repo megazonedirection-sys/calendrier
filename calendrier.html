@@ -2511,30 +2511,44 @@ function syncMail(tel, date, newMail){
 // ── DELETE ────────────────────────────────────────────────────────────────────
 function delBooking(key){
   const b = bookings[key];
-  const groupId = b && b.groupId;
+  if(!b) return;
+  const groupId = b.groupId;
+  const parts = key.split('|'); // activite|date|time|slot
+  const date = parts[1];
+  const tel  = (b.tel || '').trim();
 
-  if(groupId){
-    // Trouver toutes les autres sessions du même groupe (réservation multi-session)
-    const autresClesGroupe = Object.keys(bookings).filter(k => k !== key && bookings[k].groupId === groupId);
-    if(autresClesGroupe.length > 0){
-      const total = autresClesGroupe.length + 1;
-      const toutAnnuler = confirm(
-        `Cette réservation fait partie d'un groupe de ${total} sessions.\n\n` +
-        `OK = Annuler les ${total} sessions du groupe\n` +
-        `Annuler (ce message) = Annuler uniquement cette session`
-      );
-      if(toutAnnuler){
-        delete bookings[key];
-        autresClesGroupe.forEach(k => delete bookings[k]);
-      } else {
-        if(!confirm('Confirmer l\'annulation de cette seule session ?')) return;
-        delete bookings[key];
-      }
-      const _w = document.querySelector('.cal-wrap');
-      if(_w){ _savedScrollTop = _w.scrollTop; _savedScrollLeft = _w.scrollLeft; }
-      saveBookings();
-      return;
+  // Regroupe deux origines possibles :
+  // 1) même groupId (réservations multi-session faites en ligne)
+  // 2) même numéro de téléphone + même jour (réservations créées séparément,
+  //    notamment manuellement par le staff, qui n'ont pas de groupId) —
+  //    le téléphone est plus fiable que le nom, qui peut être partagé par
+  //    plusieurs clients différents (même nom de famille, groupes distincts).
+  const autresCles = Object.keys(bookings).filter(k => {
+    if(k === key) return false;
+    const bb = bookings[k];
+    const sameGroup = groupId && bb.groupId === groupId;
+    const sameTelJour = tel && k.split('|')[1] === date && (bb.tel || '').trim() === tel;
+    return sameGroup || sameTelJour;
+  });
+
+  if(autresCles.length > 0){
+    const total = autresCles.length + 1;
+    const toutAnnuler = confirm(
+      `${b.nom ? `"${b.nom}" a` : 'Ce client a'} ${total} réservation(s) ce jour-là (${date}).\n\n` +
+      `OK = Annuler les ${total} réservations de la journée\n` +
+      `Annuler (ce message) = Annuler uniquement ce créneau`
+    );
+    if(toutAnnuler){
+      delete bookings[key];
+      autresCles.forEach(k => delete bookings[k]);
+    } else {
+      if(!confirm('Confirmer l\'annulation de ce seul créneau ?')) return;
+      delete bookings[key];
     }
+    const _w = document.querySelector('.cal-wrap');
+    if(_w){ _savedScrollTop = _w.scrollTop; _savedScrollLeft = _w.scrollLeft; }
+    saveBookings();
+    return;
   }
 
   if(!confirm('Supprimer cette réservation ?')) return;
