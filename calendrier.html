@@ -1358,17 +1358,35 @@ function computeDispoFromBookings(bk){
 // présents (ex: "famille1012", "intense"...) — sans AUCUNE donnée personnelle,
 // uniquement pour permettre au formulaire public de vérifier la compatibilité
 // d'un nouveau groupe avec ce qui est déjà réservé sur ce créneau.
+// Catégories de compatibilité pour le partage d'un créneau Laser Game :
+// "enf79", "enf1012", "ado1315" sont chacune leur propre catégorie stricte ;
+// "grand" regroupe Ados 16-18 ET Adultes, toujours compatibles entre eux.
+// Une réservation peut appartenir à plusieurs catégories à la fois (ex: un
+// adulte accompagnant des enfants 10-12 → ["enf1012","grand"]).
+function computeCategories(enfants79, enfants1012, ados1315, ados1618, adultes){
+  const cats = [];
+  if((enfants79||0) > 0)   cats.push('enf79');
+  if((enfants1012||0) > 0) cats.push('enf1012');
+  if((ados1315||0) > 0)    cats.push('ado1315');
+  if((ados1618||0) > 0 || (adultes||0) > 0) cats.push('grand');
+  if(cats.length === 0) cats.push('grand'); // pas de répartition connue → traité comme "grand" par défaut
+  return cats.sort();
+}
+
+// Calcule, pour chaque créneau Laser, la signature de catégories de CHAQUE
+// réservation qui y est présente (ex: "enf1012", "grand", "enf1012+ado1315")
+// — sans AUCUNE donnée personnelle. Sert au formulaire public à vérifier
+// qu'un nouveau groupe partage bien un dénominateur commun avec tout ce qui
+// est déjà réservé sur ce créneau avant de s'auto-confirmer.
 function computeProfilFlagsFromBookings(bk){
   const flags = {};
   Object.entries(bk || {}).forEach(([key, b]) => {
     const parts = key.split('|');
     if(parts.length < 3 || parts[0] !== 'laser') return;
     const slotKeyStr = `${parts[0]}|${parts[1]}|${parts[2]}`;
-    // Une réservation sans répartition connue est considérée comme "intense"
-    // (adultes) par défaut — hypothèse la plus sûre, ça ne bloque jamais à tort.
-    const profil = b.profil || 'intense';
+    const sig = computeCategories(b.enfants79, b.enfants1012, b.ados1315, b.ados1618, b.adultes).join('+');
     if(!flags[slotKeyStr]) flags[slotKeyStr] = {};
-    flags[slotKeyStr][profil] = true;
+    flags[slotKeyStr][sig] = true;
   });
   return flags;
 }
