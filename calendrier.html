@@ -979,6 +979,13 @@ function initFirebaseSync(){
     bookings = snap.val() || {};
     setSyncDot('ok');
     renderCalendar();
+    // Resynchronise systématiquement dispo/dispo_profil sur la vraie
+    // composition des réservations, dès qu'un changement est détecté — corrige
+    // automatiquement toute donnée fantôme laissée par une mise à jour
+    // optimiste côté client dont la demande n'aurait pas été traitée jusqu'au
+    // bout (ex: test resté sans suite, réservation refusée après coup, etc.).
+    db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
+    db.ref('dispo_profil').set(computeProfilFlagsFromBookings(bookings)).catch(()=>{});
     if(!_initialScrollDone){
       _initialScrollDone = true;
       requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 120); });
