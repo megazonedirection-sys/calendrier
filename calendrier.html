@@ -1224,6 +1224,14 @@ async function createBookingFromDemande(ref, d, forcedSlot){
       confirmed: false,
       present:   false,
       ...(d.profil ? {profil: d.profil} : {}),
+      // Détail chiffré de la répartition, nécessaire pour que le recalcul
+      // automatique des catégories de compatibilité (dispo_profil) reste
+      // exact une fois la demande transformée en réservation réelle.
+      ...(d.enfants79   !== undefined ? {enfants79:   d.enfants79}   : {}),
+      ...(d.enfants1012 !== undefined ? {enfants1012: d.enfants1012} : {}),
+      ...(d.ados1315    !== undefined ? {ados1315:    d.ados1315}    : {}),
+      ...(d.ados1618    !== undefined ? {ados1618:    d.ados1618}    : {}),
+      ...(d.adultes     !== undefined ? {adultes:     d.adultes}     : {}),
       ...(d.groupId ? {groupId: d.groupId} : {})
     };
   });
