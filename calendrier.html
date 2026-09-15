@@ -2835,8 +2835,10 @@ function demandeCard(ref, d){
   const isPending = d.status==='pending';
   const ago = timeAgo(d.createdAt);
 
-  const borderColor = isPending ? '#f97316' : d.status==='accepted' ? '#16a34a' : '#ef4444';
-  const statusLabel = isPending ? '⏳ En attente' : d.status==='accepted' ? '✅ Acceptée' : '❌ Refusée';
+  const isRefused = d.status === 'refused';
+  const isSuccess = d.status === 'accepted' || d.status === 'processed';
+  const borderColor = isPending ? '#f97316' : isSuccess ? '#16a34a' : isRefused ? '#ef4444' : '#94a3b8';
+  const statusLabel = isPending ? '⏳ En attente' : isSuccess ? '✅ Confirmée' : isRefused ? '❌ Refusée' : `❓ ${d.status || 'Statut inconnu'}`;
 
   return `
   <div style="border:2px solid ${borderColor};border-radius:10px;padding:16px;margin-bottom:12px;background:${isPending?'#fff7ed':'#f8fafc'}">
@@ -2845,7 +2847,7 @@ function demandeCard(ref, d){
         <div style="font-weight:800;font-size:15px">${d.nom} <span style="font-family:'DM Mono',monospace;font-size:12px;color:#64748b;font-weight:400">${d.tel}</span></div>
         ${d.mail?`<div style="font-size:12px;color:#64748b">${d.mail}</div>`:''}
         <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
-          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${ACTIVITE_LABEL[d.activite]||d.activite}</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${d.activiteLabel==='Escape Game VR'?'🔓 Escape Game VR':d.activiteLabel&&d.activiteLabel.startsWith('VR Zone')?'🥽 VR Zone':(ACTIVITE_LABEL[d.activite]||d.activite)}</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.type]||d.type}</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">👥 ${d.pers} joueurs</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${d.time}</span>
@@ -2923,6 +2925,8 @@ async function forcerCreationDemande(ref){
     saveBookings();
     await db.ref(`demandes/${ref}/status`).set('processed');
     sendClientConfirmationEmail(d, ref, true).catch(()=>{});
+    renderCalendar();
+    renderDemandes();
     alert('✅ Réservation créée.');
   } catch(e) {
     console.error('Erreur forcerCreationDemande:', e);
@@ -3006,8 +3010,8 @@ async function accepterDemandeInner(ref){
   const navIdMap = {laser:'navLaser', vr:'navVR', bt:'navBT'};
   const navEl = document.getElementById(navIdMap[d.activite]);
   if(navEl) navEl.classList.add('nav-active');
-  document.getElementById('demandesOverlay').style.display='none';
   renderCalendar();
+  renderDemandes(); // rafraîchit la liste sans fermer le panneau — permet d'enchaîner sur d'autres demandes
   alert(membres.length > 1
     ? `✅ ${membres.length} sessions de ${d.nom} validées et ajoutées au planning ${d.activite} du ${d.date}.`
     : `✅ Demande de ${d.nom} validée et ajoutée au planning ${d.activite} du ${d.date} à ${d.time}.`);
