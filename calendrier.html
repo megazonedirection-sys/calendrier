@@ -879,7 +879,7 @@ auth.onAuthStateChanged(user => {
   // domaine) ne doit jamais être considérée comme une connexion staff valide.
   if(user && !user.isAnonymous){
     document.getElementById('loginOverlay').classList.add('hidden');
-    migrateSlots().then(() => initFirebaseSync());
+    migrateSlots().then(() => { initFirebaseSync(); purgeDemandesTraiteesPassees(); });
   } else {
     document.getElementById('loginOverlay').classList.remove('hidden');
     // Détacher le listener si existant
@@ -1478,6 +1478,35 @@ function purgeOldBackups(){
     });
   }).catch(()=>{});
 }
+
+// Supprime les demandes déjà TRAITÉES (validées ou refusées — jamais celles
+// en attente) dont la date de réservation est strictement passée. Évite que
+// l'onglet "Demandes" ne s'allonge indéfiniment au fil des jours. Les
+// vraies réservations restent intactes dans "bookings" — seul le journal
+// de la demande elle-même est nettoyé.
+function purgeDemandesTraiteesPassees(){
+  const now = new Date();
+  const aujourdhui = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`; // YYYY-MM-DD en heure locale
+  db.ref('demandes').once('value').then(snap => {
+    const data = snap.val() || {};
+    let purge = 0;
+    Object.entries(data).forEach(([ref, d]) => {
+      const estTraitee = d.status && d.status !== 'pending';
+      if (estTraitee && d.date && d.date < aujourdhui) {
+        db.ref(`demandes/${ref}`).remove().catch(()=>{});
+        purge++;
+      }
+    });
+    // Rafraîchit l'affichage si le panneau Demandes est actuellement ouvert
+    const overlay = document.getElementById('demandesOverlay');
+    if (purge > 0 && overlay && overlay.style.display !== 'none') renderDemandes();
+  }).catch(()=>{});
+}
+
+// Si CalendIT reste ouvert sans être rechargé, on revérifie toutes les 30 min
+// si le jour a changé — pour que la purge se déclenche bien autour de minuit
+// même sans redémarrage de la page.
+setInterval(purgeDemandesTraiteesPassees, 30 * 60 * 1000);
 
 // ── OUTILS DE SECOURS (à utiliser depuis la console du navigateur en cas de
 // besoin, ex: après une perte de données accidentelle) ──────────────────────
