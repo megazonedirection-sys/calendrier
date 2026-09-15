@@ -1,0 +1,2405 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Réservation en ligne — GameZone Montauban</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --neon-cyan:   #ff7c00;
+      --neon-purple: #cc0099;
+      --neon-pink:   #ff2d6b;
+      --neon-orange: #ffb300;
+      --dark-bg:     #030303;
+      --dark-card:   #1e1e1e;
+      --dark-card2:  #2a2a2a;
+      --text-main:   #f5e6d3;
+      --text-muted:  #c08060;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Rajdhani', sans-serif;
+      background: linear-gradient(145deg, #000000 0%, #0a0a0a 60%, #030303 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* ── HALO FUCHSIA FOND ── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(220,0,140,0.18) 0%, rgba(180,0,100,0.08) 45%, transparent 72%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── BOUTON RETOUR ── */
+    .btn-close-page {
+      position: fixed;
+      top: 1.2rem;
+      right: 1.2rem;
+      z-index: 100;
+      width: 42px;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(30,30,30,0.9);
+      border: 1px solid rgba(255,124,0,0.35);
+      color: var(--text-muted);
+      font-size: 1.3rem;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      text-decoration: none;
+      transition: border-color 0.25s, color 0.25s, transform 0.2s;
+      clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
+    }
+    .btn-close-page:hover {
+      border-color: var(--neon-pink);
+      color: var(--neon-pink);
+      transform: scale(1.1);
+    }
+
+    /* ── HEADER ── */
+    header {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      padding: 3rem 2rem 2rem;
+      border-bottom: 1px solid rgba(255,124,0,0.15);
+    }
+
+    .logo {
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(1.6rem, 5vw, 2.8rem);
+      font-weight: 900;
+      letter-spacing: 4px;
+      color: var(--neon-cyan);
+      text-shadow: 0 0 20px rgba(255,124,0,0.5);
+      text-decoration: none;
+      display: inline-block;
+      margin-bottom: 0.4rem;
+      animation: flame-logo 3s ease-in-out infinite;
+    }
+    .logo span { color: var(--neon-purple); }
+
+    @keyframes flame-logo {
+      0%,100% { text-shadow: 0 0 10px rgba(255,124,0,0.4), 0 0 25px rgba(255,124,0,0.15); }
+      40%      { text-shadow: 0 0 20px rgba(255,124,0,0.9), 0 0 50px rgba(255,124,0,0.4), 0 0 80px rgba(255,124,0,0.15); }
+      70%      { text-shadow: 0 0 12px rgba(255,124,0,0.5), 0 0 30px rgba(255,124,0,0.2); }
+    }
+
+    .header-tag {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 4px;
+      color: var(--neon-purple);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+
+    .header-sub {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+
+    /* ── MAIN LAYOUT ── */
+    main {
+      position: relative;
+      z-index: 2;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    /* ── CONTACT INFO BAR ── */
+    .contact-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      justify-content: center;
+      margin-bottom: 2.5rem;
+      padding: 1.2rem 1.5rem;
+      background: rgba(255,124,0,0.05);
+      border: 1px solid rgba(255,124,0,0.15);
+    }
+
+    .contact-bar-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .contact-bar-item strong {
+      color: var(--text-main);
+    }
+
+    .contact-bar-icon {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,124,0,0.1);
+      border: 1px solid rgba(255,124,0,0.25);
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+
+    /* ── FORM WRAP ── */
+    .form-wrap {
+      background: var(--dark-card);
+      border: 1px solid rgba(255,124,0,0.18);
+      padding: 2.5rem;
+      clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+      position: relative;
+    }
+
+    .form-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--neon-cyan);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid rgba(255,124,0,0.12);
+    }
+
+    /* ── FORM ELEMENTS ── */
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.2rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.72rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text-main);
+      padding: 0.75rem 1rem;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1rem;
+      outline: none;
+      border-radius: 2px;
+      transition: border-color 0.3s, background 0.3s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      border-color: var(--neon-cyan);
+      background: rgba(255,124,0,0.05);
+    }
+
+    /* Champ invalide après tentative */
+    .form-group input.invalid,
+    .form-group select.invalid {
+      border-color: #ff3333;
+      background: rgba(255,30,0,0.06);
+    }
+
+    .field-error {
+      font-size: 0.72rem;
+      color: #ff4444;
+      margin-top: 4px;
+      display: none;
+      letter-spacing: 0.5px;
+    }
+    .field-error.visible { display: block; }
+
+    .form-group select option { background: var(--dark-card); }
+
+    .form-group textarea { resize: vertical; min-height: 90px; }
+
+    /* ── SECTIONS SPÉCIALES ── */
+    .special-block {
+      display: none;
+      padding: 1.2rem;
+      margin-bottom: 1rem;
+      border: 1px solid rgba(255,180,0,0.3);
+      background: rgba(255,180,0,0.04);
+    }
+
+    .special-block.evg {
+      border-color: rgba(255,0,119,0.3);
+      background: rgba(255,0,119,0.04);
+    }
+
+    .special-block-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.55rem;
+      letter-spacing: 3px;
+      color: #ffb347;
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+    }
+    .special-block.evg .special-block-title { color: var(--neon-pink); }
+
+    .conditions-box {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      background: rgba(255,100,0,0.08);
+      border: 1px solid rgba(255,140,0,0.4);
+      padding: 0.85rem 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .conditions-box .warn-text {
+      font-size: 0.88rem;
+      color: #ffb347;
+      line-height: 1.6;
+    }
+
+    .conditions-box .warn-label {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+
+    /* ── BOUTON SUBMIT ── */
+    .btn-submit {
+      width: 100%;
+      margin-top: 1.5rem;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      padding: 1rem 2rem;
+      background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+      color: #000;
+      border: none;
+      cursor: pointer;
+      clip-path: polygon(12px 0%, 100% 0%, calc(100% - 12px) 100%, 0% 100%);
+      transition: opacity 0.3s, transform 0.2s;
+    }
+    .btn-submit:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── NOTICE BLINK ── */
+    @keyframes notice-blink {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.55; }
+    }
+
+    .notice-warning {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #ff2222;
+      text-align: center;
+      margin-top: 0.8rem;
+      letter-spacing: 0.4px;
+      line-height: 1.5;
+      text-shadow: 0 0 8px rgba(255,30,30,0.5);
+      animation: notice-blink 1.4s ease-in-out infinite;
+      border: 1px solid rgba(255,30,30,0.35);
+      padding: 0.5rem 0.75rem;
+      background: rgba(255,30,30,0.06);
+    }
+
+    /* ── SUCCÈS ── */
+    #form-success {
+      display: none;
+      text-align: center;
+      padding: 3rem 2rem;
+    }
+
+    .success-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.9rem;
+      letter-spacing: 2px;
+      color: #00ff88;
+      margin-bottom: 1rem;
+    }
+
+    .success-sub {
+      font-size: 1rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+
+    /* ── DATE HINTS ── */
+    .date-hint {
+      font-size: 0.72rem;
+      margin-top: 4px;
+      display: block;
+      min-height: 1rem;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      padding: 2rem;
+      border-top: 1px solid rgba(255,124,0,0.12);
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.2);
+      letter-spacing: 1px;
+    }
+
+    footer a {
+      color: var(--neon-cyan);
+      text-decoration: none;
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      .form-row { grid-template-columns: 1fr; }
+      .form-wrap { padding: 1.5rem; }
+      .contact-bar { gap: 1rem; }
+    }
+  @keyframes blink-offer-anim {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+  }
+  .blink-offer {
+    animation: blink-offer-anim 1s ease-in-out infinite;
+  }
+  </style>
+  <!-- Firebase SDK (compat v8 — même version que CalendIT) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <!-- EmailJS (même version que CalendIT) -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js" onload="emailjs.init({publicKey:'DsCuGiMtzFItllTJk'})"></script>
+</head>
+<body>
+
+<!-- BOUTON RETOUR AU SITE -->
+<a href="#" onclick="event.preventDefault(); window.history.length > 1 ? history.back() : window.location.href='site.html';" class="btn-close-page" title="Retour au site">✕</a>
+
+<!-- HEADER -->
+<header>
+  <div class="header-tag">// Réservation en ligne</div>
+  <div class="logo">GAME<span>ZONE</span></div>
+  <div class="header-sub">Montauban · 1870 chemin de Matras, 82000</div>
+</header>
+
+<main>
+
+  <!-- BARRE CONTACT -->
+  <div class="contact-bar">
+    <div class="contact-bar-item">
+      <div class="contact-bar-icon">📞</div>
+      <div><strong>05.63.03.79.32</strong></div>
+    </div>
+    <div class="contact-bar-item">
+      <div class="contact-bar-icon">✉️</div>
+      <div><strong>contact@gamezone-montauban.fr</strong></div>
+    </div>
+
+  </div>
+
+  <!-- FORMULAIRE -->
+  <div class="form-wrap">
+    <div class="form-title">// Formulaire de réservation</div>
+
+    <form id="resa-form" novalidate>
+
+      <!-- Prénom / Nom -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="prenom">Prénom *</label>
+          <input type="text" id="prenom" name="prenom" placeholder="Alex" autocomplete="given-name">
+          <span class="field-error" id="err-prenom">Veuillez saisir votre prénom.</span>
+        </div>
+        <div class="form-group">
+          <label for="nom">Nom *</label>
+          <input type="text" id="nom" name="nom" placeholder="Dupont" autocomplete="family-name">
+          <span class="field-error" id="err-nom">Veuillez saisir votre nom.</span>
+        </div>
+      </div>
+
+      <!-- Email / Téléphone -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="email">Email *</label>
+          <input type="email" id="email" name="email" placeholder="alex@email.com" autocomplete="email">
+          <span class="field-error" id="err-email">Adresse email invalide.</span>
+        </div>
+        <div class="form-group">
+          <label for="telephone">Téléphone *</label>
+          <input type="tel" id="telephone" name="telephone" placeholder="0600000000" autocomplete="tel"
+                 maxlength="14" inputmode="numeric">
+          <span class="field-error" id="err-telephone">Le numéro doit contenir exactement 10 chiffres.</span>
+        </div>
+      </div>
+
+      <!-- Activité / Nb personnes -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="activite">Activité *</label>
+          <select id="activite" name="activite" onchange="onActiviteChange()">
+            <option value="" disabled selected>Choisir…</option>
+            <option value="Forfait Anniversaire">Forfait Anniversaire</option>
+            <option value="EVG / EVJF">EVG / EVJF</option>
+            <option>Laser Game</option>
+            <option value="VR Zone (action, arcade, zombies…)">VR Zone (action, arcade, zombies…)</option>
+            <option value="Escape Game VR">Escape Game VR</option>
+            <option disabled>Blind Test Musical (bientôt disponible)</option>
+          </select>
+          <span class="date-hint blink-offer" id="activite-offer-hint" style="color:#ff8800;display:none;font-size:1.05rem;font-weight:800;"></span>
+          <span class="field-error" id="err-activite">Veuillez choisir une activité.</span>
+        </div>
+        <div class="form-group">
+          <label for="nb-personnes">Nombre de personnes *</label>
+          <input type="number" id="nb-personnes" name="nb_personnes" placeholder="1" min="1" max="24" value="1">
+          <span class="field-error" id="err-nb-personnes">Veuillez indiquer le nombre de personnes.</span>
+        </div>
+      </div>
+
+      <!-- Date / Créneau -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="date">Date souhaitée *</label>
+          <input type="date" id="date" name="date">
+          <span class="date-hint" id="date-hint" style="color:var(--neon-cyan);"></span>
+          <span class="field-error" id="err-date">Veuillez choisir une date d'ouverture.</span>
+        </div>
+        <div class="form-group">
+          <label for="creneau">Créneau horaire *</label>
+          <select id="creneau" name="creneau" onchange="onCreneauChange()">
+            <option value="" disabled selected>Choisir une date d'abord</option>
+          </select>
+          <span class="date-hint" id="creneau-hint" style="color:#ff8800;"></span>
+          <span class="date-hint" id="creneau-dispo-hint" style="font-weight:700;"></span>
+          <span class="field-error" id="err-creneau">Veuillez choisir un créneau disponible.</span>
+          <span class="field-error" id="err-creneau-fermeture">⛔ Ce créneau dépasse l'heure de fermeture — réservation impossible. Merci de choisir un horaire plus tôt.</span>
+        </div>
+      </div>
+
+      <!-- Sessions multiples (Laser Game / VR Zone) -->
+      <div id="multi-session-block" style="display:none;">
+        <div class="form-row" style="grid-template-columns:1fr;">
+          <div class="form-group">
+            <label for="nb-sessions">Nombre de sessions</label>
+            <select id="nb-sessions" name="nb_sessions" onchange="onNbSessionsChange()">
+              <option value="1" selected>1 session</option>
+              <option value="2">2 sessions</option>
+              <option value="3" id="nb-sessions-opt3">3 sessions</option>
+              <option value="4" id="nb-sessions-opt4" style="display:none;">Four Play</option>
+            </select>
+            <span class="date-hint" id="multi-session-hint" style="color:var(--neon-cyan);"></span>
+          </div>
+        </div>
+        <div class="form-row" id="session2-row" style="display:none;">
+          <div class="form-group">
+            <label for="creneau2">Créneau session 2 *</label>
+            <select id="creneau2" name="creneau2" onchange="onSession2Change()">
+              <option value="" disabled selected>Choisir le créneau 1 d'abord</option>
+            </select>
+            <span class="field-error" id="err-creneau2">Veuillez choisir un créneau disponible.</span>
+          </div>
+        </div>
+        <div class="form-row" id="session3-row" style="display:none;">
+          <div class="form-group">
+            <label for="creneau3">Créneau session 3 *</label>
+            <select id="creneau3" name="creneau3" onchange="onSession3Change()">
+              <option value="" disabled selected>Choisir le créneau 2 d'abord</option>
+            </select>
+            <span class="field-error" id="err-creneau3">Veuillez choisir un créneau disponible.</span>
+          </div>
+        </div>
+        <div class="form-row" id="session4-row" style="display:none;">
+          <div class="form-group">
+            <label for="creneau4">Créneau session 4 *</label>
+            <select id="creneau4" name="creneau4">
+              <option value="" disabled selected>Choisir le créneau 3 d'abord</option>
+            </select>
+            <span class="field-error" id="err-creneau4">Veuillez choisir un créneau disponible.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHAMPS ANNIVERSAIRE -->
+      <div id="anniv-fields" class="special-block">
+        <div class="conditions-box">
+          <span style="font-size:1.2rem;flex-shrink:0;">⚠️</span>
+          <div class="warn-text">
+            <strong class="warn-label">Conditions obligatoires</strong>
+            Âge minimum <strong>7 ans</strong> · Taille minimum <strong>1m20</strong><br>
+            <span style="color:rgba(255,180,80,0.75);font-size:0.82rem;">Tout enfant ne remplissant pas ces conditions ne pourra pas participer.</span>
+          </div>
+        </div>
+        <div class="special-block-title">🎂 Infos anniversaire</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="anniv-prenom">Prénom de l'enfant fêté *</label>
+            <input type="text" id="anniv-prenom" name="anniv_prenom" placeholder="Emma">
+            <span class="field-error" id="err-anniv-prenom">Champ obligatoire.</span>
+          </div>
+          <div class="form-group">
+            <label for="anniv-age">Âge de l'enfant *</label>
+            <input type="number" id="anniv-age" name="anniv_age" placeholder="7" min="7" max="17">
+            <span class="field-error" id="err-anniv-age">Champ obligatoire.</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="anniv-heure">Heure souhaitée de début *</label>
+          <input type="time" id="anniv-heure" name="anniv_heure">
+          <span class="field-error" id="err-anniv-heure">Champ obligatoire.</span>
+        </div>
+        <div class="form-group">
+          <label for="anniv-adultes">Y aura-t-il des adultes dans la partie ? *</label>
+          <select id="anniv-adultes" name="anniv_adultes">
+            <option value="" disabled selected>Choisir…</option>
+            <option value="Oui">Oui</option>
+            <option value="Non">Non</option>
+          </select>
+          <span class="field-error" id="err-anniv-adultes">Champ obligatoire.</span>
+        </div>
+      </div>
+
+      <!-- CHAMPS EVG/EVJF -->
+      <div id="evg-fields" class="special-block evg">
+        <div class="special-block-title">🥂 Infos EVG / EVJF</div>
+        <div class="form-group">
+          <label for="evg-prenom">Prénom de la personne concernée *</label>
+          <input type="text" id="evg-prenom" name="evg_prenom" placeholder="Sophie ou Thomas">
+          <span class="field-error" id="err-evg-prenom">Champ obligatoire.</span>
+        </div>
+      </div>
+
+      <!-- CHAMPS LASER GAME -->
+      <div id="laser-fields" class="special-block" style="border-color:rgba(68,255,136,0.25);background:rgba(68,255,136,0.03);">
+        <div class="special-block-title" style="color:#44ff88;">🎯 Répartition des joueurs</div>
+        <div class="form-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:0.75rem;">
+          <div class="form-group">
+            <label for="laser-enfants79">Enf. 7-9 *</label>
+            <input type="number" id="laser-enfants79" name="laser_enfants79" placeholder="0" min="0" max="24" value="0" oninput="onLaserChange(this)">
+            <span class="field-error" id="err-laser-enfants79">Champ obligatoire.</span>
+          </div>
+          <div class="form-group">
+            <label for="laser-enfants1012">Enf. 10-12 *</label>
+            <input type="number" id="laser-enfants1012" name="laser_enfants1012" placeholder="0" min="0" max="24" value="0" oninput="onLaserChange(this)">
+            <span class="field-error" id="err-laser-enfants1012">Champ obligatoire.</span>
+          </div>
+          <div class="form-group">
+            <label for="laser-ados1315">Ados 13-15 *</label>
+            <input type="number" id="laser-ados1315" name="laser_ados1315" placeholder="0" min="0" max="24" value="0" oninput="onLaserChange(this)">
+            <span class="field-error" id="err-laser-ados1315">Champ obligatoire.</span>
+          </div>
+          <div class="form-group">
+            <label for="laser-ados1618">Ados 16-18 *</label>
+            <input type="number" id="laser-ados1618" name="laser_ados1618" placeholder="0" min="0" max="24" value="0" oninput="onLaserChange(this)">
+            <span class="field-error" id="err-laser-ados1618">Champ obligatoire.</span>
+          </div>
+          <div class="form-group">
+            <label for="laser-adultes">Adultes *</label>
+            <input type="number" id="laser-adultes" name="laser_adultes" placeholder="0" min="0" max="24" value="0" oninput="onLaserChange(this)">
+            <span class="field-error" id="err-laser-adultes">Champ obligatoire.</span>
+          </div>
+        </div>
+        <div id="laser-total-bar" style="display:flex;align-items:center;gap:1rem;padding:0.6rem 0.8rem;background:rgba(68,255,136,0.06);border:1px solid rgba(68,255,136,0.15);margin-top:0.25rem;">
+          <span style="font-family:'Orbitron',monospace;font-size:0.6rem;letter-spacing:2px;color:rgba(255,255,255,0.4);text-transform:uppercase;">Total</span>
+          <span id="laser-total" style="font-family:'Orbitron',monospace;font-size:1.1rem;font-weight:900;color:#44ff88;text-shadow:0 0 8px rgba(68,255,136,0.5);">0</span>
+          <span style="font-size:0.8rem;color:var(--text-muted);" id="laser-max-label">/ 24 joueurs maximum</span>
+        </div>
+        <span class="field-error" id="err-laser-total" style="margin-top:0.5rem;">La somme ne peut pas dépasser 24 joueurs. Veuillez réduire.</span>
+        <span class="field-error" id="err-laser-min" style="margin-top:0.5rem;">Veuillez indiquer au moins 1 joueur au total.</span>
+      </div>
+
+      <!-- CHAMPS BLIND TEST -->
+      <div id="blind-fields" class="special-block" style="border-color:rgba(255,45,107,0.25);background:rgba(255,45,107,0.03);">
+        <div class="special-block-title" style="color:var(--neon-pink);">🎵 Répartition des joueurs (min 4 · max 24)</div>
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+          <div class="form-group">
+            <label for="blind-adultes">Adultes *</label>
+            <input type="number" id="blind-adultes" name="blind_adultes" placeholder="0" min="0" max="12" value="0" oninput="onBlindChange(this)">
+          </div>
+          <div class="form-group">
+            <label for="blind-ados">Ados 14+ *</label>
+            <input type="number" id="blind-ados" name="blind_ados" placeholder="0" min="0" max="12" value="0" oninput="onBlindChange(this)">
+          </div>
+          <div class="form-group">
+            <label for="blind-enfants">Enf. 12+ *</label>
+            <input type="number" id="blind-enfants" name="blind_enfants" placeholder="0" min="0" max="12" value="0" oninput="onBlindChange(this)">
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:1rem;padding:0.6rem 0.8rem;background:rgba(255,45,107,0.06);border:1px solid rgba(255,45,107,0.15);margin-top:0.25rem;">
+          <span style="font-family:'Orbitron',monospace;font-size:0.6rem;letter-spacing:2px;color:rgba(255,255,255,0.4);text-transform:uppercase;">Total</span>
+          <span id="blind-total" style="font-family:'Orbitron',monospace;font-size:1.1rem;font-weight:900;color:var(--neon-pink);text-shadow:0 0 8px rgba(255,45,107,0.5);">0</span>
+          <span style="font-size:0.8rem;color:var(--text-muted);">/ 24 joueurs · minimum 4</span>
+        </div>
+        <span class="field-error" id="err-blind-total" style="margin-top:0.5rem;">La somme ne peut pas dépasser 12 joueurs.</span>
+        <span class="field-error" id="err-blind-min" style="margin-top:0.5rem;">Minimum 4 joueurs requis pour le Blind Test.</span>
+      </div>
+
+      <!-- CHAMPS VR ZONE -->
+      <div id="vr-fields" class="special-block" style="border-color:rgba(255,124,0,0.25);background:rgba(255,124,0,0.03);">
+        <div class="special-block-title" style="color:var(--neon-cyan);">🥽 Répartition des joueurs (max 4)</div>
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+          <div class="form-group">
+            <label for="vr-adultes">Adultes *</label>
+            <input type="number" id="vr-adultes" name="vr_adultes" placeholder="0" min="0" max="4" value="0" oninput="onVrChange('vr', this)">
+          </div>
+          <div class="form-group">
+            <label for="vr-ados">Ados 14+ *</label>
+            <input type="number" id="vr-ados" name="vr_ados" placeholder="0" min="0" max="4" value="0" oninput="onVrChange('vr', this)">
+          </div>
+          <div class="form-group">
+            <label for="vr-enfants">Enf. 10+ *</label>
+            <input type="number" id="vr-enfants" name="vr_enfants" placeholder="0" min="0" max="4" value="0" oninput="onVrChange('vr', this)">
+          </div>
+        </div>
+        <div id="vr-total-bar" style="display:flex;align-items:center;gap:1rem;padding:0.6rem 0.8rem;background:rgba(255,124,0,0.06);border:1px solid rgba(255,124,0,0.15);margin-top:0.25rem;">
+          <span style="font-family:'Orbitron',monospace;font-size:0.6rem;letter-spacing:2px;color:rgba(255,255,255,0.4);text-transform:uppercase;">Total</span>
+          <span id="vr-total" style="font-family:'Orbitron',monospace;font-size:1.1rem;font-weight:900;color:var(--neon-cyan);text-shadow:0 0 8px rgba(255,124,0,0.5);">0</span>
+          <span style="font-size:0.8rem;color:var(--text-muted);">/ 4 joueurs maximum</span>
+        </div>
+        <span class="field-error" id="err-vr-total" style="margin-top:0.5rem;">La somme ne peut pas dépasser 4 joueurs.</span>
+        <span class="field-error" id="err-vr-min" style="margin-top:0.5rem;">Veuillez indiquer au moins 1 joueur au total.</span>
+      </div>
+
+      <!-- CHAMPS ESCAPE GAME VR -->
+      <div id="escape-fields" class="special-block" style="border-color:rgba(204,0,153,0.25);background:rgba(204,0,153,0.03);">
+        <div class="special-block-title" style="color:#ff80dd;">🚀 Répartition des joueurs (2–4)</div>
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+          <div class="form-group">
+            <label for="escape-adultes">Adultes *</label>
+            <input type="number" id="escape-adultes" name="escape_adultes" placeholder="0" min="0" max="4" value="0" oninput="onVrChange('escape', this)">
+          </div>
+          <div class="form-group">
+            <label for="escape-ados">Ados 14+ *</label>
+            <input type="number" id="escape-ados" name="escape_ados" placeholder="0" min="0" max="4" value="0" oninput="onVrChange('escape', this)">
+          </div>
+          <div class="form-group">
+            <label for="escape-enfants">Enf. 12+ *</label>
+            <input type="number" id="escape-enfants" name="escape_enfants" placeholder="0" min="0" max="4" value="0" oninput="onVrChange('escape', this)">
+          </div>
+        </div>
+        <div id="escape-total-bar" style="display:flex;align-items:center;gap:1rem;padding:0.6rem 0.8rem;background:rgba(204,0,153,0.06);border:1px solid rgba(204,0,153,0.15);margin-top:0.25rem;">
+          <span style="font-family:'Orbitron',monospace;font-size:0.6rem;letter-spacing:2px;color:rgba(255,255,255,0.4);text-transform:uppercase;">Total</span>
+          <span id="escape-total" style="font-family:'Orbitron',monospace;font-size:1.1rem;font-weight:900;color:#ff80dd;text-shadow:0 0 8px rgba(204,0,153,0.5);">0</span>
+          <span style="font-size:0.8rem;color:var(--text-muted);">/ 4 joueurs · minimum 2</span>
+        </div>
+        <span class="field-error" id="err-escape-total" style="margin-top:0.5rem;">La somme ne peut pas dépasser 4 joueurs.</span>
+        <span class="field-error" id="err-escape-min" style="margin-top:0.5rem;">Minimum 2 joueurs requis pour l'Escape Game VR.</span>
+      </div>
+
+      <!-- Message libre -->
+      <div class="form-group">
+        <label for="message">Message / informations complémentaires</label>
+        <textarea id="message" name="message" placeholder="Précisions, demandes spéciales…"></textarea>
+      </div>
+
+      <button type="button" class="btn-submit" id="submit-btn" onclick="validateAndSubmit()">
+        ⚡ Envoyer la demande
+      </button>
+
+      <p class="notice-warning">⚠ Ceci est une demande de réservation. Elle ne sera effective qu'après confirmation par GameZone.</p>
+    </form>
+
+    <!-- SUCCÈS -->
+    <div id="form-success">
+      <p class="success-title" id="success-title">✓ Réservation confirmée !</p>
+      <p class="success-sub" id="success-sub">Votre réservation a été enregistrée directement.<br>Un email de confirmation vous sera envoyé.</p>
+      <p class="notice-warning" id="success-notice" style="display:none;"></p>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  GameZone Montauban &nbsp;·&nbsp; 1870 chemin de Matras, 82000 Montauban &nbsp;·&nbsp;
+  <a href="tel:0563037932">05.63.03.79.32</a>
+</footer>
+
+<script>
+  // ══════════════════════════════════════════════
+  //  FIREBASE — connexion CalendIT
+  // ══════════════════════════════════════════════
+  // ── Firebase init sécurisée ──
+  let db = null;
+  try {
+    const firebaseConfig = {
+      apiKey:            "AIzaSyDVfVKnP00xCreo-j-0Qo5-t1Tq03W19Xc",
+      authDomain:        "calend-it2-7e681.firebaseapp.com",
+      databaseURL:       "https://calend-it2-7e681-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId:         "calend-it2-7e681",
+      storageBucket:     "calend-it2-7e681.firebasestorage.app",
+      messagingSenderId: "84584922938",
+      appId:             "1:84584922938:web:8c4d0d07a45d0948a49a03"
+    };
+    if (typeof firebase !== 'undefined') {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      // Session limitée à cet onglet (sessionStorage, pas localStorage) : sans
+      // ça, cette connexion anonyme écrase la session du staff connecté sur
+      // CalendIT si les deux pages sont ouvertes dans des onglets du même
+      // navigateur (même site = même stockage d'authentification partagé
+      // par défaut), et le déconnecte au passage.
+      firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION)
+        .then(() => firebase.auth().signInAnonymously())
+        .catch(e => console.warn('Auth anon:', e));
+    }
+  } catch(e) { console.warn('Firebase init:', e); }
+
+  // Mapping activité → clé CalendIT
+  function mapActiviteToCalendit(val) {
+    if (val === 'Laser Game')                        return 'laser';
+    if (val === 'VR Zone (action, arcade, zombies…)') return 'vr';
+    if (val === 'Escape Game VR')                    return 'vr';
+    if (val === 'Blind Test Musical')                return 'bt';
+    if (val === 'Forfait Anniversaire')              return 'laser';
+    if (val === 'EVG / EVJF')                       return 'laser';
+    return 'laser';
+  }
+
+  // Convertir créneau '17h55' → '17:55'
+  function creneauToTime(creneau) {
+    return creneau.replace('h', ':');
+  }
+
+  // Détecte l'offre spéciale (Just Play / Four Play) applicable, si activité
+  // Laser Game + jour + nombre de sessions correspondent. Retourne null sinon.
+  function detectOfferLabel(fd) {
+    const activite = fd.get('activite') || '';
+    const nbSessionsForNote = parseInt(fd.get('nb_sessions')) || 1;
+    if (activite !== 'Laser Game' || nbSessionsForNote < 3) return null;
+    const dateStr = fd.get('date') || '';
+    if (!dateStr) return null;
+    const [dy, dmo, dd] = dateStr.split('-').map(Number);
+    const dow = new Date(dy, dmo - 1, dd).getDay();
+    if (nbSessionsForNote === 3 && dow === 4) return 'Just Play';
+    if (nbSessionsForNote === 4 && dow === 5) return 'Four Play';
+    return null;
+  }
+
+  // Construire le commentaire complet
+  function buildComment(fd) {
+    const parts = [];
+    const activite = fd.get('activite') || '';
+
+    // Offre du jour (Just Play / Four Play), pour une visibilité claire côté staff
+    const offerLabelForComment = detectOfferLabel(fd);
+    if (offerLabelForComment) parts.push(`🎯 Offre ${offerLabelForComment}`);
+
+    // Répartition joueurs
+    const laserE79 = fd.get('laser_enfants79'), laserE1012 = fd.get('laser_enfants1012'), laserAd13 = fd.get('laser_ados1315'), laserAd16 = fd.get('laser_ados1618'), laserA = fd.get('laser_adultes');
+    if (laserE79 && laserE79 !== '0') parts.push(`Enf. 7-9: ${laserE79}`);
+    if (laserE1012 && laserE1012 !== '0') parts.push(`Enf. 10-12: ${laserE1012}`);
+    if (laserAd13 && laserAd13 !== '0') parts.push(`Ados 13-15: ${laserAd13}`);
+    if (laserAd16 && laserAd16 !== '0') parts.push(`Ados 16-18: ${laserAd16}`);
+    if (laserA && laserA !== '0') parts.push(`Adultes: ${laserA}`);
+
+    const vrA = fd.get('vr_adultes'), vrAd = fd.get('vr_ados'), vrE = fd.get('vr_enfants');
+    if (vrA && vrA !== '0') parts.push(`Adultes: ${vrA}`);
+    if (vrAd && vrAd !== '0') parts.push(`Ados: ${vrAd}`);
+    if (vrE && vrE !== '0') parts.push(`Enf.: ${vrE}`);
+
+    const esA = fd.get('escape_adultes'), esAd = fd.get('escape_ados'), esE = fd.get('escape_enfants');
+    if (esA && esA !== '0') parts.push(`Adultes: ${esA}`);
+    if (esAd && esAd !== '0') parts.push(`Ados: ${esAd}`);
+    if (esE && esE !== '0') parts.push(`Enf.: ${esE}`);
+
+    const blA = fd.get('blind_adultes'), blAd = fd.get('blind_ados'), blE = fd.get('blind_enfants');
+    if (blA && blA !== '0') parts.push(`Adultes: ${blA}`);
+    if (blAd && blAd !== '0') parts.push(`Ados: ${blAd}`);
+    if (blE && blE !== '0') parts.push(`Enf.: ${blE}`);
+
+    // Anniversaire
+    const ap = fd.get('anniv_prenom'), aa = fd.get('anniv_age'), ah = fd.get('anniv_heure'), aad = fd.get('anniv_adultes');
+    if (ap) parts.push(`Anniversaire: ${ap}, ${aa} ans, ${ah}, adultes: ${aad}`);
+
+    // EVG
+    const ep = fd.get('evg_prenom');
+    if (ep) parts.push(`EVG/EVJF: ${ep}`);
+
+    // Message
+    const msg = fd.get('message');
+    if (msg && msg.trim()) parts.push(`Note: ${msg.trim()}`);
+
+    return parts.length ? parts.join(' | ') : '';
+  }
+
+  // ══════════════════════════════════════════════
+  //  AUTO-VALIDATION — règles métier
+  // ══════════════════════════════════════════════
+  const MAX_CAP = { laser: 24, vr: 4, bt: 12 };
+
+  // Durée standard d'une session par activité (en minutes) — sert à vérifier
+  // que la fin de la prestation ne dépasse pas l'heure de fermeture.
+  const SESSION_DURATION_MIN = {
+    'Laser Game': 20,
+    'VR Zone (action, arcade, zombies…)': 20,
+    'Escape Game VR': 60,
+    'Blind Test Musical': 30,
+    'Forfait Anniversaire': 150, // 2h00 ou 2h30 → on retient la durée la plus longue par sécurité
+    'EVG / EVJF': 80,            // 1h20 sur place
+  };
+
+  function addMinutesToTime(timeStr, minutes) {
+    const [h, m] = (timeStr || '0:0').split(':').map(Number);
+    let total = (h || 0) * 60 + (m || 0) + minutes;
+    total = ((total % 1440) + 1440) % 1440;
+    const hh = Math.floor(total / 60), mm = total % 60;
+    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  }
+
+  // Profil du groupe (à titre informatif pour le staff — n'influence plus
+  // l'auto-validation, cf. règles de compatibilité ci-dessous)
+  // Le profil retenu est la tranche la plus jeune présente dans le groupe.
+  function computeGroupProfile(enfants79, enfants1012, ados1315, ados1618, adultes) {
+    if (enfants79 > 0)   return 'famille79';
+    if (enfants1012 > 0) return 'famille1012';
+    if (ados1315 > 0)    return 'ado1315';
+    if (ados1618 > 0)    return 'ado1618';
+    return 'intense';
+  }
+
+  // Catégories de compatibilité pour le partage d'un créneau Laser Game :
+  // "enf79", "enf1012", "ado1315" sont chacune leur propre catégorie stricte ;
+  // "grand" regroupe Ados 16-18 ET Adultes, toujours compatibles entre eux.
+  // Un groupe peut appartenir à plusieurs catégories à la fois (ex: un adulte
+  // accompagnant des enfants 10-12 → ["enf1012","grand"]).
+  function computeCategories(enfants79, enfants1012, ados1315, ados1618, adultes) {
+    const cats = [];
+    if ((enfants79||0) > 0)   cats.push('enf79');
+    if ((enfants1012||0) > 0) cats.push('enf1012');
+    if ((ados1315||0) > 0)    cats.push('ado1315');
+    if ((ados1618||0) > 0 || (adultes||0) > 0) cats.push('grand');
+    if (cats.length === 0) cats.push('grand'); // pas de répartition connue → traité comme "grand" par défaut
+    return cats.sort();
+  }
+
+  const PROFIL_LABEL = {
+    famille79:   'Enfants 7-9 ans',
+    famille1012: 'Enfants 10-12 ans',
+    ado1315:     'Ados 13-15 ans',
+    ado1618:     'Ados 16-18 ans',
+    intense:     'Adultes'
+  };
+
+  // Labels exacts auto-confirmables (jamais anniversaire ni EVG)
+  const AUTO_LABELS = [
+    'Laser Game',
+    'VR Zone (action, arcade, zombies…)',
+    'Escape Game VR',
+    'Blind Test Musical',
+    'EVG / EVJF'
+  ];
+
+  // Vérifie que la fin de la prestation ne dépasse pas l'heure de fermeture
+  // du jour concerné. Purement calculatoire (pas d'accès Firebase) — utilisable
+  // dès la validation du formulaire, avant toute tentative de soumission.
+  function checkClosingTime(activiteLabel, date, time) {
+    const [y, mo, d] = date.split('-').map(Number);
+    const duration = SESSION_DURATION_MIN[activiteLabel] || 20;
+    const heureFin = addMinutesToTime(time, duration);
+    const infoJour = getInfoJour(new Date(y, mo - 1, d));
+    if (!infoJour.ouvert) return true; // autre vérification s'en charge (jour fermé)
+    const [fh, fm] = heureFin.split(':').map(Number);
+    const finMinutes  = fh * 60 + fm;
+    const fermMinutes = infoJour.fermeture * 60 + (infoJour.fermetureMin || 0);
+    return finMinutes <= fermMinutes;
+  }
+
+  async function checkAutoValidation(activite, activiteLabel, date, time, pers, ageBreakdown) {
+    // Si Firebase non disponible → validation manuelle
+    if (!db) return { auto: false, reason: 'erreur_verification' };
+
+    // -1. Le jour demandé doit être ouvert (congés annuels inclus) — refus
+    // définitif, aucune réservation possible sur ces dates, quelle que soit
+    // l'activité.
+    {
+      const [yy, mm, dd] = date.split('-').map(Number);
+      const infoJourCheck = getInfoJour(new Date(yy, mm - 1, dd));
+      if (!infoJourCheck.ouvert)
+        return { auto: false, reason: infoJourCheck.conge ? 'conges_annuels' : 'ferme_ce_jour', impossible: true };
+    }
+
+    // 0. La fin de la prestation ne doit JAMAIS dépasser l'heure de fermeture du
+    // jour concerné — s'applique à TOUTES les activités (y compris Anniversaire/EVG),
+    // en priorité sur toute autre règle. Refus définitif, pas de repli manuel.
+    if (!checkClosingTime(activiteLabel, date, time))
+      return { auto: false, reason: 'depasse_fermeture', impossible: true };
+
+    // 1. Activité auto-validable ? (vérification sur le label original)
+    if (!AUTO_LABELS.includes(activiteLabel))
+      return { auto: false, reason: 'activite_manuelle' };
+
+    // 1bis. Laser Game : un nouveau groupe n'est auto-accepté sur un créneau
+    // que s'il partage un dénominateur commun (même tranche d'âge, ou "grand"
+    // = ados 16-18/adultes, toujours compatibles entre eux) avec CHACUNE des
+    // réservations déjà présentes sur ce créneau. Un créneau vide accepte
+    // toujours. Sinon (aucun dénominateur commun) → validation manuelle
+    // obligatoire, au même titre qu'un anniversaire/EVG.
+    if (activite === 'laser' && ageBreakdown) {
+      const newCats = computeCategories(ageBreakdown.enfants79, ageBreakdown.enfants1012, ageBreakdown.ados1315, ageBreakdown.ados1618, ageBreakdown.adultes);
+      try {
+        const profilSnap = await db.ref(`dispo_profil/${activite}|${date}|${time}`).once('value');
+        if (profilSnap.exists()) {
+          const signatures = Object.keys(profilSnap.val() || {});
+          const incompatible = signatures.some(sig => {
+            const existingCats = sig.split('+');
+            return !existingCats.some(c => newCats.includes(c));
+          });
+          if (incompatible) return { auto: false, reason: 'profil_incompatible_creneau' };
+        }
+      } catch(e) {
+        console.warn('Vérification profil créneau:', e);
+        return { auto: false, reason: 'erreur_verification' };
+      }
+    }
+
+    // 2. Délai minimum 40 minutes avant le créneau
+    const [y, mo, d] = date.split('-').map(Number);
+    const [h, m]     = time.split(':').map(Number);
+    const slotDt     = new Date(y, mo - 1, d, h, m, 0);
+    const diffMin    = (slotDt - Date.now()) / 60000;
+    if (diffMin < 40)
+      return { auto: false, reason: 'trop_proche' };
+
+    // 3. Verrou staff actif sur ce créneau ?
+    const lockKey = time.replace(':', '_');
+    try {
+      const lockSnap = await db.ref(`slot_locks/${activite}/${date}/${lockKey}`).once('value');
+      if (lockSnap.exists() && lockSnap.val().expires > Date.now())
+        return { auto: false, reason: 'staff_prioritaire' };
+    } catch(e) { console.warn('Lock check:', e); }
+
+    // 4. Capacité disponible sur ce créneau (et sur les créneaux suivants
+    // occupés par la même réservation — cas de l'Escape Game VR qui bloque
+    // 3 créneaux d'affilée pour une seule séance de 60 min).
+    const max = MAX_CAP[activite] || 24;
+    const nbCreneauxOccupes = (activiteLabel === 'Escape Game VR') ? 3 : 1;
+    let usedPers = 0;
+    try {
+      if (activite === 'bt') {
+        // Pour BT : 1 seule réservation par créneau (toute présence = complet)
+        const dispoSnap = await db.ref(`dispo/${activite}|${date}|${time}`).once('value');
+        usedPers = dispoSnap.exists() ? (dispoSnap.val() || 0) : 0;
+        if (usedPers > 0) return { auto: false, reason: 'creneau_complet', available: 0 };
+      } else {
+        // Laser et VR (dont Escape) : vérifier la capacité sur chaque créneau occupé
+        for (let i = 0; i < nbCreneauxOccupes; i++) {
+          const t = i === 0 ? time : addMinutesToTime(time, i * 20);
+          const dispoSnap = await db.ref(`dispo/${activite}|${date}|${t}`).once('value');
+          const used = dispoSnap.exists() ? (dispoSnap.val() || 0) : 0;
+          if (i === 0) usedPers = used;
+          if (used + pers > max)
+            return { auto: false, reason: 'capacite_insuffisante', available: max - used };
+        }
+      }
+    } catch(e) {
+      console.warn('Capacity check:', e);
+      return { auto: false, reason: 'erreur_verification' };
+    }
+
+    return { auto: true, available: max - usedPers - pers };
+  }
+
+  // Messages pour le client selon la raison
+  function getWaitingMessage(reason, activite) {
+    const msgs = {
+      activite_manuelle:     '📋 Votre demande nécessite une validation personnalisée par notre équipe.',
+      profil_incompatible_creneau: '🧩 Ce créneau est déjà occupé par un groupe de composition différente — un agent va vérifier la meilleure organisation pour votre partie.',
+      evg_tout_ou_rien:            '🥂 L\'une des deux parties de votre forfait EVG/EVJF est déjà occupée par un groupe incompatible — un agent va vérifier la meilleure organisation pour votre soirée.',
+      trop_proche:           '⏰ Réservation trop proche du créneau — un agent va confirmer rapidement.',
+      depasse_fermeture:     '⛔ Ce créneau dépasse l\'heure de fermeture — réservation impossible sur cet horaire.',
+      conges_annuels:        '⛔ Fermeture pour congés annuels à cette date — réservation impossible.',
+      ferme_ce_jour:         '⛔ Nous sommes fermés ce jour-là — réservation impossible.',
+      staff_prioritaire:     '👤 Notre équipe est actuellement sur ce créneau. Votre demande est prioritaire.',
+      capacite_insuffisante: '🎯 Le créneau est presque complet. Confirmation dès vérification des disponibilités.',
+      creneau_complet:       '🎵 Ce créneau Blind Test est complet. Nous vous proposons une alternative.',
+      erreur_verification:   '🔄 Vérification en cours — confirmation sous peu.',
+    };
+    return msgs[reason] || '⏳ Votre demande est en cours de traitement.';
+  }
+
+  // Extrait le contexte d'une session (activité, date, heure, joueurs,
+  // répartition d'âge) à partir du formulaire et d'un créneau donné.
+  // Factorisé pour être réutilisé à la fois par la pré-vérification
+  // (dry-run, sans écriture) et par la soumission réelle.
+  function extractSessionContext(fd, creneau) {
+    const activite = fd.get('activite') || '';
+    const date     = fd.get('date')   || '';
+    const pers     = parseInt(fd.get('nb_personnes') || '1');
+    const actKey   = mapActiviteToCalendit(activite);
+    const time     = creneauToTime(creneau);
+
+    let ageBreakdown = null;
+    let profil = null;
+    if (actKey === 'laser') {
+      ageBreakdown = {
+        enfants79:   parseInt(fd.get('laser_enfants79'))   || 0,
+        enfants1012: parseInt(fd.get('laser_enfants1012')) || 0,
+        ados1315:    parseInt(fd.get('laser_ados1315'))    || 0,
+        ados1618:    parseInt(fd.get('laser_ados1618'))    || 0,
+        adultes:     parseInt(fd.get('laser_adultes'))     || 0,
+      };
+      profil = computeGroupProfile(ageBreakdown.enfants79, ageBreakdown.enfants1012, ageBreakdown.ados1315, ageBreakdown.ados1618, ageBreakdown.adultes);
+    }
+    return { activite, actKey, date, time, creneau, pers, ageBreakdown, profil };
+  }
+
+  // Vérifie si une session serait auto-validée SANS rien écrire dans Firebase
+  // (utilisé pour vérifier toutes les sessions avant de confirmer quoi que ce soit).
+  async function checkSessionAvailability(fd, creneau) {
+    const ctx = extractSessionContext(fd, creneau);
+    const check = await checkAutoValidation(ctx.actKey, ctx.activite, ctx.date, ctx.time, ctx.pers, ctx.ageBreakdown);
+    return { ...ctx, auto: check.auto, reason: check.reason };
+  }
+
+  async function pushToCalendit(fd, creneauOverride, groupInfo, forceManual) {
+    if (!db) throw new Error('Firebase non disponible');
+    // Lecture directe DOM — évite les bugs FormData avec HTMLInputElement
+    const prenom   = (document.getElementById('prenom')?.value   || '').trim();
+    const nom_val  = (document.getElementById('nom')?.value      || '').trim();
+    const email    = (document.getElementById('email')?.value    || '').trim();
+    const tel      = getDigits(document.getElementById('telephone')?.value || '');
+    const creneau  = creneauOverride || fd.get('creneau') || '';
+    const ctx      = extractSessionContext(fd, creneau);
+    const { activite, actKey, date, time, pers, ageBreakdown, profil } = ctx;
+
+    // ── Vérification auto-validation ──
+    // "forceManual" : cas EVG/EVJF tout ou rien — une des 2 parties du forfait
+    // n'était pas compatible, donc les 2 repartent en validation manuelle
+    // ensemble, sans même re-vérifier celle-ci individuellement.
+    const check = forceManual
+      ? { auto: false, reason: 'evg_tout_ou_rien' }
+      : await checkAutoValidation(actKey, activite, date, time, pers, ageBreakdown);
+
+    // Cas "impossible" (ex: dépassement de l'heure de fermeture) : on ne crée
+    // AUCUNE demande, ni auto-confirmée ni en attente — juste un refus clair.
+    if (check.impossible) {
+      return { demande: null, autoValidated: false, reason: check.reason, impossible: true };
+    }
+
+    const demande = {
+      nom:           `${prenom} ${nom_val}`.trim(),
+      mail:          email,
+      tel:           tel,
+      activite:      actKey,
+      activiteLabel: activite,
+      date:          date,
+      time:          time,
+      pers:          pers,
+      type:          't-particulier',
+      comment:       buildComment(fd),
+      status:        check.auto ? 'auto-confirmed' : 'pending',
+      direct:        check.auto,
+      source:        'web',
+      autoReason:    check.auto ? 'ok' : (check.reason || 'manual'),
+      createdAt:     Date.now()
+    };
+    if (profil) demande.profil = profil;
+    // Détail chiffré de la répartition (indispensable pour recalculer
+    // correctement les catégories de compatibilité une fois la réservation
+    // créée par CalendIT — le seul champ "profil" résumé ne suffit pas).
+    if (actKey === 'laser' && ageBreakdown) {
+      demande.enfants79   = ageBreakdown.enfants79;
+      demande.enfants1012 = ageBreakdown.enfants1012;
+      demande.ados1315    = ageBreakdown.ados1315;
+      demande.ados1618    = ageBreakdown.ados1618;
+      demande.adultes     = ageBreakdown.adultes;
+    }
+    // Escape Game VR occupe 3 créneaux d'affilée pour une seule séance de 60 min
+    if (activite === 'Escape Game VR') demande.slotSpan = 3;
+    // Escape Game VR confirmé → type "Escape Game VR" (couleur bleue), comme
+    // quand le staff le crée manuellement dans CalendIT.
+    if (activite === 'Escape Game VR') demande.forceType = 't-escapevr';
+    // EVG/EVJF confirmé → type "EVC" (couleur rouge) une fois la réservation créée
+    if (activite === 'EVG / EVJF') demande.forceType = 't-evc';
+    // Offre spéciale (Just Play / Four Play), pour affichage clair dans l'email client
+    const offerLabel = detectOfferLabel(fd);
+    if (offerLabel) demande.offerLabel = offerLabel;
+    // Lie cette session aux autres sessions de la même réservation multi-session,
+    // pour que le staff puisse les traiter ensemble (un seul email client).
+    if (groupInfo && groupInfo.groupId) {
+      demande.groupId    = groupInfo.groupId;
+      demande.groupIndex = groupInfo.index;
+      demande.groupTotal = groupInfo.total;
+    }
+
+    const ref = await db.ref('demandes').push(demande);
+
+    // Mise à jour optimiste IMMÉDIATE de dispo/dispo_profil (sans attendre que
+    // CalendIT traite la demande, ce qui peut prendre quelques secondes) —
+    // évite qu'une réservation soumise juste après ne voie une disponibilité
+    // ou une composition de groupe périmée. CalendIT recalculera de toute
+    // façon ces valeurs depuis les vraies réservations dès qu'il traitera
+    // la demande, donc aucun risque de dérive durable.
+    // IMPORTANT : on attend (await) que ces écritures soient réellement
+    // terminées avant de considérer la réservation comme traitée — sinon rien
+    // ne garantit qu'elles soient visibles avant qu'une réservation suivante
+    // (soumise dans la foulée) ne relise ces mêmes données.
+    if (check.auto) {
+      const dispoKey = `${actKey}|${date}|${time}`;
+      const writes = [db.ref(`dispo/${dispoKey}`).transaction(cur => (cur || 0) + pers).catch(()=>{})];
+      if (actKey === 'laser' && ageBreakdown) {
+        const sig = computeCategories(ageBreakdown.enfants79, ageBreakdown.enfants1012, ageBreakdown.ados1315, ageBreakdown.ados1618, ageBreakdown.adultes).join('+');
+        writes.push(db.ref(`dispo_profil/${dispoKey}/${sig}`).set(true).catch(()=>{}));
+      }
+      await Promise.all(writes);
+    }
+
+    return { demande, autoValidated: check.auto, reason: check.reason, ref: ref.key };
+  }
+
+  // ── Notification staff par EmailJS ──
+  async function sendStaffEmail(fd, results, droppedSessions) {
+    // Compatibilité : accepte un résultat unique ou un tableau de résultats (sessions multiples)
+    const list = Array.isArray(results) ? results : [results];
+    const dropped = droppedSessions || [];
+
+    // Infos client lues directement du formulaire (robuste même si aucune
+    // session n'a pu être soumise — évite de dépendre de list[0])
+    const prenom = (document.getElementById('prenom')?.value || '').trim();
+    const nom_val= (document.getElementById('nom')?.value || '').trim();
+    const email  = (document.getElementById('email')?.value || '').trim();
+    const tel    = getDigits(document.getElementById('telephone')?.value || '');
+    const activiteLabel = fd.get('activite') || '';
+    const pers   = fd.get('nb_personnes') || '';
+    const dateStr = fd.get('date') || '';
+    const [y, mo, da] = dateStr.split('-');
+    const dateF = da ? `${da}/${mo}/${y}` : dateStr;
+    const comment = buildComment(fd);
+
+    const totalSessions = list.length + dropped.length;
+
+    const confirmedBlock = list.map((r, i) => {
+      const d = r.demande || r;
+      const isAuto = r.autoValidated;
+      const statusLabel = isAuto
+        ? '✅ AUTO-CONFIRMÉE — réservation ajoutée directement dans CalendIT'
+        : `⏳ EN ATTENTE — ${getWaitingMessage(r.reason, d.activite)}`;
+      const label = totalSessions > 1 ? `SESSION ${i + 1} — ${d.time}\n` : '';
+      return `${label}📌 STATUT : ${statusLabel}\n🕐 Créneau    : ${d.time}\n`;
+    }).join('\n───────────────────────────────────\n');
+
+    const droppedBlock = dropped.length
+      ? `\n───────────────────────────────────\n❌ SESSIONS NON RETENUES (règles/places non respectées)\n───────────────────────────────────\n` +
+        dropped.map(c => `🕐 Créneau ${c.time} : ${getWaitingMessage(c.reason, c.activite)}`).join('\n')
+      : '';
+
+    const allAuto = list.length > 0 && list.every(r => r.autoValidated);
+
+    const message =
+      `🎯 NOUVELLE DEMANDE — Game Zone Montauban${totalSessions > 1 ? ` (${totalSessions} sessions demandées)` : ''}\n\n` +
+      `═══════════════════════════════════\n` +
+      `👤 Client     : ${prenom} ${nom_val}\n` +
+      `📞 Téléphone  : ${tel}\n` +
+      `✉️  Email      : ${email}\n\n` +
+      `🎮 Activité   : ${activiteLabel}\n` +
+      `📅 Date       : ${dateF}\n` +
+      `👥 Joueurs    : ${pers} personne(s)\n\n` +
+      `───────────────────────────────────\n` +
+      (list.length ? confirmedBlock + `\n` : (dropped.length ? '⚠️ Aucune session n\'a pu être confirmée automatiquement.\n' : '')) +
+      droppedBlock + `\n` +
+      `───────────────────────────────────\n` +
+      `📝 Détails    : ${comment}\n\n` +
+      (dropped.length
+        ? `➡️ Le client a été informé que ${dropped.length > 1 ? 'ces sessions ne sont' : 'cette session n\'est'} pas disponible(s). Contactez-le si besoin pour proposer une alternative.\n`
+        : (allAuto
+          ? `✅ Toutes les sessions ont été confirmées automatiquement dans CalendIT.\n`
+          : `➡️ Rendez-vous dans CalendIT > Demandes pour valider ou refuser.\n`));
+
+    if (list.length === 0 && dropped.length === 0) return; // rien à notifier
+
+    await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  'service_hk5x4ah',
+        template_id: 'template_y6gp8sg',
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: {
+          to_email: 'contact@gamezone-montauban.com',
+          message:  message,
+          ref:      `${prenom} ${nom_val}`.trim()
+        }
+      })
+    });
+  }
+  function showSuccess(results, droppedSessions) {
+    const list    = Array.isArray(results) ? results : [results];
+    const dropped = droppedSessions || [];
+    const totalRequested = list.length + dropped.length;
+    const title   = document.getElementById('success-title');
+    const sub     = document.getElementById('success-sub');
+    const notice  = document.getElementById('success-notice');
+    const form    = document.getElementById('resa-form');
+
+    // ── Cas simple : une seule session demandée (comportement inchangé) ──
+    if (totalRequested === 1 && dropped.length === 0) {
+      const isAuto = list[0] && list[0].autoValidated;
+      const isImpossible = list[0] && list[0].impossible;
+      if (isAuto) {
+        title.textContent  = '✅ Réservation confirmée !';
+        sub.innerHTML      = 'Votre réservation est <strong>confirmée</strong> et enregistrée directement dans notre planning.<br>Un email de confirmation avec tous les détails va vous être envoyé dans quelques instants.';
+        notice.style.display = 'none';
+      } else if (isImpossible) {
+        title.textContent  = '⛔ Réservation impossible';
+        sub.innerHTML      = 'Ce créneau dépasse l\'heure de fermeture. Aucune réservation n\'a été enregistrée — merci de choisir un horaire plus tôt ou de nous contacter directement.';
+        notice.style.display = 'none';
+      } else {
+        title.textContent  = '⏳ Demande reçue !';
+        sub.innerHTML      = 'Votre demande a bien été transmise à l\'équipe GameZone.<br>Vous recevrez une réponse par email ou téléphone <strong>très rapidement</strong>.';
+        notice.style.display = 'block';
+        notice.textContent = getWaitingMessage(list[0] && list[0].reason, '') + ' ⚠ Votre réservation sera effective uniquement après confirmation par GameZone.';
+      }
+      form.style.display = 'none';
+      document.getElementById('form-success').style.display = 'block';
+      return;
+    }
+
+    // ── Sessions multiples ──
+    // Rappel de la règle : une session n'est confirmée automatiquement que si
+    // TOUTES les places/règles sont respectées. Sinon, seules les sessions
+    // valides sont proposées/confirmées ; les autres sont clairement écartées.
+    // Cas particulier "tout ou rien" (ex: EVG/EVJF) : aucune session n'est
+    // écartée (dropped vide), mais aucune n'est auto-confirmée non plus —
+    // toutes repartent ensemble en validation manuelle.
+    const allConfirmed = list.length > 0 && list.every(r => r.autoValidated);
+    if (dropped.length === 0 && allConfirmed) {
+      // Toutes les sessions demandées ont pu être confirmées
+      title.textContent = '✅ Sessions confirmées !';
+      const lines = list.map((r, i) => `Session ${i + 1} (${r.demande.time}) : ✅ confirmée`).join('<br>');
+      sub.innerHTML = `${lines}<br><br>Toutes vos sessions sont <strong>confirmées</strong> et enregistrées dans notre planning. Un email récapitulatif va vous être envoyé.`;
+      notice.style.display = 'none';
+    } else if (dropped.length === 0 && !allConfirmed) {
+      // Cas tout ou rien : toutes les sessions sont soumises ensemble en
+      // validation manuelle, aucune n'est écartée ni confirmée séparément.
+      title.textContent = '⏳ Demande reçue !';
+      const lines = list.map((r, i) => `Session ${i + 1} (${r.demande.time}) : ⏳ en attente`).join('<br>');
+      sub.innerHTML = `${lines}<br><br>Votre demande a bien été transmise à l'équipe GameZone.<br>Vous recevrez une réponse par email ou téléphone <strong>très rapidement</strong>.`;
+      notice.style.display = 'block';
+      notice.textContent = getWaitingMessage(list[0] && list[0].reason, '') + ' ⚠ Votre réservation sera effective uniquement après confirmation par GameZone.';
+    } else if (list.length === 0) {
+      // Aucune session n'a pu être confirmée
+      title.textContent = '⚠️ Aucune session disponible';
+      const lines = dropped.map((c, i) => `Session ${i + 1} (${c.time}) : ❌ non disponible`).join('<br>');
+      sub.innerHTML = `${lines}<br><br>Aucune des sessions demandées ne peut être confirmée pour le moment (places ou règles non respectées). Merci de nous contacter ou de réessayer avec d'autres horaires.`;
+      notice.style.display = 'block';
+      notice.textContent = getWaitingMessage(dropped[0] && dropped[0].reason, '') + ' Aucune réservation n\'a été enregistrée — vous pouvez modifier vos créneaux et renvoyer votre demande.';
+    } else {
+      // Confirmation partielle : seules les sessions valides sont retenues
+      title.textContent = '✅ Sessions disponibles confirmées';
+      const confirmedLines = list.map(r => `Session (${r.demande.time}) : ✅ confirmée`).join('<br>');
+      const droppedLines   = dropped.map(c => `Session (${c.time}) : ❌ non disponible`).join('<br>');
+      sub.innerHTML =
+        `${confirmedLines}<br>${droppedLines}<br><br>` +
+        `Seules les sessions disponibles ont été <strong>confirmées et enregistrées</strong> dans notre planning — un email récapitulatif va vous être envoyé.<br>` +
+        `Les sessions non disponibles n'ont <strong>pas</strong> été réservées : contactez-nous si vous souhaitez une solution alternative pour ces horaires.`;
+      notice.style.display = 'block';
+      notice.textContent = getWaitingMessage(dropped[0] && dropped[0].reason, '') + ' Ces sessions n\'ont pas été retenues automatiquement.';
+    }
+
+    form.style.display = 'none';
+    document.getElementById('form-success').style.display = 'block';
+  }
+
+  // ══════════════════════════════════════════════
+  //  BLIND TEST — répartition joueurs
+  // ══════════════════════════════════════════════
+  function onBlindChange(changedEl) {
+    const a  = parseInt(document.getElementById('blind-adultes').value) || 0;
+    const ad = parseInt(document.getElementById('blind-ados').value)    || 0;
+    const e  = parseInt(document.getElementById('blind-enfants').value) || 0;
+    let total = a + ad + e;
+    const effectiveMax = currentSlotRemaining !== null ? currentSlotRemaining : 12;
+
+    if (changedEl && total > effectiveMax) {
+      const currentVal = parseInt(changedEl.value) || 0;
+      const excedent = total - effectiveMax;
+      changedEl.value = Math.max(0, currentVal - excedent);
+      return onBlindChange();
+    }
+
+    const totalEl = document.getElementById('blind-total');
+    totalEl.textContent = total;
+    totalEl.style.color      = total > effectiveMax ? '#ff4444' : 'var(--neon-pink)';
+    totalEl.style.textShadow = total > effectiveMax ? '0 0 8px rgba(255,0,0,0.5)' : '0 0 8px rgba(255,45,107,0.5)';
+
+    document.getElementById('nb-personnes').value = total > 0 ? total : '';
+    document.getElementById('err-blind-total').classList.remove('visible');
+    document.getElementById('err-blind-min').classList.remove('visible');
+  }
+
+  // ══════════════════════════════════════════════
+  //  VR ZONE & ESCAPE GAME — répartition joueurs
+  // ══════════════════════════════════════════════
+  function onVrChange(prefix, changedEl) {
+    const a   = parseInt(document.getElementById(prefix+'-adultes').value)  || 0;
+    const ad  = parseInt(document.getElementById(prefix+'-ados').value)     || 0;
+    const e   = parseInt(document.getElementById(prefix+'-enfants').value)  || 0;
+    let total = a + ad + e;
+    const max = currentSlotRemaining !== null ? currentSlotRemaining : 4;
+
+    if (changedEl && total > max) {
+      const currentVal = parseInt(changedEl.value) || 0;
+      const excedent = total - max;
+      changedEl.value = Math.max(0, currentVal - excedent);
+      return onVrChange(prefix);
+    }
+
+    const totalEl = document.getElementById(prefix+'-total');
+    totalEl.textContent = total;
+    const ok = total >= 1 && total <= max;
+    const color = prefix === 'escape' ? '#ff80dd' : 'var(--neon-cyan)';
+    const glow  = prefix === 'escape' ? 'rgba(204,0,153,0.5)' : 'rgba(255,124,0,0.5)';
+    totalEl.style.color      = total > max ? '#ff4444' : color;
+    totalEl.style.textShadow = total > max ? '0 0 8px rgba(255,0,0,0.5)' : `0 0 8px ${glow}`;
+
+    document.getElementById('nb-personnes').value = total > 0 ? total : '';
+
+    document.getElementById('err-'+prefix+'-total').classList.remove('visible');
+    document.getElementById('err-'+prefix+'-min').classList.remove('visible');
+  }
+
+  function isVrActive()     { return document.getElementById('vr-fields').style.display     !== 'none'; }
+  function isEscapeActive() { return document.getElementById('escape-fields').style.display !== 'none'; }
+  function isBlindActive()  { return document.getElementById('blind-fields').style.display  !== 'none'; }
+
+  // ══════════════════════════════════════════════
+  //  LASER GAME — répartition joueurs
+  // ══════════════════════════════════════════════
+  function onLaserChange(changedEl) {
+    const e79  = parseInt(document.getElementById('laser-enfants79').value)   || 0;
+    const e1012= parseInt(document.getElementById('laser-enfants1012').value) || 0;
+    const ad13 = parseInt(document.getElementById('laser-ados1315').value)    || 0;
+    const ad16 = parseInt(document.getElementById('laser-ados1618').value)    || 0;
+    const a    = parseInt(document.getElementById('laser-adultes').value)     || 0;
+    let total = e79 + e1012 + ad13 + ad16 + a;
+    const effectiveMax = currentSlotRemaining !== null ? currentSlotRemaining : 24;
+
+    // Si la saisie dépasse la place réellement disponible, on corrige
+    // immédiatement le champ que la personne vient de modifier (pas de saisie
+    // possible au-delà de la limite, plutôt qu'un simple avertissement après coup).
+    if (changedEl && total > effectiveMax) {
+      const currentVal = parseInt(changedEl.value) || 0;
+      const excedent = total - effectiveMax;
+      changedEl.value = Math.max(0, currentVal - excedent);
+      return onLaserChange(); // recalcule proprement avec la valeur corrigée
+    }
+
+    const totalEl = document.getElementById('laser-total');
+    totalEl.textContent = total;
+    totalEl.style.color = total > effectiveMax ? '#ff4444' : '#44ff88';
+    totalEl.style.textShadow = total > effectiveMax
+      ? '0 0 8px rgba(255,0,0,0.5)'
+      : '0 0 8px rgba(68,255,136,0.5)';
+
+    // Sync nb-personnes hidden
+    document.getElementById('nb-personnes').value = total > 0 ? total : '';
+
+    // Hide errors on input
+    document.getElementById('err-laser-total').classList.remove('visible');
+    document.getElementById('err-laser-min').classList.remove('visible');
+  }
+
+  function isLaserActive() {
+    return document.getElementById('laser-fields').style.display !== 'none';
+  }
+
+  // ══════════════════════════════════════════════
+  //  VALIDATION FORMULAIRE
+  // ══════════════════════════════════════════════
+
+  function getDigits(str) {
+    let d = (str || '').replace(/\D/g, '');
+    // Corrige l'autocomplétion du navigateur qui remplit parfois le numéro au
+    // format international (+33 6 XX XX XX XX → 33 + 9 chiffres) au lieu du
+    // format national à 10 chiffres attendu.
+    if (d.length === 11 && d.startsWith('33')) {
+      d = '0' + d.slice(2);
+    }
+    return d;
+  }
+
+  function showError(id, show) {
+    const el = document.getElementById('err-' + id);
+    const input = document.getElementById(id);
+    if (!el || !input) return;
+    if (show) {
+      el.classList.add('visible');
+      input.classList.add('invalid');
+    } else {
+      el.classList.remove('visible');
+      input.classList.remove('invalid');
+    }
+  }
+
+  // Nettoie les erreurs à la saisie
+  document.querySelectorAll('input, select, textarea').forEach(el => {
+    el.addEventListener('input', () => {
+      const id = el.id;
+      if (id) showError(id, false);
+    });
+    el.addEventListener('change', () => {
+      const id = el.id;
+      if (id) showError(id, false);
+    });
+  });
+
+  // Formatage téléphone (espaces automatiques)
+  const telInput = document.getElementById('telephone');
+  telInput.addEventListener('input', function() {
+    let digits = getDigits(this.value).slice(0, 10);
+    // Format XX XX XX XX XX
+    let formatted = digits.match(/.{1,2}/g)?.join(' ') || digits;
+    this.value = formatted;
+  });
+
+  function isAnnivActive() {
+    return document.getElementById('anniv-fields').style.display !== 'none';
+  }
+  function isEvgActive() {
+    return document.getElementById('evg-fields').style.display !== 'none';
+  }
+
+  function validateAndSubmit() {
+    let valid = true;
+
+    // Prénom
+    const prenom = document.getElementById('prenom').value.trim();
+    if (!prenom) { showError('prenom', true); valid = false; } else showError('prenom', false);
+
+    // Nom
+    const nom = document.getElementById('nom').value.trim();
+    if (!nom) { showError('nom', true); valid = false; } else showError('nom', false);
+
+    // Email
+    const email = document.getElementById('email').value.trim();
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailOk) { showError('email', true); valid = false; } else showError('email', false);
+
+    // Téléphone — exactement 10 chiffres, jamais au format international mal
+    // converti par l'autocomplétion du navigateur (ex: "33XXXXXXXX")
+    const tel = getDigits(document.getElementById('telephone').value);
+    const telErrEl = document.getElementById('err-telephone');
+    if (tel.length !== 10) {
+      showError('telephone', true);
+      telErrEl.textContent = 'Le numéro doit contenir exactement 10 chiffres.';
+      valid = false;
+    } else if (tel.startsWith('33')) {
+      showError('telephone', true);
+      telErrEl.textContent = 'Numéro invalide (format international détecté) — merci de le ressaisir en commençant par 0 (ex: 06 12 34 56 78).';
+      valid = false;
+    } else {
+      showError('telephone', false);
+    }
+
+    // Activité
+    const activite = document.getElementById('activite').value;
+    if (!activite) { showError('activite', true); valid = false; } else showError('activite', false);
+
+    // Nb personnes (sauf Laser qui a ses propres champs)
+    if (!isLaserActive()) {
+      const nb = document.getElementById('nb-personnes').value;
+      if (!nb || parseInt(nb) < 1) { showError('nb-personnes', true); valid = false; } else showError('nb-personnes', false);
+    }
+
+    // Champs Blind Test
+    if (isBlindActive()) {
+      const a  = parseInt(document.getElementById('blind-adultes').value) || 0;
+      const ad = parseInt(document.getElementById('blind-ados').value)    || 0;
+      const e  = parseInt(document.getElementById('blind-enfants').value) || 0;
+      const total = a + ad + e;
+      const effMax = currentSlotRemaining !== null ? currentSlotRemaining : 12;
+      if (total < 4)  { document.getElementById('err-blind-min').classList.add('visible');   valid = false; }
+      else if (total > effMax) {
+        const el = document.getElementById('err-blind-total');
+        el.textContent = `Il ne reste que ${effMax} place${effMax > 1 ? 's' : ''} sur ce créneau — veuillez choisir un autre horaire.`;
+        el.classList.add('visible'); valid = false;
+      }
+    }
+
+    // Champs VR Zone
+    if (isVrActive()) {
+      const a = parseInt(document.getElementById('vr-adultes').value) || 0;
+      const ad = parseInt(document.getElementById('vr-ados').value) || 0;
+      const e = parseInt(document.getElementById('vr-enfants').value) || 0;
+      const total = a + ad + e;
+      const effMax = currentSlotRemaining !== null ? currentSlotRemaining : 4;
+      if (total < 1) { document.getElementById('err-vr-min').classList.add('visible'); valid = false; }
+      else if (total > effMax) {
+        const el = document.getElementById('err-vr-total');
+        el.textContent = `Il ne reste que ${effMax} place${effMax > 1 ? 's' : ''} sur ce créneau — veuillez réduire le nombre de joueurs ou choisir un autre horaire.`;
+        el.classList.add('visible'); valid = false;
+      }
+    }
+
+    // Champs Escape Game VR
+    if (isEscapeActive()) {
+      const a = parseInt(document.getElementById('escape-adultes').value) || 0;
+      const ad = parseInt(document.getElementById('escape-ados').value) || 0;
+      const e = parseInt(document.getElementById('escape-enfants').value) || 0;
+      const total = a + ad + e;
+      const effMax = currentSlotRemaining !== null ? currentSlotRemaining : 4;
+      if (total < 2) { document.getElementById('err-escape-min').classList.add('visible'); valid = false; }
+      else if (total > effMax) {
+        const el = document.getElementById('err-escape-total');
+        el.textContent = `Il ne reste que ${effMax} place${effMax > 1 ? 's' : ''} sur ce créneau — veuillez réduire le nombre de joueurs ou choisir un autre horaire.`;
+        el.classList.add('visible'); valid = false;
+      }
+    }
+
+    // Champs Laser Game
+    if (isLaserActive()) {
+      const e79   = parseInt(document.getElementById('laser-enfants79').value)   || 0;
+      const e1012 = parseInt(document.getElementById('laser-enfants1012').value) || 0;
+      const ad13  = parseInt(document.getElementById('laser-ados1315').value)    || 0;
+      const ad16  = parseInt(document.getElementById('laser-ados1618').value)    || 0;
+      const a     = parseInt(document.getElementById('laser-adultes').value)     || 0;
+      const total = e79 + e1012 + ad13 + ad16 + a;
+      const effectiveMax = currentSlotRemaining !== null ? currentSlotRemaining : 24;
+      if (total < 1) {
+        document.getElementById('err-laser-min').classList.add('visible');
+        valid = false;
+      } else if (total > effectiveMax) {
+        const errEl = document.getElementById('err-laser-total');
+        errEl.textContent = `Il ne reste que ${effectiveMax} place${effectiveMax > 1 ? 's' : ''} sur ce créneau — veuillez réduire le nombre de joueurs ou choisir un autre horaire.`;
+        errEl.classList.add('visible');
+        valid = false;
+      }
+    }
+
+    // Date
+    const date = document.getElementById('date').value;
+    const dateCustom = document.getElementById('date').validationMessage;
+    if (!date || dateCustom) { showError('date', true); valid = false; } else showError('date', false);
+
+    // Créneau
+    const creneau = document.getElementById('creneau').value;
+    if (!creneau) { showError('creneau', true); valid = false; } else showError('creneau', false);
+
+    // Créneaux sessions multiples (Laser Game / VR Zone / Blind Test Musical)
+    const nbSessions = parseInt(document.getElementById('nb-sessions').value) || 1;
+    if (nbSessions >= 2) {
+      const creneau2 = document.getElementById('creneau2').value;
+      if (!creneau2) { showError('creneau2', true); valid = false; } else showError('creneau2', false);
+    }
+    if (nbSessions >= 3) {
+      const creneau3 = document.getElementById('creneau3').value;
+      if (!creneau3) { showError('creneau3', true); valid = false; } else showError('creneau3', false);
+    }
+    if (nbSessions >= 4) {
+      const creneau4 = document.getElementById('creneau4').value;
+      if (!creneau4) { showError('creneau4', true); valid = false; } else showError('creneau4', false);
+    }
+
+    // Heure de fermeture : la fin de la DERNIÈRE session ne doit jamais la dépasser.
+    // Si c'est le cas, la réservation est purement et simplement impossible
+    // (pas de repli vers une validation manuelle).
+    const activiteVal = document.getElementById('activite').value;
+    const dateVal = document.getElementById('date').value;
+    if (creneau && dateVal) {
+      let lastTime = creneauToTime(creneau);
+      if (nbSessions >= 2 && document.getElementById('creneau2').value) lastTime = creneauToTime(document.getElementById('creneau2').value);
+      if (nbSessions >= 3 && document.getElementById('creneau3').value) lastTime = creneauToTime(document.getElementById('creneau3').value);
+      if (nbSessions >= 4 && document.getElementById('creneau4').value) lastTime = creneauToTime(document.getElementById('creneau4').value);
+      if (!checkClosingTime(activiteVal, dateVal, lastTime)) {
+        document.getElementById('err-creneau-fermeture').classList.add('visible');
+        valid = false;
+      } else {
+        document.getElementById('err-creneau-fermeture').classList.remove('visible');
+      }
+    } else {
+      document.getElementById('err-creneau-fermeture').classList.remove('visible');
+    }
+
+    // Champs anniversaire
+    if (isAnnivActive()) {
+      const ap = document.getElementById('anniv-prenom').value.trim();
+      if (!ap) { showError('anniv-prenom', true); valid = false; } else showError('anniv-prenom', false);
+
+      const aa = document.getElementById('anniv-age').value;
+      if (!aa) { showError('anniv-age', true); valid = false; } else showError('anniv-age', false);
+
+      const ah = document.getElementById('anniv-heure').value;
+      if (!ah) { showError('anniv-heure', true); valid = false; } else showError('anniv-heure', false);
+
+      const adu = document.getElementById('anniv-adultes').value;
+      if (!adu) { showError('anniv-adultes', true); valid = false; } else showError('anniv-adultes', false);
+    }
+
+    // Champs EVG
+    if (isEvgActive()) {
+      const ep = document.getElementById('evg-prenom').value.trim();
+      if (!ep) { showError('evg-prenom', true); valid = false; } else showError('evg-prenom', false);
+    }
+
+    if (!valid) {
+      // Scroll vers la première erreur
+      const firstErr = document.querySelector('.field-error.visible');
+      if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // Soumettre
+    try {
+      submitForm();
+    } catch(e) {
+      console.error('[GZ] Erreur submitForm:', e);
+    }
+  }
+
+  async function submitForm() {
+    const btn  = document.getElementById('submit-btn');
+    const form = document.getElementById('resa-form');
+    btn.textContent = '⏳ Envoi en cours…';
+    btn.disabled = true;
+
+    const fd = new FormData(form);
+
+    // ── Créneaux à traiter (1 à 4 sessions) ──
+    const nbSessions = parseInt(fd.get('nb_sessions')) || 1;
+    const sessionCreneaux = [fd.get('creneau')];
+    if (nbSessions >= 2) sessionCreneaux.push(fd.get('creneau2'));
+    if (nbSessions >= 3) sessionCreneaux.push(fd.get('creneau3'));
+    if (nbSessions >= 4) sessionCreneaux.push(fd.get('creneau4'));
+
+    // EVG/EVJF : 2 parties de 20 min avec une pause d'un créneau entre les
+    // deux (le client ne choisit qu'une seule heure, la 2e partie est
+    // calculée automatiquement — même logique de pause que pour le Laser Game).
+    if (fd.get('activite') === 'EVG / EVJF') {
+      const idx1 = currentCreneaux.indexOf(sessionCreneaux[0]);
+      const idx2 = idx1 + 2; // +1 pour la partie 1, +1 pour la pause
+      if (idx1 >= 0 && idx2 < currentCreneaux.length) {
+        sessionCreneaux.push(currentCreneaux[idx2]);
+      }
+    }
+
+    // ── Sessions multiples : on vérifie TOUT avant de confirmer quoi que ce soit ──
+    // Cas général (Laser Game Just Play/Four Play, etc.) : une session invalide
+    // est écartée, seules les sessions valides sont réellement soumises/confirmées.
+    // Cas EVG/EVJF : "tout ou rien" — si l'une des 2 parties n'est pas
+    // compatible, les DEUX repartent ensemble en validation manuelle, jamais
+    // de confirmation partielle (les 2 parties forment un seul forfait).
+    let creneauxToSubmit = sessionCreneaux;
+    let droppedSessions = [];
+    let forceAllManual = false;
+    if (sessionCreneaux.length > 1) {
+      let checks = [];
+      try {
+        for (const cr of sessionCreneaux) {
+          checks.push(await checkSessionAvailability(fd, cr));
+        }
+      } catch(e) {
+        console.warn('Pré-vérification sessions:', e);
+      }
+      if (checks.length === sessionCreneaux.length) {
+        const invalid = checks.filter(c => !c.auto);
+        if (invalid.length > 0) {
+          if (fd.get('activite') === 'EVG / EVJF') {
+            forceAllManual = true;
+          } else {
+            creneauxToSubmit = checks.filter(c => c.auto).map(c => c.creneau);
+            droppedSessions  = invalid;
+          }
+        }
+      }
+    }
+
+    // ── Identifiant de groupe partagé si plusieurs sessions sont réellement soumises ──
+    // Permet à CalendIT de les traiter ensemble et n'envoyer qu'un seul email client.
+    const groupId = creneauxToSubmit.length > 1
+      ? `grp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      : null;
+
+    // ── Si fichier local (test) → affichage direct des données ──
+    if (window.location.protocol === 'file:') {
+      let results = [];
+      try {
+        for (let i = 0; i < creneauxToSubmit.length; i++) {
+          const groupInfo = groupId ? { groupId, index: i, total: creneauxToSubmit.length } : null;
+          results.push(await pushToCalendit(fd, creneauxToSubmit[i], groupInfo, forceAllManual));
+        }
+        await sendStaffEmail(fd, results, droppedSessions);
+      } catch(e) { console.warn('Firebase/EmailJS local:', e); }
+      showLocalSummary(fd, results);
+      return;
+    }
+
+    // ── En production : Firebase + EmailJS + Formsubmit ──
+    let pushResults = [];
+    try {
+      for (let i = 0; i < creneauxToSubmit.length; i++) {
+        const groupInfo = groupId ? { groupId, index: i, total: creneauxToSubmit.length } : null;
+        pushResults.push(await pushToCalendit(fd, creneauxToSubmit[i], groupInfo, forceAllManual));
+      }
+      await sendStaffEmail(fd, pushResults, droppedSessions);
+    } catch(e) { console.warn('Firebase/EmailJS:', e); }
+
+    const allAuto = pushResults.length > 0 && pushResults.every(r => r.autoValidated);
+
+    // Formsubmit.co (copie mail backup)
+    fd.append('_subject', allAuto
+      ? '✅ Réservation confirmée — GameZone Montauban'
+      : '⏳ Demande de réservation — GameZone Montauban');
+    fd.append('_language', 'fr');
+    fd.append('_captcha', 'false');
+    fd.append('_template', 'table');
+
+    try {
+      const response = await fetch('https://formsubmit.co/ajax/295e55d8436d0433f0c50bb491dffe57', {
+        method: 'POST',
+        body: fd,
+        headers: { 'Accept': 'application/json' }
+      });
+      await response.json();
+    } catch {}
+
+    showSuccess(pushResults, droppedSessions);
+    return;
+  }
+
+  // ── Résumé local (test sur fichier) ──
+  function showLocalSummary(fd) {
+    const form = document.getElementById('resa-form');
+    const labels = {
+      prenom:'Prénom', nom:'Nom', email:'Email', telephone:'Téléphone',
+      activite:'Activité', nb_personnes:'Nb personnes',
+      date:'Date souhaitée', creneau:'Créneau horaire',
+      laser_adultes:'Laser — Adultes', laser_ados1618:'Laser — Ados 16-18', laser_ados1315:'Laser — Ados 13-15', laser_enfants1012:'Laser — Enf. 10-12', laser_enfants79:'Laser — Enf. 7-9',
+      vr_adultes:'VR — Adultes', vr_ados:'VR — Ados 14+', vr_enfants:'VR — Enf. 10+',
+      escape_adultes:'Escape — Adultes', escape_ados:'Escape — Ados 14+', escape_enfants:'Escape — Enf. 12+',
+      blind_adultes:'Blind — Adultes', blind_ados:'Blind — Ados 14+', blind_enfants:'Blind — Enf. 12+',
+      anniv_prenom:'Anniv — Prénom', anniv_age:'Anniv — Âge', anniv_heure:'Anniv — Heure', anniv_adultes:'Anniv — Adultes',
+      evg_prenom:'EVG — Prénom', message:'Message'
+    };
+    let rows = '';
+    for (const [key, label] of Object.entries(labels)) {
+      const val = fd.get(key);
+      if (val && val.toString().trim() !== '' && val !== '0') {
+        rows += `<tr><td style="padding:6px 12px;color:#c08060;font-size:0.8rem;letter-spacing:1px;text-transform:uppercase;white-space:nowrap;">${label}</td><td style="padding:6px 12px;color:#f5e6d3;font-weight:600;">${val}</td></tr>`;
+      }
+    }
+    const success = document.getElementById('form-success');
+    success.innerHTML = `
+      <p class="success-title">✓ Formulaire validé !</p>
+      <p class="success-sub" style="margin-bottom:1.2rem;">Mode test local — voici le récapitulatif de la demande.<br>En production (hébergeur), le mail partira automatiquement.</p>
+      <table style="width:100%;border-collapse:collapse;background:rgba(255,124,0,0.06);border:1px solid rgba(255,124,0,0.2);margin-bottom:1.5rem;text-align:left;">${rows}</table>
+      <p class="notice-warning">⚠ En production, ce formulaire enverra automatiquement un mail à contact@gamezone-montauban.com</p>
+    `;
+    form.style.display = 'none';
+    success.style.display = 'block';
+  }
+
+  // ══════════════════════════════════════════════
+  //  CHAMPS SPÉCIAUX (anniversaire / EVG)
+  // ══════════════════════════════════════════════
+  function onActiviteChange() {
+    const val = document.getElementById('activite').value;    const isAnniv  = val === 'Forfait Anniversaire';
+    const isEVG    = val === 'EVG / EVJF';
+    const isVR     = val === 'VR Zone (action, arcade, zombies…)';
+    const isEscape = val === 'Escape Game VR';
+    const nbInput  = document.getElementById('nb-personnes');
+
+    const isLaser  = val === 'Laser Game';
+    const isBlind  = val === 'Blind Test Musical';
+
+    document.getElementById('anniv-fields').style.display  = isAnniv  ? 'block' : 'none';
+    document.getElementById('evg-fields').style.display    = isEVG    ? 'block' : 'none';
+    document.getElementById('laser-fields').style.display  = isLaser  ? 'block' : 'none';
+    document.getElementById('vr-fields').style.display     = isVR     ? 'block' : 'none';
+    document.getElementById('escape-fields').style.display = isEscape ? 'block' : 'none';
+    document.getElementById('blind-fields').style.display  = isBlind  ? 'block' : 'none';
+
+    // Masquer nb-personnes pour les activités avec répartition détaillée
+    const nbGroup = document.getElementById('nb-personnes').closest('.form-group');
+    const hideNb = isLaser || isVR || isEscape || isBlind;
+    nbGroup.style.display = hideNb ? 'none' : '';
+    if (hideNb) document.getElementById('nb-personnes').value = '';
+
+    // Reset tous les blocs spéciaux non actifs
+    if (!isLaser)  { ['laser-adultes','laser-ados1618','laser-ados1315','laser-enfants1012','laser-enfants79'].forEach(id => { const el=document.getElementById(id); if(el) el.value='0'; }); document.getElementById('laser-total').textContent='0'; }
+    if (!isVR)     { ['vr-adultes','vr-ados','vr-enfants'].forEach(id => { const el=document.getElementById(id); if(el) el.value='0'; }); document.getElementById('vr-total').textContent='0'; }
+    if (!isEscape) { ['escape-adultes','escape-ados','escape-enfants'].forEach(id => { const el=document.getElementById(id); if(el) el.value='0'; }); document.getElementById('escape-total').textContent='0'; }
+    if (!isBlind)  { ['blind-adultes','blind-ados','blind-enfants'].forEach(id => { const el=document.getElementById(id); if(el) el.value='0'; }); document.getElementById('blind-total').textContent='0'; }
+
+    if (!isAnniv) {
+      ['anniv-prenom','anniv-age','anniv-heure','anniv-adultes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.value = ''; showError(id, false); }
+      });
+    }
+    if (!isEVG) {
+      const ep = document.getElementById('evg-prenom');
+      if (ep) { ep.value = ''; showError('evg-prenom', false); }
+    }
+
+    if (isAnniv || isEVG) {
+      nbInput.min = '6'; nbInput.max = '24'; nbInput.placeholder = '6 min.';
+    } else if (isVR || isEscape) {
+      nbInput.min = isEscape ? '2' : '1'; nbInput.max = '4'; nbInput.placeholder = isEscape ? '2–4' : '1–4';
+      if (isEscape && parseInt(nbInput.value) < 2) nbInput.value = '2';
+    } else if (isBlind) {
+      nbInput.min = '4'; nbInput.max = '12'; nbInput.placeholder = '4 min.';
+      if (parseInt(nbInput.value) < 4) nbInput.value = '4';
+    } else {
+      nbInput.min = '1'; nbInput.max = '24'; nbInput.placeholder = '1';
+    }
+
+    // Recalculer les créneaux si une date est déjà choisie (ex: VR/Escape → samedi/dimanche)
+    refreshCreneaux();
+    updateMultiSessionVisibility();
+    updateActiviteOfferHint();
+  }
+
+  // ══════════════════════════════════════════════
+  //  CALENDRIER INTELLIGENT — GameZone Montauban
+  // ══════════════════════════════════════════════
+  // ══════════════════════════════════════════════
+  //  CALENDRIER — synchronisé avec calendrier.html (CalendIT)
+  // ══════════════════════════════════════════════
+  const VACANCES_ZONE_C = [
+    // 2025-2026
+    { debut: '2025-10-18', fin: '2025-11-02', label: 'Toussaint' },
+    { debut: '2025-12-20', fin: '2026-01-04', label: 'Noël' },
+    { debut: '2026-02-07', fin: '2026-02-22', label: 'Hiver' },
+    { debut: '2026-04-18', fin: '2026-05-03', label: 'Printemps' },
+    { debut: '2026-07-04', fin: '2026-08-31', label: 'Été' },
+    // 2026-2027
+    { debut: '2026-10-17', fin: '2026-11-01', label: 'Toussaint' },
+    { debut: '2026-12-19', fin: '2027-01-03', label: 'Noël' },
+    { debut: '2027-02-06', fin: '2027-02-21', label: 'Hiver' },
+    { debut: '2027-04-17', fin: '2027-05-02', label: 'Printemps' },
+    { debut: '2027-07-03', fin: '2027-08-31', label: 'Été' },
+  ];
+  const ANNEE_MAX = 2027;
+
+  // Fermeture exceptionnelle (congés annuels) — aucune réservation possible
+  // sur ces dates, quelle que soit la période scolaire/vacances concernée.
+  const CONGES_ANNUELS = [
+    { debut: '2026-08-24', fin: '2026-09-08', label: 'Congés annuels' },
+  ];
+
+  function isCongeAnnuel(date) {
+    const t = date.getTime();
+    return CONGES_ANNUELS.some(c => t >= _d(c.debut).getTime() && t <= _d(c.fin).getTime());
+  }
+
+  function _d(str) {
+    const [y, m, d] = str.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function isEte(date) {
+    const m = date.getMonth() + 1; // 1-12
+    return m === 7 || m === 8;     // juillet ou août
+  }
+
+  function isVacances(date) {
+    const t = date.getTime();
+    return VACANCES_ZONE_C.some(v => t >= _d(v.debut).getTime() && t <= _d(v.fin).getTime());
+  }
+
+  function getPeriode(date) {
+    if (isEte(date))      return 'ete';
+    if (isVacances(date)) return 'vacances';
+    return 'normal';
+  }
+
+  function getInfoJour(date) {
+    if (isCongeAnnuel(date)) return { ouvert: false, conge: true };
+    const dow = date.getDay(); // 0=dim
+    const periode = getPeriode(date);
+
+    if (periode === 'normal') {
+      const horairesNormal = {
+        2: { label: 'Mardi',     ouverture: 17, fermeture: 21 },
+        3: { label: 'Mercredi',  ouverture: 14, fermeture: 20 },
+        4: { label: 'Jeudi',     ouverture: 17, fermeture: 21 },
+        5: { label: 'Vendredi',  ouverture: 17, fermeture: 22, fermetureMin: 15 },
+        6: { label: 'Samedi',    ouverture: 14, fermeture: 22, fermetureMin: 15 },
+        0: { label: 'Dimanche',  ouverture: 14, fermeture: 19 },
+      };
+      if (!horairesNormal[dow]) return { ouvert: false };
+      return { ouvert: true, periode: 'normal', ...horairesNormal[dow] };
+    }
+
+    if (periode === 'vacances' || periode === 'ete') {
+      const ferm = (periode === 'ete') ? 20 : 22;
+      const horairesvac = {
+        2: { label: 'Mardi',    ouverture: 14, fermeture: (periode === 'vacances') ? 20 : ferm },
+        3: { label: 'Mercredi', ouverture: 14, fermeture: (periode === 'vacances') ? 20 : ferm },
+        4: { label: 'Jeudi',    ouverture: 14, fermeture: ferm },
+        5: { label: 'Vendredi', ouverture: 14, fermeture: ferm },
+        6: { label: 'Samedi',   ouverture: 14, fermeture: ferm },
+        0: { label: 'Dimanche', ouverture: 14, fermeture: 19 },
+      };
+      if (!horairesvac[dow]) return { ouvert: false };
+      return { ouvert: true, periode, ...horairesvac[dow] };
+    }
+
+    return { ouvert: false };
+  }
+
+  // ── Créneaux exacts CalendIT (mêmes générateurs que calendrier.html) ──
+  const NEW_SCHEDULE_DATE = '2026-09-01'; // bascule vers le planning 25 min
+
+  function buildSlotsOld() {
+    const slots = [];
+    for (let h = 10; h <= 14; h++) {
+      for (let m = 0; m <= 40; m += 20) slots.push(h * 60 + m);
+    }
+    [
+      15*60, 15*60+25, 15*60+45,
+      16*60+5, 16*60+25, 16*60+50,
+      17*60+15, 17*60+35, 17*60+55,
+      18*60+15, 18*60+35, 18*60+55,
+      19*60+15, 19*60+40,
+    ].forEach(t => slots.push(t));
+    for (let h = 20; h <= 22; h++) {
+      for (let m = 0; m <= 40; m += 20) slots.push(h * 60 + m);
+    }
+    slots.push(23*60);
+    return slots;
+  }
+  const ALL_SLOTS_OLD = buildSlotsOld();
+
+  function buildSlotsNew() {
+    const slots = [];
+    for (let h = 10; h < 14; h++) {
+      for (let m = 0; m <= 40; m += 20) slots.push(h * 60 + m);
+    }
+    let cur = 14*60;
+    while (cur <= 22*60+45) { slots.push(cur); cur += 25; }
+    return slots;
+  }
+  const ALL_SLOTS_NEW = buildSlotsNew();
+
+  function makeVrSlots(base) {
+    return base.map(t => t + 10).filter(t => t <= 23*60);
+  }
+  const VR_SLOTS_OLD = makeVrSlots(ALL_SLOTS_OLD);
+  const VR_SLOTS_NEW = makeVrSlots(ALL_SLOTS_NEW);
+
+  function buildBTSlots() {
+    const slots = [];
+    let cur = 10*60;
+    const end = 23*60;
+    let inBlock = 0;
+    while (cur <= end) {
+      slots.push(cur);
+      inBlock++;
+      cur += 30;
+      if (inBlock === 2) { cur += 15; inBlock = 0; }
+    }
+    return slots;
+  }
+  const BT_SLOTS = buildBTSlots();
+
+  // ══════════════════════════════════════════════
+  //  SESSIONS MULTIPLES (Laser Game / VR Zone)
+  // ══════════════════════════════════════════════
+  let currentCreneaux = [];
+  let currentSlotRemaining = null; // capacité réellement restante sur le créneau choisi (maj par refreshCreneauDispo)
+
+  // Nombre de créneaux à sauter entre 2 sessions d'un même client :
+  // Laser Game → vraie pause de repos, on saute un créneau (index +2).
+  // VR Zone → aucune pause requise, le créneau suivant convient (index +1).
+  function sessionGapSteps() {
+    return document.getElementById('activite').value === 'Laser Game' ? 2 : 1;
+  }
+
+  function resetMultiSessions() {
+    document.getElementById('nb-sessions').value = '1';
+    document.getElementById('session2-row').style.display = 'none';
+    document.getElementById('session3-row').style.display = 'none';
+    document.getElementById('session4-row').style.display = 'none';
+    document.getElementById('creneau2').innerHTML = '<option value="" disabled selected>Choisir le créneau 1 d\'abord</option>';
+    document.getElementById('creneau3').innerHTML = '<option value="" disabled selected>Choisir le créneau 2 d\'abord</option>';
+    document.getElementById('creneau4').innerHTML = '<option value="" disabled selected>Choisir le créneau 3 d\'abord</option>';
+    document.getElementById('multi-session-hint').textContent = '';
+  }
+
+  // Affiche ou masque le bloc multi-sessions selon l'activité choisie
+  // (Laser Game, VR Zone, Blind Test Musical — pas Escape Game VR, qui
+  // occupe déjà automatiquement 3 créneaux d'affilée pour une seule séance)
+  function updateMultiSessionVisibility() {
+    const val = document.getElementById('activite').value;
+    const show = (val === 'Laser Game' || val === 'VR Zone (action, arcade, zombies…)' || val === 'Blind Test Musical');
+    document.getElementById('multi-session-block').style.display = show ? 'block' : 'none';
+    if (!show) { resetMultiSessions(); return; }
+    // Seul le Laser Game propose 3 (Just Play) et 4 (Four Play) sessions —
+    // VR Zone et Blind Test Musical sont plafonnés à 2 sessions.
+    const opt3 = document.getElementById('nb-sessions-opt3');
+    const opt4 = document.getElementById('nb-sessions-opt4');
+    const isLaser = (val === 'Laser Game');
+    if (opt3) opt3.style.display = isLaser ? '' : 'none';
+    if (!isLaser && opt4) opt4.style.display = 'none';
+    if (!isLaser && parseInt(document.getElementById('nb-sessions').value) > 2) {
+      document.getElementById('nb-sessions').value = '2';
+      onNbSessionsChange();
+    }
+    updateMultiSessionHint();
+    onSession1Change(); // recalcule le blocage automatique si des créneaux sont déjà choisis
+  }
+
+  // Remplit un <select> de créneau de session à partir de l'index minimum
+  // autorisé dans la liste currentCreneaux (choix manuel — utilisé pour VR Zone).
+  function populateSessionSelect(selectEl, minIndex, placeholderTxt) {
+    selectEl.innerHTML = '';
+    const options = currentCreneaux.slice(minIndex);
+    const ph = document.createElement('option');
+    ph.value = ''; ph.disabled = true; ph.selected = true;
+    ph.textContent = options.length ? placeholderTxt : '— Plus aucun créneau compatible ce jour —';
+    selectEl.appendChild(ph);
+    options.forEach(h => {
+      const opt = document.createElement('option');
+      opt.value = h; opt.textContent = h;
+      selectEl.appendChild(opt);
+    });
+  }
+
+  // Bloque automatiquement LE créneau exact d'une session (Laser Game) :
+  // pas de choix client, le système réserve directement le bon horaire
+  // en respectant la pause requise.
+  function populateSessionSelectAuto(selectEl, exactIndex) {
+    selectEl.innerHTML = '';
+    const opt = document.createElement('option');
+    if (exactIndex >= 0 && exactIndex < currentCreneaux.length) {
+      const h = currentCreneaux[exactIndex];
+      opt.value = h;
+      opt.selected = true;
+      opt.textContent = `${h} (créneau automatique, pause respectée)`;
+    } else {
+      opt.value = '';
+      opt.disabled = true;
+      opt.selected = true;
+      opt.textContent = '— Plus aucun créneau disponible ce jour pour cette session —';
+    }
+    selectEl.appendChild(opt);
+  }
+
+  function onNbSessionsChange() {
+    const n = parseInt(document.getElementById('nb-sessions').value) || 1;
+    document.getElementById('session2-row').style.display = n >= 2 ? '' : 'none';
+    document.getElementById('session3-row').style.display = n >= 3 ? '' : 'none';
+    document.getElementById('session4-row').style.display = n >= 4 ? '' : 'none';
+    updateMultiSessionHint();
+    if (n >= 2) onSession1Change();
+    else { document.getElementById('creneau2').value=''; document.getElementById('creneau3').value=''; document.getElementById('creneau4').value=''; }
+  }
+
+  // Petit texte explicatif selon l'activité (bloqué auto pour Laser, libre pour VR)
+  function updateMultiSessionHint() {
+    const hint = document.getElementById('multi-session-hint');
+    const n = parseInt(document.getElementById('nb-sessions').value) || 1;
+    if (n < 2) { hint.textContent = ''; return; }
+    const isLaser = document.getElementById('activite').value === 'Laser Game';
+    hint.textContent = isLaser
+      ? 'Les créneaux suivants sont réservés automatiquement, avec une pause d\'un créneau entre chaque partie.'
+      : 'Les créneaux suivants sont réservés automatiquement, directement à la suite (aucune pause requise).';
+  }
+
+  // Quand le créneau de la session 1 change → recalcule la session 2
+  // (bloquée automatiquement pour toutes les activités : Laser Game
+  // laisse une pause, VR Zone / Blind Test s'enchaînent directement)
+  // Affiche les places réellement disponibles sur le créneau choisi (lecture du
+  // nœud public "dispo", sans données personnelles), pour que le client voie
+  // tout de suite s'il y a la place pour son groupe avant de réserver.
+  async function refreshCreneauDispo() {
+    const hint = document.getElementById('creneau-dispo-hint');
+    const activiteVal = document.getElementById('activite').value;
+    const dateVal = document.getElementById('date').value;
+    const creneauVal = document.getElementById('creneau').value;
+    if (!hint) return;
+    if (!activiteVal || !dateVal || !creneauVal || !db) { hint.textContent = ''; return; }
+
+    const actKey = mapActiviteToCalendit(activiteVal);
+    const time = creneauToTime(creneauVal);
+    hint.style.color = 'var(--text-muted)';
+    hint.textContent = '⏳ Vérification des places disponibles…';
+    try {
+      const snap = await db.ref(`dispo/${actKey}|${dateVal}|${time}`).once('value');
+      const used = snap.exists() ? (snap.val() || 0) : 0;
+
+      if (actKey === 'bt') {
+        if (used > 0) {
+          hint.textContent = '🔴 Ce créneau Blind Test est déjà complet.';
+          hint.style.color = '#ff4444';
+          currentSlotRemaining = 0;
+        } else {
+          hint.textContent = '🟢 Créneau disponible.';
+          hint.style.color = '#44ff88';
+          currentSlotRemaining = MAX_CAP.bt || 12;
+        }
+        onBlindChange(); // recalcule avec la vraie limite
+      } else {
+        const max = MAX_CAP[actKey] || 24;
+        const remaining = Math.max(0, max - used);
+        if (remaining === 0) {
+          hint.textContent = '🔴 Ce créneau est complet.';
+          hint.style.color = '#ff4444';
+        } else {
+          hint.textContent = `🟢 ${remaining} place${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''} sur ce créneau.`;
+          hint.style.color = remaining <= 4 ? '#ff8800' : '#44ff88';
+        }
+        currentSlotRemaining = remaining;
+
+        // Met aussi à jour le repère "/ X maximum" affiché sous la répartition Laser.
+        // Note : on ne limite pas chaque champ individuellement (un champ seul n'a
+        // pas de raison d'être plafonné à `remaining`) — seul le TOTAL de la
+        // répartition est comparé à la place réellement disponible.
+        if (actKey === 'laser') {
+          const maxLabel = document.getElementById('laser-max-label');
+          if (maxLabel) maxLabel.textContent = `/ ${remaining} place${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''} (sur ${max} max.)`;
+          onLaserChange();
+        } else if (actKey === 'vr') {
+          onVrChange('vr');
+          onVrChange('escape');
+        }
+      }
+    } catch(e) {
+      hint.textContent = '';
+      currentSlotRemaining = null;
+      console.warn('Vérification dispo créneau:', e);
+    }
+  }
+
+  // Appelé au changement de créneau : cascade multi-sessions + vérification dispo
+  function onCreneauChange() {
+    onSession1Change();
+    refreshCreneauDispo();
+  }
+
+  function onSession1Change() {
+    const n = parseInt(document.getElementById('nb-sessions').value) || 1;
+    if (n < 2) return;
+    const val1 = document.getElementById('creneau').value;
+    const idx1 = currentCreneaux.indexOf(val1);
+    if (idx1 === -1) return;
+    populateSessionSelectAuto(document.getElementById('creneau2'), idx1 + sessionGapSteps());
+    if (n >= 3) onSession2Change(); // cascade automatique vers la session 3
+  }
+
+  // Quand le créneau de la session 2 change → recalcule la session 3
+  function onSession2Change() {
+    const n = parseInt(document.getElementById('nb-sessions').value) || 1;
+    if (n < 3) return;
+    const val2 = document.getElementById('creneau2').value;
+    const idx2 = currentCreneaux.indexOf(val2);
+    if (idx2 === -1) return;
+    populateSessionSelectAuto(document.getElementById('creneau3'), idx2 + sessionGapSteps());
+    if (n >= 4) onSession3Change(); // cascade automatique vers la session 4 (Four Play)
+  }
+
+  // Quand le créneau de la session 3 change → recalcule la session 4 (Four Play)
+  function onSession3Change() {
+    const n = parseInt(document.getElementById('nb-sessions').value) || 1;
+    if (n < 4) return;
+    const val3 = document.getElementById('creneau3').value;
+    const idx3 = currentCreneaux.indexOf(val3);
+    if (idx3 === -1) return;
+    populateSessionSelectAuto(document.getElementById('creneau4'), idx3 + sessionGapSteps());
+  }
+
+  // ══════════════════════════════════════════════
+  //  OFFRES SPÉCIALES LASER GAME PAR JOUR
+  //  Mardi → All Play · Jeudi → Just Play · Vendredi → Four Play
+  // ══════════════════════════════════════════════
+  const LASER_DAY_OFFERS = {
+    2: '⚡ Ce jour-là, profitez de l\'offre <strong>All Play</strong> — 7€/partie (dès 17h) !',
+    4: '⚡ Ce jour-là, profitez de l\'offre <strong>Just Play</strong> — 17€ les 3 parties (dès 17h) !',
+    5: '⚡ Ce jour-là, profitez de l\'offre <strong>Four Play</strong> — 21€/pers., 4 parties, 4 pers. minimum (dès 17h) !',
+  };
+
+  function updateActiviteOfferHint() {
+    const hint = document.getElementById('activite-offer-hint');
+    const activiteVal = document.getElementById('activite').value;
+    const dateVal = document.getElementById('date').value;
+    if (activiteVal !== 'Laser Game' || !dateVal) {
+      hint.style.display = 'none';
+      hint.innerHTML = '';
+      updateSessionOptionLabels(null);
+      return;
+    }
+    const [y, mo, d] = dateVal.split('-').map(Number);
+    const dow = new Date(y, mo - 1, d).getDay();
+    if (LASER_DAY_OFFERS[dow]) {
+      hint.innerHTML = LASER_DAY_OFFERS[dow];
+      hint.style.display = 'block';
+    } else {
+      hint.style.display = 'none';
+      hint.innerHTML = '';
+    }
+    updateSessionOptionLabels(dow);
+  }
+
+  // Adapte le menu "Nombre de sessions" selon le jour : Jeudi → "Just Play"
+  // (= 3 sessions) remplace "3 sessions", Vendredi → ajoute "Four Play"
+  // (= 4 sessions) sous "3 sessions".
+  function updateSessionOptionLabels(dow) {
+    const opt3 = document.getElementById('nb-sessions-opt3');
+    const opt4 = document.getElementById('nb-sessions-opt4');
+    if (!opt3 || !opt4) return;
+    opt3.textContent = (dow === 4) ? 'Just Play' : '3 sessions';
+    if (dow === 5) {
+      opt4.style.display = '';
+      opt4.textContent = 'Four Play';
+    } else {
+      opt4.style.display = 'none';
+      // Si "Four Play" était sélectionné et n'est plus proposé, on revient à 1 session
+      if (document.getElementById('nb-sessions').value === '4') {
+        document.getElementById('nb-sessions').value = '1';
+        onNbSessionsChange();
+      }
+    }
+  }
+
+  function getActiviteSlots(actKey, dateStr) {
+    const isNew = dateStr >= NEW_SCHEDULE_DATE;
+    if (actKey === 'bt') return BT_SLOTS;
+    if (actKey === 'vr') return isNew ? VR_SLOTS_NEW : VR_SLOTS_OLD;
+    return isNew ? ALL_SLOTS_NEW : ALL_SLOTS_OLD; // laser
+  }
+
+  function genCreneaux(info, minTimeOverride, actKey, dateStr) {
+    const ouv  = Math.max(info.ouverture * 60, minTimeOverride || 0);
+    const ferm = info.fermeture * 60 + (info.fermetureMin || 0);
+    const fmt  = m => `${String(Math.floor(m/60)).padStart(2,'0')}h${String(m%60).padStart(2,'0')}`;
+    const SLOT_18H55 = 18 * 60 + 55;
+    const baseSlots = getActiviteSlots(actKey || 'laser', dateStr);
+    return baseSlots
+      .filter(t => t >= ouv && t < ferm)
+      .filter(t => !(info.fermeture === 19 && t === SLOT_18H55))
+      .map(t => fmt(t));
+  }
+
+  function isVrEscapeActivity() {
+    const val = document.getElementById('activite').value;
+    return val === 'VR Zone (action, arcade, zombies…)' || val === 'Escape Game VR';
+  }
+
+  function refreshCreneaux() {
+    const dateInput = document.getElementById('date');
+    if (dateInput.value) dateInput.dispatchEvent(new Event('change'));
+  }
+
+  function getPeriodeLabel(periode) {
+    if (periode === 'ete')      return '☀️ Juillet/Août';
+    if (periode === 'vacances') return '🎒 Vacances scolaires';
+    return '📅 Période scolaire';
+  }
+
+  // Init calendrier
+  (function() {
+    const dateInput  = document.getElementById('date');
+    const creneauSel = document.getElementById('creneau');
+    const hintDate   = document.getElementById('date-hint');
+    const hintCren   = document.getElementById('creneau-hint');
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    const pad = n => String(n).padStart(2,'0');
+    const toISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    dateInput.min = toISO(today);
+    dateInput.max = `${ANNEE_MAX}-12-31`;
+
+    dateInput.addEventListener('change', () => {
+      const val = dateInput.value;
+      creneauSel.innerHTML = '';
+      hintDate.textContent = '';
+      hintCren.textContent = '';
+      document.getElementById('creneau-dispo-hint').textContent = '';
+      document.getElementById('laser-max-label').textContent = '/ 24 joueurs maximum';
+      currentSlotRemaining = null;
+      resetMultiSessions();
+      updateActiviteOfferHint();
+
+      if (!val) {
+        creneauSel.innerHTML = '<option value="" disabled selected>Choisir une date d\'abord</option>';
+        return;
+      }
+
+      const [y, m, d] = val.split('-').map(Number);
+      const dc = new Date(y, m - 1, d);
+      const info = getInfoJour(dc);
+
+      if (!info.ouvert) {
+        creneauSel.innerHTML = '<option value="" disabled selected>— Fermé ce jour —</option>';
+        dateInput.setCustomValidity('Nous sommes fermés ce jour-là.');
+        hintDate.style.color = '#ff4444';
+        if (info.conge) {
+          hintDate.textContent = '🚫 Fermé pour congés annuels (24/08 au 08/09/2026 inclus). Réouverture le 09/09/2026.';
+        } else {
+          const periode = getPeriode(dc);
+          let msg = '🚫 Fermé ce jour. ';
+          if (periode === 'normal')   msg += 'Ouvert mar→dim en période scolaire.';
+          if (periode === 'vacances') msg += 'Ouvert mar→dim pendant les vacances.';
+          if (periode === 'ete')      msg += 'Ouvert mar→dim en juillet/août.';
+          hintDate.textContent = msg;
+        }
+        return;
+      }
+
+      dateInput.setCustomValidity('');
+      hintDate.style.color = 'var(--neon-cyan)';
+      hintDate.textContent = `${getPeriodeLabel(info.periode)} · Ouvert ${info.ouverture}h–${info.fermeture}${info.fermetureMin ? 'h' + String(info.fermetureMin).padStart(2,'0') : 'h'}`;
+
+      const isWeekend = (dc.getDay() === 6 || dc.getDay() === 0);
+      const minTimeOverride = (isVrEscapeActivity() && isWeekend) ? 14 * 60 : 0;
+      const actKey = mapActiviteToCalendit(document.getElementById('activite').value || 'Laser Game');
+
+      const creneaux = genCreneaux(info, minTimeOverride, actKey, val);
+      currentCreneaux = creneaux;
+      const weekendNote = (isVrEscapeActivity() && isWeekend) ? ' · VR/Escape dès 14h' : '';
+      const ph = document.createElement('option');
+      ph.value = ''; ph.disabled = true; ph.selected = true;
+      ph.textContent = `Choisir un créneau… (${creneaux.length} dispo${weekendNote})`;
+      creneauSel.appendChild(ph);
+      creneaux.forEach(h => {
+        const opt = document.createElement('option');
+        opt.value = h; opt.textContent = h;
+        creneauSel.appendChild(opt);
+      });
+    });
+  })();
+
+  // Pré-sélection de l'activité via paramètre URL (ex: resa-en-ligne.html?activite=Laser%20Game)
+  // Utilisé par les boutons "Réserver" du site vitrine pour ouvrir directement
+  // la bonne activité, sans repasser par le choix dans la liste déroulante.
+  (function preselectActiviteFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const act = params.get('activite');
+    if (!act) return;
+    const sel = document.getElementById('activite');
+    const match = Array.from(sel.options).find(o => o.value === act);
+    if (match) {
+      sel.value = act;
+      onActiviteChange();
+    }
+  })();
+</script>
+</body>
+</html>
