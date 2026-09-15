@@ -973,6 +973,20 @@ async function migrateSlots(){
   }
 }
 
+// File d'attente globale : garantit qu'un seul traitement (groupe ou demande
+// isolée) est en cours à la fois, jamais deux en parallèle. Sans ça, deux
+// clients différents auto-confirmés à quelques instants d'intervalle peuvent
+// se marcher dessus pendant qu'ils calculent chacun leur colonne libre —
+// l'un lit encore l'état d'avant que l'autre ait fini d'écrire, ce qui peut
+// désaligner les sessions d'un même groupe sur des colonnes différentes.
+// Déclarée au niveau global (pas dans initFirebaseSync) pour rester
+// accessible depuis accepterDemande() et les autres fonctions du fichier.
+let traitementQueue = Promise.resolve();
+function enqueueTraitement(fn){
+  traitementQueue = traitementQueue.then(fn).catch(e => console.warn('Erreur traitement demande:', e));
+  return traitementQueue;
+}
+
 function initFirebaseSync(){
   setSyncDot('syncing');
   window._fbListener = db.ref('bookings').on('value', snap => {
@@ -993,18 +1007,6 @@ function initFirebaseSync(){
   }, ()=>setSyncDot('error'));
 
   // Écouter les demandes en ligne
-// File d'attente globale : garantit qu'un seul traitement (groupe ou demande
-// isolée) est en cours à la fois, jamais deux en parallèle. Sans ça, deux
-// clients différents auto-confirmés à quelques instants d'intervalle peuvent
-// se marcher dessus pendant qu'ils calculent chacun leur colonne libre —
-// l'un lit encore l'état d'avant que l'autre ait fini d'écrire, ce qui peut
-// désaligner les sessions d'un même groupe sur des colonnes différentes.
-let traitementQueue = Promise.resolve();
-function enqueueTraitement(fn){
-  traitementQueue = traitementQueue.then(fn).catch(e => console.warn('Erreur traitement demande:', e));
-  return traitementQueue;
-}
-
   db.ref('demandes').on('value', snap => {
     demandes = snap.val() || {};
     // Auto-valider les demandes directes non encore traitées.
@@ -2857,6 +2859,7 @@ function demandeCard(ref, d){
         ${isPending?`
         <button onclick="accepterDemande('${ref}')" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">✅ Valider</button>
         <button onclick="refuserDemande('${ref}')" style="padding:8px 16px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">❌ Refuser</button>
+        <button onclick="forcerCreationDemande('${ref}')" title="Crée directement la réservation, sans passer par les vérifications automatiques — comme une saisie manuelle par le staff" style="padding:6px 12px;background:#fff;color:#7c3aed;border:1.5px solid #c4b5fd;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">⚡ Forcer la création</button>
         `:''}
         <button onclick="supprimerDemande('${ref}')" style="padding:6px 12px;background:#f1f5f9;color:#64748b;border:1.5px solid #e2e8f0;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">🗑 Supprimer</button>
       </div>
@@ -2873,6 +2876,57 @@ function timeAgo(ts){
   const h = Math.floor(m/60);
   if(h<24) return `il y a ${h}h`;
   return `il y a ${Math.floor(h/24)}j`;
+}
+
+// Crée directement la réservation à partir d'une demande, EXACTEMENT comme
+// le ferait le staff en saisie manuelle — sans passer par les vérifications
+// automatiques (capacité, compatibilité de profil, etc.). Utile quand la
+// demande est légitime mais bloquée pour une raison que l'agent juge non
+// pertinente dans ce cas précis, ou en cas de bug empêchant la validation
+// normale. Volontairement indépendante du circuit habituel (accepterDemande)
+// pour rester fiable même si celui-ci rencontre un problème.
+async function forcerCreationDemande(ref){
+  const d = demandes[ref];
+  if(!d){ alert('Demande introuvable (déjà traitée ?).'); return; }
+  if(!confirm(`Forcer la création de cette réservation pour ${d.nom||'ce client'} le ${d.date} à ${d.time}, comme une saisie manuelle par le staff ?`)) return;
+
+  try {
+    const activite = d.activite || 'laser';
+    const date = d.date || '';
+    const time = d.time || '';
+    const span = d.slotSpan || 1;
+    const times = [time];
+    for(let i=1;i<span;i++) times.push(addMinutesToTime(time, i*20));
+
+    const MAX = activite === 'vr' ? VR_COLS : (activite === 'laser' ? LASER_COLS : 1);
+    let slot = 1;
+    while(slot <= MAX && times.some(t => bookings[`${activite}|${date}|${t}|${slot}`])) slot++;
+    if(slot > MAX) slot = 1; // forçage : si tout est occupé, on partage quand même le 1er numéro
+
+    times.forEach(t => {
+      bookings[`${activite}|${date}|${t}|${slot}`] = {
+        nom: d.nom||'', tel: d.tel||'', mail: d.mail||'',
+        pers: d.pers||1, type: d.type||'t-particulier',
+        comment: d.comment ? `[En ligne — forcé] ${d.comment}` : '[Réservation en ligne — forcée manuellement]',
+        pay: 'attente', confirmed: false, present: false,
+        ...(d.profil ? {profil: d.profil} : {}),
+        ...(d.enfants79   !== undefined ? {enfants79:   d.enfants79}   : {}),
+        ...(d.enfants1012 !== undefined ? {enfants1012: d.enfants1012} : {}),
+        ...(d.ados1315    !== undefined ? {ados1315:    d.ados1315}    : {}),
+        ...(d.ados1618    !== undefined ? {ados1618:    d.ados1618}    : {}),
+        ...(d.adultes     !== undefined ? {adultes:     d.adultes}     : {}),
+        ...(d.groupId ? {groupId: d.groupId} : {})
+      };
+    });
+
+    saveBookings();
+    await db.ref(`demandes/${ref}/status`).set('processed');
+    sendClientConfirmationEmail(d, ref, true).catch(()=>{});
+    alert('✅ Réservation créée.');
+  } catch(e) {
+    console.error('Erreur forcerCreationDemande:', e);
+    alert('⚠️ Erreur lors de la création forcée : ' + e.message);
+  }
 }
 
 async function accepterDemande(ref){
@@ -2948,7 +3002,9 @@ async function accepterDemandeInner(ref){
   currentView = d.activite;
   curDate = new Date(d.date+'T12:00:00');
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('nav-active'));
-  document.getElementById(`nav${d.activite.charAt(0).toUpperCase()+d.activite.slice(1)}`).classList.add('nav-active');
+  const navIdMap = {laser:'navLaser', vr:'navVR', bt:'navBT'};
+  const navEl = document.getElementById(navIdMap[d.activite]);
+  if(navEl) navEl.classList.add('nav-active');
   document.getElementById('demandesOverlay').style.display='none';
   renderCalendar();
   alert(membres.length > 1
