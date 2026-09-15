@@ -940,7 +940,12 @@ async function migrateSlots(){
     if(view === 'laser' && laserFixes[time]){
       newTime = laserFixes[time];
     } else if(view === 'vr'){
-      const vrSlotTimes = new Set(VR_SLOTS.map(s=>s.time));
+      // Utiliser le planning VR correspondant à la date de LA RÉSERVATION
+      // (avant/après le 01/09/2026) — sinon toute réservation VR créée sur
+      // le nouveau planning est jugée "invalide" par erreur et déplacée vers
+      // un horaire incohérent à chaque chargement de CalendIT.
+      const vrSchedule = date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
+      const vrSlotTimes = new Set(vrSchedule.map(s=>s.time));
       if(!vrSlotTimes.has(time)){
         const [h, m] = time.split(':').map(Number);
         const total = h*60+m+10;
