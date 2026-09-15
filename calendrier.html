@@ -2859,7 +2859,14 @@ function doSearch(){
   if(!q) return;
   const found=Object.entries(bookings).filter(([k,v])=>v.tel&&v.tel.includes(q));
   if(!found.length){ alert('Aucune réservation pour ce numéro.'); return; }
-  alert(`${found.length} réservation(s) :\n`+found.map(([k,v])=>`${k.split('|')[1]} — ${v.nom} (${v.pers}p)`).join('\n'));
+  const rows = found.map(([k,v]) => {
+    const [activite, date, time] = k.split('|');
+    const actLabel  = ACTIVITE_LABEL[activite] || activite;
+    const typeLabel = TYPES_LABEL[v.type] || v.type || '';
+    const payLabel  = PAY_LABEL[v.pay] || v.pay || '';
+    return { date, time, line: `${date} ${time} — ${v.nom||'?'} (${v.pers||1}p) — ${actLabel} — ${typeLabel} — 🧾 ${payLabel}` };
+  }).sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
+  alert(`${found.length} réservation(s) pour ce numéro :\n\n` + rows.map(r=>r.line).join('\n'));
 }
 
 // Close overlays on backdrop
