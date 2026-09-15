@@ -1110,7 +1110,7 @@ async function sendClientConfirmationEmail(d, ref, notify){
   if(!d.mail) return;
   const [y,mo,da] = (d.date||'').split('-');
   const dateF = da ? `${da}/${mo}/${y}` : d.date;
-  const activiteLabel = ACTIVITE_LABEL[d.activite] || d.activite;
+  const activiteLabel = getClientActivityLabel(d);
   const duration = SESSION_DURATION_MIN[d.activiteLabel] || 20;
   const heureDebut = addMinutesToTime(d.time, -15);
   const heureFin   = addMinutesToTime(d.time, duration);
@@ -1334,7 +1334,7 @@ async function sendGroupConfirmationEmail(membres){
   const dureeDerniere = SESSION_DURATION_MIN[derniere.activiteLabel] || 20;
   const heureDebut = addMinutesToTime(premiere.time, -15);
   const heureFin   = addMinutesToTime(derniere.time, dureeDerniere);
-  const activiteLabel = ACTIVITE_LABEL[first.activite] || first.activite;
+  const activiteLabel = getClientActivityLabel(first);
 
   const message = buildClientMessage(first.nom, membres.map(m => m.ref).join(','), activiteLabel, dateF, heureDebut, heureFin, first.pers, membres.length, first.offerLabel || null);
 
@@ -1589,7 +1589,7 @@ const VACANCES_ZONE_C = [
   {start:'2026-10-17',end:'2026-11-01',label:'Toussaint 2026'},
   {start:'2026-12-19',end:'2027-01-03',label:'Noël 2026-27'},
   {start:'2027-02-06',end:'2027-02-21',label:'Hiver 2027'},
-  {start:'2027-04-17',end:'2027-05-02',label:'Printemps 2027'},
+  {start:'2027-04-03',end:'2027-04-18',label:'Printemps 2027'},
   {start:'2027-07-03',end:'2027-08-31',label:'Été 2027'},
 ];
 
@@ -2819,6 +2819,15 @@ function openClientsPanel(){
 
 // ── DEMANDES EN LIGNE ─────────────────────────────────────────────────────────
 const ACTIVITE_LABEL = {laser:'🎯 Laser Game', vr:'🥽 Réalité Virtuelle', bt:'🎵 Blind Test'};
+// Libellé d'activité affiché au client par email : VR Zone et Escape Game VR
+// partagent la même clé actKey 'vr' (voir ACTIVITE_LABEL ci-dessus), donc on
+// distingue les deux via le libellé complet (activiteLabel) avant de retomber
+// sur le libellé générique par clé.
+function getClientActivityLabel(d){
+  if (d.activiteLabel === 'Escape Game VR') return '🔓 Escape Game VR';
+  if (d.activiteLabel && d.activiteLabel.startsWith('VR Zone')) return '🥽 VR Zone';
+  return ACTIVITE_LABEL[d.activite] || d.activiteLabel || d.activite;
+}
 const PROFIL_BADGE_LABEL = {famille79:'👶 Enf. 7-9', famille1012:'🧒 Enf. 10-12', ado1315:'🎫 Ados 13-15', ado1618:'🎫 Ados 16-18', intense:'💪 Adultes'};
 // Met en gras les chiffres de répartition par âge dans un commentaire
 // (ex. "Enf. 10-12: 1 | Ados 13-15: 1" → le "1" et le second "1" en gras)
