@@ -59,14 +59,14 @@ nav{
 /* ── BANNIÈRE PERMANENTE : demandes en attente ── */
 #pendingBanner{
   display:none;align-items:center;gap:8px;cursor:pointer;
-  background:#fef2f2;color:#991b1b;border-bottom:1.5px solid #fecaca;
-  padding:7px 16px;font-size:13px;font-weight:700;flex-shrink:0;
+  background:#ef4444;color:#ffffff;border-bottom:1.5px solid #b91c1c;
+  padding:7px 16px;font-size:13px;font-weight:800;flex-shrink:0;
   animation: demandes-banner-pulse 1.8s ease-in-out infinite;
 }
-#pendingBanner:hover{ background:#fee2e2; }
+#pendingBanner:hover{ background:#dc2626; }
 @keyframes demandes-banner-pulse{
-  0%,100%{ background:#fef2f2; }
-  50%    { background:#fee2e2; }
+  0%,100%{ background:#ef4444; }
+  50%    { background:#b91c1c; }
 }
 .nav-spacer{flex:1}
 .theme-toggle{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--muted);margin-right:10px;white-space:nowrap}
@@ -1180,8 +1180,7 @@ async function createBookingFromDemande(ref, d, forcedSlot){
   const pers     = d.pers || 1;
 
   // Tous les créneaux occupés par cette réservation
-  const times = [time];
-  for(let i = 1; i < span; i++) times.push(addMinutesToTime(time, i * 20));
+  const times = span > 1 ? getVrSpanTimes(date, time, span) : [time];
 
   // ── VR Zone / Escape Game VR : occuper autant de casques (colonnes) que de
   // joueurs, simultanément sur tous les créneaux du span (ex: Escape = 3 créneaux) ──
@@ -1310,8 +1309,7 @@ function computeGroupSlot(membres){
   const allTimes = [];
   membres.forEach(({d}) => {
     const span = d.slotSpan || 1;
-    allTimes.push(d.time);
-    for(let i = 1; i < span; i++) allTimes.push(addMinutesToTime(d.time, i * 20));
+    allTimes.push(...(span > 1 ? getVrSpanTimes(d.date, d.time, span) : [d.time]));
   });
 
   for(let c = 1; c + nbCols - 1 <= MAX; c++){
@@ -1383,8 +1381,6 @@ async function sendGroupConfirmationEmail(membres){
   }
 }
 
-const BASE_TITLE = document.title; // "CALEND'IT | Game Zone Montauban"
-
 function updateDemandesBadge(){
   const pending = Object.values(demandes).filter(d=>d.status==='pending').length;
 
@@ -1394,9 +1390,6 @@ function updateDemandesBadge(){
     badge.textContent = pending > 0 ? pending : '';
     badge.style.display = pending > 0 ? 'inline-flex' : 'none';
   }
-
-  // ── Titre de l'onglet navigateur : visible même onglet non actif ──
-  document.title = pending > 0 ? `(${pending}) ${BASE_TITLE}` : BASE_TITLE;
 
   // ── Bannière permanente au-dessus du calendrier ──
   const banner = document.getElementById('pendingBanner');
@@ -1800,6 +1793,26 @@ function makeVrSlots(base){
 
 const VR_SLOTS     = makeVrSlots(ALL_SLOTS);
 const VR_SLOTS_NEW = makeVrSlots(ALL_SLOTS_NEW);
+
+// Renvoie les `span` créneaux VR consécutifs à partir de `time`, en marchant
+// sur les index de la vraie grille horaire (ancien planning 20 min / nouveau
+// planning 25 min à partir du 01/09/2026) — remplace un calcul par pas fixe
+// de 20 minutes qui ne correspond plus à la grille après le changement
+// d'horaires (l'Escape Game VR, qui occupe 3 créneaux d'affilée, se
+// retrouvait alors sur des horaires hors grille, invisibles dans le
+// calendrier — le créneau du milieu "manquant").
+function getVrSpanTimes(date, time, span){
+  const activeVrSlots = date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
+  const startIdx = activeVrSlots.findIndex(s => s.time === time);
+  const times = [time];
+  if (startIdx === -1) return times; // créneau introuvable dans la grille : cas limite, on ne dérive rien
+  for (let i = 1; i < span; i++) {
+    const idx = startIdx + i;
+    if (idx >= activeVrSlots.length) break;
+    times.push(activeVrSlots[idx].time);
+  }
+  return times;
+}
 
 // ── BLIND TEST SLOTS ──────────────────────────────────────────────────────────
 // Démarre à 10:10, sessions toutes les 30 min
@@ -2991,8 +3004,7 @@ async function forcerCreationDemande(ref){
     const date = d.date || '';
     const time = d.time || '';
     const span = d.slotSpan || 1;
-    const times = [time];
-    for(let i=1;i<span;i++) times.push(addMinutesToTime(time, i*20));
+    const times = span > 1 ? getVrSpanTimes(date, time, span) : [time];
 
     const MAX = activite === 'vr' ? VR_COLS : (activite === 'laser' ? LASER_COLS : 1);
     let slot = 1;
@@ -3064,8 +3076,7 @@ async function accepterDemandeInner(ref){
       // on crée directement la réservation sur un numéro de slot libre,
       // sans plafond, comme le comportement historique de cette fonction.
       const span = dd.slotSpan || 1;
-      const times = [dd.time];
-      for(let i=1;i<span;i++) times.push(addMinutesToTime(dd.time, i*20));
+      const times = span > 1 ? getVrSpanTimes(dd.date, dd.time, span) : [dd.time];
       let slot = 1;
       if(slotCommun && !times.some(t => bookings[`${dd.activite}|${dd.date}|${t}|${slotCommun}`])){
         slot = slotCommun;
