@@ -847,6 +847,11 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.database();
+// Session limitée à cet onglet (sessionStorage, pas localStorage) : évite
+// qu'une connexion anonyme ouverte ailleurs sur le même site (ex: la page de
+// réservation en ligne, dans un autre onglet) n'interfère avec la session
+// staff connectée ici, ou inversement.
+auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(e => console.warn('Persistence auth:', e));
 
 // ── LOGIN / LOGOUT ────────────────────────────────────────────────────────────
 function doLogin(){
