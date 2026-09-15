@@ -1185,7 +1185,7 @@ async function createBookingFromDemande(ref, d, forcedSlot){
           tel:       d.tel||'',
           mail:      d.mail||'',
           pers:      1, // 1 personne par casque — le total du groupe reste visible via "Casque X/Y"
-          type:      d.type||'t-particulier',
+          type:      d.forceType || d.type || 't-particulier',
           comment:   (d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]') + suffix,
           pay:       'attente',
           confirmed: false,
@@ -1220,7 +1220,7 @@ async function createBookingFromDemande(ref, d, forcedSlot){
       tel:       d.tel||'',
       mail:      d.mail||'',
       pers:      d.pers||1,
-      type:      d.type||'t-particulier',
+      type:      d.forceType || d.type || 't-particulier',
       comment:   (d.comment ? `[En ligne] ${d.comment}` : '[Réservation directe en ligne]') + (span > 1 ? ` [Partie ${i+1}/${span}]` : ''),
       pay:       'attente',
       confirmed: false,
@@ -2790,6 +2790,7 @@ function boldBreakdownNumbers(str){
 const AUTO_REASON_LABEL = {
   activite_manuelle:     '📋 Type de prestation nécessitant toujours une validation manuelle (anniversaire, EVG/EVJF…).',
   profil_incompatible_creneau: '🧩 Composition différente du groupe déjà présent sur ce créneau — à vérifier avant validation.',
+  evg_tout_ou_rien:            '🥂 Forfait EVG/EVJF : l\'une des 2 parties est incompatible avec un groupe déjà présent — les 2 parties sont bloquées ensemble (tout ou rien).',
   trop_proche:           '⏰ Demande reçue à moins de 40 min du créneau — validation manuelle requise.',
   staff_prioritaire:     '👤 Un verrou staff était actif sur ce créneau au moment de la demande.',
   capacite_insuffisante: '🎯 Le créneau était presque complet au moment de la demande — vérifier la capacité restante.',
@@ -2906,7 +2907,7 @@ async function forcerCreationDemande(ref){
     times.forEach(t => {
       bookings[`${activite}|${date}|${t}|${slot}`] = {
         nom: d.nom||'', tel: d.tel||'', mail: d.mail||'',
-        pers: d.pers||1, type: d.type||'t-particulier',
+        pers: d.pers||1, type: d.forceType || d.type || 't-particulier',
         comment: d.comment ? `[En ligne — forcé] ${d.comment}` : '[Réservation en ligne — forcée manuellement]',
         pay: 'attente', confirmed: false, present: false,
         ...(d.profil ? {profil: d.profil} : {}),
@@ -2977,7 +2978,7 @@ async function accepterDemandeInner(ref){
       times.forEach(t => {
         bookings[`${dd.activite}|${dd.date}|${t}|${slot}`] = {
           nom: dd.nom, tel: dd.tel, mail: dd.mail||'',
-          pers: dd.pers, type: dd.type,
+          pers: dd.pers, type: dd.forceType || dd.type,
           comment: dd.comment ? `[En ligne] ${dd.comment}` : '[Réservation en ligne]',
           pay: 'attente', confirmed: false, present: false,
           ...(dd.profil ? {profil: dd.profil} : {}),
