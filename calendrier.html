@@ -48,6 +48,26 @@ nav{
 .nav-logo svg{width:18px;height:18px}
 .nav-item{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;transition:background .13s;white-space:nowrap;text-decoration:none}
 .nav-item:hover{background:var(--bg)}
+
+/* ── BADGE DEMANDES EN ATTENTE : pulsation pour capter l'œil ── */
+@keyframes demandes-badge-pulse{
+  0%,100%{ box-shadow:0 0 0 0 rgba(239,68,68,.55); }
+  50%    { box-shadow:0 0 0 6px rgba(239,68,68,0); }
+}
+#demandesBadge{ animation: demandes-badge-pulse 1.4s ease-in-out infinite; }
+
+/* ── BANNIÈRE PERMANENTE : demandes en attente ── */
+#pendingBanner{
+  display:none;align-items:center;gap:8px;cursor:pointer;
+  background:#fef2f2;color:#991b1b;border-bottom:1.5px solid #fecaca;
+  padding:7px 16px;font-size:13px;font-weight:700;flex-shrink:0;
+  animation: demandes-banner-pulse 1.8s ease-in-out infinite;
+}
+#pendingBanner:hover{ background:#fee2e2; }
+@keyframes demandes-banner-pulse{
+  0%,100%{ background:#fef2f2; }
+  50%    { background:#fee2e2; }
+}
 .nav-spacer{flex:1}
 .theme-toggle{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--muted);margin-right:10px;white-space:nowrap}
 .tog{width:34px;height:18px;background:#334155;border-radius:9px;position:relative;cursor:pointer;transition:background .2s}
@@ -637,6 +657,11 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
   </div>
 </div>
 
+<!-- BANNIÈRE DEMANDES EN ATTENTE -->
+<div id="pendingBanner" onclick="openDemandesPanel()">
+  <span id="pendingBannerText"></span>
+</div>
+
 <!-- CALENDAR -->
 <div class="cal-wrap">
   <table id="calTbl">
@@ -729,10 +754,9 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
             <option value="t-anniv">Anniversaire</option>
             <option value="t-anniv3">Anniversaire 3 parties</option>
             <option value="t-evc">EVC</option>
-            <option value="t-team">Teambooster</option>
-            <option value="t-jeu3">Jeu 3 pour 16€</option>
-            <option value="t-vendredi">Vendredi no limit</option>
-            <option value="t-weekend">Week-end 11/13</option>
+            <option value="t-team">All Play</option>
+            <option value="t-jeu3">Just Play</option>
+            <option value="t-vendredi">Four Play</option>
             <option value="t-job">Job</option>
             <option value="t-conge">Congé</option>
             <option value="t-bloque">Bloqué</option>
@@ -1359,12 +1383,34 @@ async function sendGroupConfirmationEmail(membres){
   }
 }
 
+const BASE_TITLE = document.title; // "CALEND'IT | Game Zone Montauban"
+
 function updateDemandesBadge(){
   const pending = Object.values(demandes).filter(d=>d.status==='pending').length;
+
+  // ── Pastille dans le menu ──
   let badge = document.getElementById('demandesBadge');
-  if(!badge) return;
-  badge.textContent = pending > 0 ? pending : '';
-  badge.style.display = pending > 0 ? 'inline-flex' : 'none';
+  if(badge){
+    badge.textContent = pending > 0 ? pending : '';
+    badge.style.display = pending > 0 ? 'inline-flex' : 'none';
+  }
+
+  // ── Titre de l'onglet navigateur : visible même onglet non actif ──
+  document.title = pending > 0 ? `(${pending}) ${BASE_TITLE}` : BASE_TITLE;
+
+  // ── Bannière permanente au-dessus du calendrier ──
+  const banner = document.getElementById('pendingBanner');
+  const bannerText = document.getElementById('pendingBannerText');
+  if(banner && bannerText){
+    if(pending > 0){
+      bannerText.textContent = pending === 1
+        ? '⏳ 1 demande en attente — cliquer pour la traiter'
+        : `⏳ ${pending} demandes en attente — cliquer pour les traiter`;
+      banner.style.display = 'flex';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
 }
 
 // Calcule l'agrégat public de disponibilité (sans aucune donnée personnelle)
@@ -1556,8 +1602,8 @@ const STD_COLS   = 8;
 const TYPES_LABEL = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-centre':'Centre loisirs',
   't-club':'Club&Asso','t-anniv':'Anniversaire','t-anniv3':'Anniv 3 parties',
-  't-evc':'EVC','t-team':'Teambooster','t-jeu3':'Jeu 3 pour 16€',
-  't-vendredi':'Vendredi no limit','t-weekend':'WE 11/13',
+  't-evc':'EVC','t-team':'All Play','t-jeu3':'Just Play',
+  't-vendredi':'Four Play','t-weekend':'WE 11/13',
   't-job':'Job','t-conge':'Congé','t-bloque':'Bloqué','t-message':'Message',
   't-vrzone':'VRzone','t-escapevr':'Escape Game VR',
   't-bt30':'30 min','t-bt60':'60 min'
@@ -2123,10 +2169,9 @@ function adaptModalForView(){
        <option value="t-anniv">Anniversaire</option>
        <option value="t-anniv3">Anniversaire 3 parties</option>
        <option value="t-evc">EVC</option>
-       <option value="t-team">Teambooster</option>
-       <option value="t-jeu3">Jeu 3 pour 16€</option>
-       <option value="t-vendredi">Vendredi no limit</option>
-       <option value="t-weekend">Week-end 11/13</option>
+       <option value="t-team">All Play</option>
+       <option value="t-jeu3">Just Play</option>
+       <option value="t-vendredi">Four Play</option>
        <option value="t-job">Job</option>
        <option value="t-conge">Congé</option>
        <option value="t-bloque">Bloqué</option>
@@ -2848,7 +2893,7 @@ const AUTO_REASON_LABEL = {
 const TYPE_LABEL_D = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
   't-anniv3':'Anniversaire 3 parties','t-evc':'EVC','t-club':'Club & Asso',
-  't-centre':'Centre de loisirs','t-team':'Teambooster'
+  't-centre':'Centre de loisirs','t-team':'All Play'
 };
 
 function openDemandesPanel(){
