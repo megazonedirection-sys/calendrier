@@ -901,11 +901,11 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
     <div class="vest-modal-sub" id="modifDemandeSub"></div>
     <div class="fg">
       <label>📅 Nouvelle date</label>
-      <input type="date" id="modifDemandeDate" style="width:100%" onchange="onModifDemandeChange()">
+      <input type="date" id="modifDemandeDate" style="width:100%" onchange="populateModifDemandeTimeSelect()">
     </div>
     <div class="fg" style="margin-top:10px">
       <label>🕐 Nouvel horaire (session 1)</label>
-      <select id="modifDemandeTime" style="width:100%" onchange="onModifDemandeChange()"></select>
+      <select id="modifDemandeTime" style="width:100%" onchange="updateModifDemandePreview()"></select>
     </div>
     <div id="modifDemandePreview" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
     <div class="vest-modal-btns">
@@ -3471,10 +3471,6 @@ function populateModifDemandeTimeSelect(){
     sel.appendChild(opt);
   });
   updateModifDemandePreview();
-}
-
-function onModifDemandeChange(){
-  populateModifDemandeTimeSelect();
 }
 
 function updateModifDemandePreview(){
