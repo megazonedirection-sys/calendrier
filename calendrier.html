@@ -3338,7 +3338,7 @@ function demandeCard(ref, d){
         ${isPending?`
         <button onclick="accepterDemande('${ref}')" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">✅ Valider</button>
         <button onclick="refuserDemande('${ref}')" style="padding:8px 16px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">❌ Refuser</button>
-        <button onclick="forcerCreationDemande('${ref}')" title="Crée directement la réservation, sans passer par les vérifications automatiques — comme une saisie manuelle par le staff" style="padding:6px 12px;background:#fff;color:#7c3aed;border:1.5px solid #c4b5fd;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">⚡ Forcer la création</button>
+        <button onclick="modifierParStaff('${ref}')" title="Propose un nouvel horaire au client : la réservation passe directement en Confirmée à ce nouvel horaire" style="padding:6px 12px;background:#fff;color:#7c3aed;border:1.5px solid #c4b5fd;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">✏️ Modifier</button>
         `:''}
         <button onclick="supprimerDemande('${ref}')" style="padding:6px 12px;background:#f1f5f9;color:#64748b;border:1.5px solid #e2e8f0;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">🗑 Supprimer</button>
       </div>
@@ -3357,35 +3357,56 @@ function timeAgo(ts){
   return `il y a ${Math.floor(h/24)}j`;
 }
 
-// Crée directement la réservation à partir d'une demande, EXACTEMENT comme
-// le ferait le staff en saisie manuelle — sans passer par les vérifications
-// automatiques (capacité, compatibilité de profil, etc.). Utile quand la
-// demande est légitime mais bloquée pour une raison que l'agent juge non
-// pertinente dans ce cas précis, ou en cas de bug empêchant la validation
-// normale. Volontairement indépendante du circuit habituel (accepterDemande)
-// pour rester fiable même si celui-ci rencontre un problème.
-async function forcerCreationDemande(ref){
+// Permet au staff de proposer un AUTRE horaire pour une demande en attente
+// (ex: décalée de 20 min faute de place à l'heure demandée) plutôt que de
+// simplement forcer ou refuser. La réservation est créée directement sur ce
+// nouvel horaire, la demande passe en "Confirmée", et un email informe le
+// client du nouvel horaire retenu.
+async function modifierParStaff(ref){
   const d = demandes[ref];
   if(!d){ alert('Demande introuvable (déjà traitée ?).'); return; }
-  if(!confirm(`Forcer la création de cette réservation pour ${d.nom||'ce client'} le ${d.date} à ${d.time}, comme une saisie manuelle par le staff ?`)) return;
+
+  const nouvelleDate = prompt(`Nouvelle date pour ${d.nom||'ce client'} (format AAAA-MM-JJ) :`, d.date);
+  if(nouvelleDate === null) return;
+  const nouvelleHeure = prompt(`Nouvel horaire (format HH:MM) :`, d.time);
+  if(nouvelleHeure === null) return;
+
+  const dateVal = nouvelleDate.trim();
+  const heureVal = nouvelleHeure.trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)){
+    alert('Format de date invalide — utilisez AAAA-MM-JJ (ex: 2026-09-20).');
+    return;
+  }
+  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(heureVal)){
+    alert('Format d\'heure invalide — utilisez HH:MM (ex: 17:20).');
+    return;
+  }
+
+  if(!confirm(
+    `Confirmer le nouvel horaire pour ${d.nom||'ce client'} : ${dateVal} à ${heureVal} ` +
+    `(au lieu du ${d.date} à ${d.time}) ?\n\n` +
+    `La réservation sera créée directement à ce nouvel horaire, la demande passera en "Confirmée", ` +
+    `et un email sera envoyé au client pour l'informer du changement.`
+  )) return;
 
   try {
     const activite = d.activite || 'laser';
-    const date = d.date || '';
-    const time = d.time || '';
     const span = d.slotSpan || 1;
-    const times = span > 1 ? getVrSpanTimes(date, time, span) : [time];
+    const times = span > 1 ? getVrSpanTimes(dateVal, heureVal, span) : [heureVal];
 
     const MAX = activite === 'vr' ? VR_COLS : (activite === 'laser' ? LASER_COLS : 1);
     let slot = 1;
-    while(slot <= MAX && times.some(t => bookings[`${activite}|${date}|${t}|${slot}`])) slot++;
-    if(slot > MAX) slot = 1; // forçage : si tout est occupé, on partage quand même le 1er numéro
+    while(slot <= MAX && times.some(t => bookings[`${activite}|${dateVal}|${t}|${slot}`])) slot++;
+    if(slot > MAX){
+      alert('⚠️ Ce nouveau créneau est déjà complet — merci d\'en choisir un autre.');
+      return;
+    }
 
     times.forEach(t => {
-      bookings[`${activite}|${date}|${t}|${slot}`] = {
+      bookings[`${activite}|${dateVal}|${t}|${slot}`] = {
         nom: d.nom||'', tel: d.tel||'', mail: d.mail||'',
         pers: d.pers||1, type: d.forceType || d.type || 't-particulier',
-        comment: d.comment ? `[En ligne — forcé] ${d.comment}` : '[Réservation en ligne — forcée manuellement]',
+        comment: d.comment ? `[En ligne — modifié par le staff] ${d.comment}` : '[Réservation en ligne — modifiée par le staff]',
         pay: 'attente', confirmed: false, present: false,
         ...(d.profil ? {profil: d.profil} : {}),
         ...(d.enfants79   !== undefined ? {enfants79:   d.enfants79}   : {}),
@@ -3398,14 +3419,62 @@ async function forcerCreationDemande(ref){
     });
 
     saveBookings();
-    await db.ref(`demandes/${ref}/status`).set('processed');
-    sendClientConfirmationEmail(d, ref, true).catch(()=>{});
+    const ancienneDate = d.date, ancienneHeure = d.time;
+    await db.ref(`demandes/${ref}`).update({ date: dateVal, time: heureVal, status: 'accepted' });
+    await sendClientRescheduleEmail({ ...d, date: dateVal, time: heureVal }, ref, ancienneDate, ancienneHeure);
     renderCalendar();
     renderDemandes();
-    alert('✅ Réservation créée.');
+    alert('✅ Réservation confirmée au nouvel horaire. Email envoyé au client.');
   } catch(e) {
-    console.error('Erreur forcerCreationDemande:', e);
-    alert('⚠️ Erreur lors de la création forcée : ' + e.message);
+    console.error('Erreur modifierParStaff:', e);
+    alert('⚠️ Erreur lors de la modification : ' + e.message);
+  }
+}
+
+// Email spécifique "nouvel horaire proposé" — même structure que la
+// confirmation classique, mais rappelle explicitement l'horaire initialement
+// demandé et invite le client à recontacter GameZone si ce nouvel horaire ne
+// lui convient pas.
+async function sendClientRescheduleEmail(d, ref, ancienneDate, ancienneHeure){
+  if(!d.mail) return;
+  const [y, mo, da]    = (d.date||'').split('-');
+  const dateF          = da ? `${da}/${mo}/${y}` : d.date;
+  const [ay, amo, ada] = (ancienneDate||'').split('-');
+  const ancienneDateF  = ada ? `${ada}/${amo}/${ay}` : ancienneDate;
+  const activiteLabel  = getClientActivityLabel(d);
+  const duration       = SESSION_DURATION_MIN[d.activiteLabel] || 20;
+  const heureDebut     = addMinutesToTime(d.time, -15);
+  const heureFin       = addMinutesToTime(d.time, duration);
+
+  const message =
+    `Bonjour ${d.nom} 👋\n\n` +
+    `Suite à votre demande de réservation pour le ${ancienneDateF} à ${ancienneHeure}, nous vous proposons ` +
+    `un nouvel horaire pour ${activiteLabel} : le ${dateF}, de ${heureDebut} à ${heureFin} (briefing 15 min inclus).\n\n` +
+    `Cette réservation est confirmée à ce nouvel horaire. Si celui-ci ne vous convient pas, merci de nous ` +
+    `contacter rapidement au 05.63.03.79.32 pour trouver une meilleure solution ensemble.\n\n` +
+    `───────────────────────────────────\n` +
+    `📍 Game Zone Montauban\n📞 05.63.03.79.32\n\n` +
+    `À très bientôt ! 🎯\nL'équipe Game Zone Montauban`;
+
+  try {
+    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  EJS_SERVICE,
+        template_id: EJS_TPL_CLIENT,
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: { to_email: d.mail, ref: ref, message: message }
+      })
+    });
+    if(!r.ok){
+      const t = await r.text();
+      console.warn('⚠️ Erreur envoi email de reprogrammation :', t);
+      alert(`⚠️ La réservation est confirmée, mais l'email n'a pas pu être envoyé. Contactez le client : ${d.tel}`);
+    }
+  } catch(e) {
+    console.warn('⚠️ Erreur réseau — email de reprogrammation non envoyé à', d.mail, e);
+    alert(`⚠️ La réservation est confirmée, mais l'email n'a pas pu être envoyé (erreur réseau). Contactez le client : ${d.tel}`);
   }
 }
 
