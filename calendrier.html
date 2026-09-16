@@ -1126,6 +1126,22 @@ function addMinutesToTime(timeStr, minutes){
   return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
 }
 
+// Échappe les caractères HTML dangereux avant toute insertion via innerHTML.
+// CORRECTIF SÉCURITÉ : nom/tel/mail/commentaire viennent tous, in fine, du
+// formulaire public en ligne (resa-en-ligne.html) et étaient jusqu'ici
+// injectés tels quels dans le DOM du staff (cartes de réservation, panneau
+// Demandes, autocomplétion, liste Clients). Un client malveillant pouvait
+// donc soumettre un nom ou commentaire contenant du HTML/JS exécutable, qui
+// s'exécutait alors dans le navigateur du staff (déjà authentifié) dès
+// l'affichage — sans même attendre une validation. Toute donnée d'origine
+// utilisateur doit désormais passer par cette fonction avant d'aller dans
+// un template inséré via innerHTML.
+function escapeHtml(str){
+  return String(str ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 // Construit le corps du message client à partir des infos de la réservation
 // (utilisé aussi bien pour une session unique que pour un groupe multi-session).
 // Modèle de confirmation client unique, utilisé pour toutes les activités
@@ -1917,9 +1933,9 @@ function renderOnlineToastQueue(queue){
       <div class="online-booking-toast">
         <div style="font-weight:700;margin-bottom:2px">🆕 Nouvelle réservation en ligne</div>
         <div>${actLabel}</div>
-        <div>${g.nom||'?'} · ${g.tel||''}</div>
+        <div>${escapeHtml(g.nom)||'?'} · ${escapeHtml(g.tel)||''}</div>
         <div>${da}/${mo}/${y} à ${(g.times||[]).join(', ')}</div>
-        <button aria-label="Fermer" onclick="dismissOnlineToast('${groupKey}')">✕</button>
+        <button aria-label="Fermer" onclick="dismissOnlineToast('${groupKey.replace(/'/g,"\\'")}')">✕</button>
       </div>
     `;
   }).join('');
@@ -2170,8 +2186,8 @@ function renderCalendar(){
         div.draggable=true;
         div.innerHTML=`
           <div class="bk-row1">
-            <span class="bk-name">Client : ${b.nom||'—'}</span>
-            <span class="bk-tel">${b.tel||''}</span>
+            <span class="bk-name">Client : ${escapeHtml(b.nom)||'—'}</span>
+            <span class="bk-tel">${escapeHtml(b.tel)||''}</span>
           </div>
           ${b.comment ? `<div class="bk-comment">Commentaire : ${boldBreakdownNumbers(b.comment)}</div>` : ''}
           <div class="bk-row3">
@@ -2483,8 +2499,8 @@ function acSearch(val){
   acIdx = -1;
   list.innerHTML = acResults.map(([tel, c], i) =>
     `<div class="ac-item" data-i="${i}" onmousedown="acSelect(${i})">
-      <span class="ac-item-name">${c.nom}</span>
-      <span class="ac-item-detail">${tel}${c.mail ? ' · ' + c.mail : ''}</span>
+      <span class="ac-item-name">${escapeHtml(c.nom)}</span>
+      <span class="ac-item-detail">${escapeHtml(tel)}${c.mail ? ' · ' + escapeHtml(c.mail) : ''}</span>
     </div>`
   ).join('');
   list.classList.add('open');
@@ -3033,14 +3049,14 @@ const PROFIL_BADGE_LABEL = {famille79:'👶 Enf. 7-9', famille1012:'🧒 Enf. 10
 // Met en gras les chiffres de répartition par âge dans un commentaire
 // (ex. "Enf. 10-12: 1 | Ados 13-15: 1" → le "1" et le second "1" en gras)
 function boldBreakdownNumbers(str){
-  return (str||'').replace(/:\s*(\d+)/g, ': <strong>$1</strong>');
+  return escapeHtml(str).replace(/:\s*(\d+)/g, ': <strong>$1</strong>');
 }
 
 const AUTO_REASON_LABEL = {
   activite_manuelle:     '📋 Type de prestation nécessitant toujours une validation manuelle (anniversaire, EVG/EVJF…).',
   profil_incompatible_creneau: '🧩 Composition différente du groupe déjà présent sur ce créneau — à vérifier avant validation.',
   evg_tout_ou_rien:            '🥂 Forfait EVG/EVJF : l\'une des 2 parties est incompatible avec un groupe déjà présent — les 2 parties sont bloquées ensemble (tout ou rien).',
-  trop_proche:           '⏰ Demande reçue à moins de 40 min du créneau — validation manuelle requise.',
+  trop_proche:           '⏰ Demande reçue trop près de l\'heure de début de session (délai minimum non respecté : 40 min Laser/Blind Test, 15 min VR/Escape Game) — validation manuelle requise.',
   staff_prioritaire:     '👤 Un verrou staff était actif sur ce créneau au moment de la demande.',
   capacite_insuffisante: '🎯 Le créneau était presque complet au moment de la demande — vérifier la capacité restante.',
   creneau_complet:       '🎵 Ce créneau Blind Test était déjà occupé au moment de la demande.',
@@ -3093,8 +3109,8 @@ function demandeCard(ref, d){
   <div style="border:2px solid ${borderColor};border-radius:10px;padding:16px;margin-bottom:12px;background:${isPending?'#fff7ed':'#f8fafc'}">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div style="flex:1;min-width:200px">
-        <div style="font-weight:800;font-size:15px">${d.nom} <span style="font-family:'DM Mono',monospace;font-size:12px;color:#64748b;font-weight:400">${d.tel}</span></div>
-        ${d.mail?`<div style="font-size:12px;color:#64748b">${d.mail}</div>`:''}
+        <div style="font-weight:800;font-size:15px">${escapeHtml(d.nom)} <span style="font-family:'DM Mono',monospace;font-size:12px;color:#64748b;font-weight:400">${escapeHtml(d.tel)}</span></div>
+        ${d.mail?`<div style="font-size:12px;color:#64748b">${escapeHtml(d.mail)}</div>`:''}
         <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${d.activiteLabel==='Escape Game VR'?'🔓 Escape Game VR':d.activiteLabel&&d.activiteLabel.startsWith('VR Zone')?'🥽 VR Zone':(ACTIVITE_LABEL[d.activite]||d.activite)}</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.type]||d.type}</span>
@@ -3102,7 +3118,7 @@ function demandeCard(ref, d){
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${d.time}</span>
           ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
         </div>
-        ${d.autoReason && AUTO_REASON_LABEL[d.autoReason]?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">${AUTO_REASON_LABEL[d.autoReason]}</div>`:''}
+        ${isPending && d.autoReason && AUTO_REASON_LABEL[d.autoReason]?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">${AUTO_REASON_LABEL[d.autoReason]}</div>`:''}
         ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${boldBreakdownNumbers(d.comment)}</div>`:''}
         <div style="margin-top:6px;font-size:11px;color:#94a3b8">Ref: ${ref} · Reçue ${ago}</div>
       </div>
@@ -3371,9 +3387,9 @@ function renderClients(){
       lastStr = `${D[d.getDay()]} ${d.getDate()} ${M[d.getMonth()]} ${d.getFullYear()}`;
     }
     return `<tr>
-      <td><strong>${c.nom}</strong></td>
+      <td><strong>${escapeHtml(c.nom)}</strong></td>
       <td class="client-tel">${tel.replace(/(\d{2})(?=\d)/g,'$1 ')}</td>
-      <td style="color:var(--muted)">${c.mail||'—'}</td>
+      <td style="color:var(--muted)">${escapeHtml(c.mail)||'—'}</td>
       <td><span class="client-count">${c.count}</span></td>
       <td class="client-last">${lastStr}</td>
     </tr>`;
