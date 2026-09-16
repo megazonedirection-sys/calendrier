@@ -56,6 +56,17 @@ nav{
 }
 #demandesBadge{ animation: demandes-badge-pulse 1.4s ease-in-out infinite; }
 
+/* ── BANNIÈRE MODE HORS LIGNE ── */
+#offlineBanner{
+  display:none;background:#78350f;color:#fff;text-align:center;
+  padding:7px 16px;font-size:13px;font-weight:700;flex-shrink:0;
+}
+.bk.bk-offline-pending{ outline:2px dashed #f59e0b; outline-offset:-2px; }
+.bk-offline-badge{
+  font-size:11px;font-weight:700;color:#78350f;background:#fef3c7;
+  border-radius:6px;padding:2px 6px;display:inline-block;margin-top:4px;
+}
+
 /* ── BANNIÈRE PERMANENTE : demandes en attente ── */
 #pendingBanner{
   display:none;align-items:center;gap:8px;cursor:pointer;
@@ -87,6 +98,7 @@ nav{
   color:#94a3b8;font-size:13px;cursor:pointer;line-height:1;padding:2px;
 }
 .online-booking-toast button:hover{ color:#fff; }
+.online-booking-toast.toast-conflict{ border-left-color:#ef4444; }
 @keyframes online-toast-in{
   from{ opacity:0; transform:translateX(16px); }
   to  { opacity:1; transform:translateX(0); }
@@ -641,6 +653,9 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
 </div>
 
 <!-- NAV -->
+<!-- BANNIÈRE MODE HORS LIGNE -->
+<div id="offlineBanner"><span id="offlineBannerText"></span></div>
+
 <nav>
   <div class="nav-logo">
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1044,10 +1059,168 @@ function enqueueTraitement(fn){
   return traitementQueue;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// MODE HORS LIGNE — visibilité du planning ET prise de réservation
+// pendant une coupure réseau, avec synchronisation automatique au retour.
+//
+// Principe :
+// 1. À chaque synchronisation réussie, une copie de `bookings` est gardée
+//    dans le navigateur (localStorage). Si la connexion Firebase n'est pas
+//    établie (ex: au chargement de la page, coupure réseau), CalendIT
+//    affiche cette dernière copie connue plutôt qu'un calendrier vide.
+// 2. Une réservation créée/modifiée alors qu'on est hors ligne (détecté via
+//    `.info/connected`, propre à Firebase — plus fiable que navigator.onLine
+//    qui ne reflète que l'état de la carte réseau, pas l'accès réel à
+//    Firebase) est marquée `_offlinePending: true` et mise en file dans
+//    localStorage, au lieu d'être perdue faute de pouvoir écrire.
+// 3. Au retour de la connexion, chaque réservation en file est comparée à
+//    l'état serveur avant envoi : en cas de conflit (le créneau a été pris
+//    entretemps par quelqu'un d'autre), on n'écrase JAMAIS silencieusement —
+//    une alerte persistante est affichée pour que le staff tranche lui-même.
+// ══════════════════════════════════════════════════════════════════════
+const LS_OFFLINE_BOOKINGS_CACHE = 'gz_offlineBookingsCache';
+const LS_OFFLINE_BOOKINGS_TS    = 'gz_offlineBookingsCacheTs';
+const LS_OFFLINE_PENDING_QUEUE  = 'gz_offlinePendingQueue'; // { [bookingKey]: bookingValue }
+
+let isFirebaseConnected = null; // null = pas encore su
+
+function loadOfflineBookingsCache(){
+  try {
+    const raw = localStorage.getItem(LS_OFFLINE_BOOKINGS_CACHE);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e){ return null; }
+}
+function saveOfflineBookingsCache(data){
+  try {
+    localStorage.setItem(LS_OFFLINE_BOOKINGS_CACHE, JSON.stringify(data));
+    localStorage.setItem(LS_OFFLINE_BOOKINGS_TS, String(Date.now()));
+  } catch(e){}
+}
+function loadOfflinePendingQueue(){
+  try { return JSON.parse(localStorage.getItem(LS_OFFLINE_PENDING_QUEUE) || '{}'); }
+  catch(e){ return {}; }
+}
+function saveOfflinePendingQueue(q){
+  try { localStorage.setItem(LS_OFFLINE_PENDING_QUEUE, JSON.stringify(q)); } catch(e){}
+}
+
+function setOfflineBanner(offline){
+  const banner = document.getElementById('offlineBanner');
+  const text   = document.getElementById('offlineBannerText');
+  if(!banner || !text) return;
+  if(offline){
+    const ts = localStorage.getItem(LS_OFFLINE_BOOKINGS_TS);
+    const tsLabel = ts ? new Date(parseInt(ts)).toLocaleString('fr-FR') : 'inconnue';
+    const pendingCount = Object.keys(loadOfflinePendingQueue()).length;
+    text.textContent = `🔌 Mode hors ligne — planning affiché du ${tsLabel}.` +
+      (pendingCount
+        ? ` ${pendingCount} réservation${pendingCount>1?'s':''} en attente de synchronisation.`
+        : ' Vous pouvez toujours créer des réservations, elles seront synchronisées au retour du réseau.');
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+// Écrit UNE réservation directement (sans passer par le garde-fou anti-
+// écrasement massif de saveBookings(), pensé pour une sauvegarde complète
+// du planning, pas pour la synchronisation ciblée d'une poignée de
+// réservations prises hors ligne).
+async function writeSingleBooking(key, value){
+  await db.ref(`bookings/${key}`).set(value);
+}
+
+// Au retour de la connexion : tente d'envoyer chaque réservation en file
+// d'attente. Si le créneau visé est toujours libre (ou déjà occupé par
+// EXACTEMENT la même réservation), elle est synchronisée normalement. En
+// cas de conflit réel (quelqu'un d'autre a pris ce créneau entretemps), on
+// n'écrase rien : une alerte persistante liste le conflit pour que le staff
+// tranche lui-même, exactement comme pour les demandes en ligne.
+async function flushOfflinePendingQueue(){
+  const queue = loadOfflinePendingQueue();
+  const keys = Object.keys(queue);
+  if(!keys.length) return;
+
+  let remaining = { ...queue };
+  for(const key of keys){
+    const pendingValue = queue[key];
+    try {
+      const snap = await db.ref(`bookings/${key}`).once('value');
+      const serverValue = snap.exists() ? snap.val() : null;
+      const sameAsServer = serverValue && serverValue.tel === pendingValue.tel && serverValue.nom === pendingValue.nom;
+      if(!serverValue || sameAsServer){
+        const { _offlinePending, ...clean } = pendingValue;
+        await writeSingleBooking(key, clean);
+        delete remaining[key];
+      } else {
+        // Conflit réel : ce créneau a été pris par quelqu'un d'autre pendant
+        // la coupure. On alerte plutôt que d'écraser — la même mécanique que
+        // les notifications de nouvelle réservation en ligne.
+        const [activite, date, time] = key.split('|');
+        const conflictKey = `conflit_${firebaseSafeKey(key)}`;
+        await db.ref(`onlineToastQueue/${conflictKey}`).set({
+          activite, date,
+          nom: `⚠️ CONFLIT hors ligne : ${pendingValue.nom||'?'} (${pendingValue.tel||''}) vs ${serverValue.nom||'?'} (${serverValue.tel||''})`,
+          tel: '',
+          times: [time],
+          firstSeenAt: Date.now()
+        });
+        // On garde cette entrée en file pour ne pas perdre sa trace — elle
+        // devra être traitée manuellement (recréée sur un autre créneau) puis
+        // retirée par supprimerReservationHorsLigne(key).
+      }
+    } catch(e){
+      console.warn('Erreur synchronisation hors ligne pour', key, e);
+      // On la garde en file, on réessaiera à la prochaine reconnexion.
+    }
+  }
+  saveOfflinePendingQueue(remaining);
+  setOfflineBanner(!isFirebaseConnected);
+}
+
+// Retire manuellement une entrée de la file d'attente hors ligne (après
+// résolution manuelle d'un conflit signalé par flushOfflinePendingQueue).
+function supprimerReservationHorsLigne(key){
+  const q = loadOfflinePendingQueue();
+  delete q[key];
+  saveOfflinePendingQueue(q);
+  setOfflineBanner(!isFirebaseConnected);
+}
+
 function initFirebaseSync(){
   setSyncDot('syncing');
+
+  // Affichage immédiat depuis le cache local le temps que Firebase réponde
+  // (ou reste indéfiniment affiché si la connexion échoue).
+  const cached = loadOfflineBookingsCache();
+  if(cached){
+    bookings = cached;
+    renderCalendar();
+  }
+
+  // Détection fiable de la connectivité RÉELLE à Firebase (pas juste la
+  // carte réseau) via le chemin spécial .info/connected.
+  db.ref('.info/connected').on('value', snap => {
+    const wasConnected = isFirebaseConnected;
+    isFirebaseConnected = snap.val() === true;
+    setOfflineBanner(!isFirebaseConnected);
+    if(isFirebaseConnected && wasConnected === false){
+      // Reconnexion après une coupure : tenter d'envoyer les réservations
+      // prises hors ligne.
+      flushOfflinePendingQueue();
+    }
+  });
+
   window._fbListener = db.ref('bookings').on('value', snap => {
     bookings = snap.val() || {};
+    // Les réservations prises hors ligne, pas encore synchronisées, restent
+    // affichées (fusionnées par-dessus l'état serveur) tant qu'elles n'ont
+    // pas été confirmées envoyées par flushOfflinePendingQueue — sans quoi
+    // cette mise à jour temps réel les ferait disparaître du calendrier.
+    Object.entries(loadOfflinePendingQueue()).forEach(([key, val]) => {
+      if(!bookings[key]) bookings[key] = val;
+    });
+    saveOfflineBookingsCache(bookings);
     checkNewOnlineBookings(bookings);
     setSyncDot('ok');
     renderCalendar();
@@ -1514,6 +1687,32 @@ function computeProfilFlagsFromBookings(bk){
 //    qu'il était sur le serveur) est conservé dans backups_bookings/<horodatage>,
 //    avec purge automatique des sauvegardes de plus de 7 jours.
 async function saveBookings(){
+  // ── Mode hors ligne : ne PAS tenter le réseau (un .once('value') sans
+  // connexion resterait bloqué indéfiniment) — on met en file les clés
+  // ajoutées/modifiées depuis la dernière synchronisation connue, pour un
+  // envoi automatique au retour du réseau (voir flushOfflinePendingQueue).
+  // Limite connue : une SUPPRESSION faite hors ligne n'est pas mise en
+  // file (seules les créations/modifications le sont) — à refaire une fois
+  // le réseau revenu.
+  if(isFirebaseConnected === false){
+    const lastKnown = loadOfflineBookingsCache() || {};
+    const queue = loadOfflinePendingQueue();
+    let changed = 0;
+    Object.entries(bookings).forEach(([key, val]) => {
+      const prev = lastKnown[key];
+      if(!prev || JSON.stringify(prev) !== JSON.stringify(val)){
+        bookings[key] = { ...val, _offlinePending: true };
+        queue[key] = bookings[key];
+        changed++;
+      }
+    });
+    if(changed) saveOfflinePendingQueue(queue);
+    saveOfflineBookingsCache(bookings);
+    setOfflineBanner(true);
+    renderCalendar();
+    return;
+  }
+
   setSyncDot('syncing');
   try {
     const snap = await db.ref('bookings').once('value');
@@ -1929,12 +2128,14 @@ function renderOnlineToastQueue(queue){
   stack.innerHTML = entries.map(([groupKey, g]) => {
     const actLabel = ACTIVITE_LABEL[g.activite] || g.activite;
     const [y, mo, da] = (g.date||'').split('-');
+    const isConflict = groupKey.startsWith('conflit_');
     return `
-      <div class="online-booking-toast">
-        <div style="font-weight:700;margin-bottom:2px">🆕 Nouvelle réservation en ligne</div>
+      <div class="online-booking-toast${isConflict?' toast-conflict':''}">
+        <div style="font-weight:700;margin-bottom:2px">${isConflict ? '⚠️ Conflit à résoudre' : '🆕 Nouvelle réservation en ligne'}</div>
         <div>${actLabel}</div>
         <div>${escapeHtml(g.nom)||'?'} · ${escapeHtml(g.tel)||''}</div>
         <div>${da}/${mo}/${y} à ${(g.times||[]).join(', ')}</div>
+        ${isConflict ? `<div style="margin-top:4px;font-size:11px;color:#fca5a5">Recontactez le client concerné pour reprogrammer, puis fermez cette alerte.</div>` : ''}
         <button aria-label="Fermer" onclick="dismissOnlineToast('${groupKey.replace(/'/g,"\\'")}')">✕</button>
       </div>
     `;
@@ -1943,6 +2144,15 @@ function renderOnlineToastQueue(queue){
 
 function dismissOnlineToast(groupKey){
   db.ref(`onlineToastQueue/${groupKey}`).remove().catch(()=>{});
+  if(groupKey.startsWith('conflit_')){
+    // Fermer cette alerte signifie que le conflit a été traité manuellement —
+    // on retire aussi l'entrée correspondante de la file d'attente hors ligne.
+    const originalKeyPart = groupKey.slice('conflit_'.length);
+    const q = loadOfflinePendingQueue();
+    Object.keys(q).forEach(k => { if(firebaseSafeKey(k) === originalKeyPart) delete q[k]; });
+    saveOfflinePendingQueue(q);
+    setOfflineBanner(!isFirebaseConnected);
+  }
 }
 const VR_SLOTS_NEW = makeVrSlots(ALL_SLOTS_NEW);
 
@@ -2181,7 +2391,7 @@ function renderCalendar(){
 
         const payLabel = {'attente':'⏳ Attente','paye':'✅ Payé','incomplet':'⚠️ Incomplet'};
         const div=document.createElement('div');
-        div.className=`bk ${b.type}${b.evcPart2?' evc-part2':''}${b.vrStep>0?' vr-suite':''}${b.present?' is-present':''}${b.pay==='paye'?' pay-frame-paye':b.pay==='incomplet'?' pay-frame-incomplet':''}`;
+        div.className=`bk ${b.type}${b.evcPart2?' evc-part2':''}${b.vrStep>0?' vr-suite':''}${b.present?' is-present':''}${b.pay==='paye'?' pay-frame-paye':b.pay==='incomplet'?' pay-frame-incomplet':''}${b._offlinePending?' bk-offline-pending':''}`;
         div.dataset.key=k;
         div.draggable=true;
         div.innerHTML=`
@@ -2189,6 +2399,7 @@ function renderCalendar(){
             <span class="bk-name">Client : ${escapeHtml(b.nom)||'—'}</span>
             <span class="bk-tel">${escapeHtml(b.tel)||''}</span>
           </div>
+          ${b._offlinePending ? `<div class="bk-offline-badge">🔌 En attente de synchronisation</div>` : ''}
           ${b.comment ? `<div class="bk-comment">Commentaire : ${boldBreakdownNumbers(b.comment)}</div>` : ''}
           <div class="bk-row3">
             <span class="bk-pers">👥 : ${b.pers}</span>
@@ -3479,6 +3690,16 @@ let _initialScrollDone = false;
 
 // Init : le calendrier sera rendu après connexion Firebase (auth.onAuthStateChanged)
 // renderCalendar() est appelé automatiquement à la réception des données
+
+// Enregistrement du Service Worker (sw.js, même dossier que ce fichier) —
+// permet à CalendIT de se charger même sans connexion au démarrage, condition
+// nécessaire pour que le mode hors ligne ci-dessus (cache local des
+// réservations, file d'attente) puisse s'exécuter.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(e => console.warn('Service Worker non enregistré :', e));
+  });
+}
 </script>
 </body>
 </html>
