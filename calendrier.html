@@ -894,6 +894,27 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
   </div>
 </div>
 
+<!-- MODIFIER DEMANDE MODAL (nouvel horaire proposé au client) -->
+<div class="vest-modal-overlay" id="modifDemandeOverlay">
+  <div class="vest-modal-box" style="width:340px;text-align:left">
+    <div class="vest-modal-title">✏️ Proposer un nouvel horaire</div>
+    <div class="vest-modal-sub" id="modifDemandeSub"></div>
+    <div class="fg">
+      <label>📅 Nouvelle date</label>
+      <input type="date" id="modifDemandeDate" style="width:100%" onchange="onModifDemandeChange()">
+    </div>
+    <div class="fg" style="margin-top:10px">
+      <label>🕐 Nouvel horaire (session 1)</label>
+      <select id="modifDemandeTime" style="width:100%" onchange="onModifDemandeChange()"></select>
+    </div>
+    <div id="modifDemandePreview" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+    <div class="vest-modal-btns">
+      <button class="btn-cancel" onclick="closeModifDemandeModal()">Annuler</button>
+      <button class="btn-ok" onclick="confirmModifierParStaff()">Confirmer</button>
+    </div>
+  </div>
+</div>
+
 
 <script>
 // ── FIREBASE CONFIG ──────────────────────────────────────────────────────────
@@ -3338,7 +3359,7 @@ function demandeCard(ref, d){
         ${isPending?`
         <button onclick="accepterDemande('${ref}')" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">✅ Valider</button>
         <button onclick="refuserDemande('${ref}')" style="padding:8px 16px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">❌ Refuser</button>
-        <button onclick="modifierParStaff('${ref}')" title="Propose un nouvel horaire au client : la réservation passe directement en Confirmée à ce nouvel horaire" style="padding:6px 12px;background:#fff;color:#7c3aed;border:1.5px solid #c4b5fd;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">✏️ Modifier</button>
+        <button onclick="openModifDemandeModal('${ref}')" title="Propose un nouvel horaire au client : la réservation passe directement en Confirmée à ce nouvel horaire" style="padding:6px 12px;background:#fff;color:#7c3aed;border:1.5px solid #c4b5fd;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">✏️ Modifier</button>
         `:''}
         <button onclick="supprimerDemande('${ref}')" style="padding:6px 12px;background:#f1f5f9;color:#64748b;border:1.5px solid #e2e8f0;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">🗑 Supprimer</button>
       </div>
@@ -3362,71 +3383,206 @@ function timeAgo(ts){
 // simplement forcer ou refuser. La réservation est créée directement sur ce
 // nouvel horaire, la demande passe en "Confirmée", et un email informe le
 // client du nouvel horaire retenu.
-async function modifierParStaff(ref){
+let modifDemandeState = null; // { membres, activite, activiteLabel }
+
+// Renvoie la liste des créneaux "HH:MM" valides pour une activité et une
+// date données (même grille que celle utilisée pour l'affichage du
+// calendrier), sans filtrage par horaire d'ouverture — le staff connaît
+// déjà les horaires réels d'ouverture du jour choisi.
+function getModifSlotsList(activite, dateStr){
+  const isNew = dateStr >= NEW_SCHEDULE_DATE;
+  if(activite === 'bt') return BT_SLOTS.map(s => s.time);
+  if(activite === 'vr') return (isNew ? VR_SLOTS_NEW : VR_SLOTS).map(s => s.time);
+  return (isNew ? ALL_SLOTS_NEW : ALL_SLOTS).map(s => s.time);
+}
+
+// Nombre d'index de créneaux à sauter entre 2 sessions d'une même réservation
+// multi-sessions : Laser Game laisse une vraie pause de repos (index +2), les
+// autres activités (VR Zone, Blind Test) s'enchaînent directement (+1) —
+// même règle que côté formulaire client (resa-en-ligne.html).
+function modifGapSteps(activiteLabel){
+  return activiteLabel === 'Laser Game' ? 2 : 1;
+}
+
+// Calcule, à partir d'une liste de créneaux et d'un horaire de départ, les
+// `count` créneaux consécutifs en respectant le pas (gapSteps) entre chacun.
+function computeCascadeTimes(slotsList, startTime, gapSteps, count){
+  const startIdx = slotsList.indexOf(startTime);
+  const times = [];
+  if(startIdx === -1) return times;
+  for(let i = 0; i < count; i++){
+    const idx = startIdx + i * gapSteps;
+    if(idx >= slotsList.length) break;
+    times.push(slotsList[idx]);
+  }
+  return times;
+}
+
+// Ouvre la modale de proposition de nouvel horaire. Si la demande fait
+// partie d'un groupe multi-sessions (groupId), TOUTES les sessions en
+// attente du groupe sont reprogrammées ensemble — le staff ne choisit que
+// l'horaire de la 1ère, les suivantes sont calculées automatiquement avec
+// la même règle de pause que celle appliquée à la réservation initiale.
+function openModifDemandeModal(ref){
   const d = demandes[ref];
   if(!d){ alert('Demande introuvable (déjà traitée ?).'); return; }
 
-  const nouvelleDate = prompt(`Nouvelle date pour ${d.nom||'ce client'} (format AAAA-MM-JJ) :`, d.date);
-  if(nouvelleDate === null) return;
-  const nouvelleHeure = prompt(`Nouvel horaire (format HH:MM) :`, d.time);
-  if(nouvelleHeure === null) return;
+  const membres = d.groupId
+    ? Object.entries(demandes)
+        .filter(([r, dd]) => dd.groupId === d.groupId && dd.status === 'pending')
+        .sort((a,b) => (a[1].groupIndex||0) - (b[1].groupIndex||0))
+        .map(([r, dd]) => ({ref: r, d: dd}))
+    : [{ref, d}];
 
-  const dateVal = nouvelleDate.trim();
-  const heureVal = nouvelleHeure.trim();
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)){
-    alert('Format de date invalide — utilisez AAAA-MM-JJ (ex: 2026-09-20).');
+  modifDemandeState = {
+    membres,
+    activite: d.activite || 'laser',
+    activiteLabel: d.activiteLabel || '',
+  };
+
+  document.getElementById('modifDemandeSub').textContent =
+    `${d.nom||'Client'} — ${membres.length > 1 ? membres.length + ' sessions liées, à partir du ' + d.date + ' à ' + d.time : (ACTIVITE_LABEL[d.activite]||d.activite) + ', actuellement le ' + d.date + ' à ' + d.time}`;
+
+  const dateInput = document.getElementById('modifDemandeDate');
+  dateInput.value = d.date;
+  dateInput.min = new Date().toISOString().slice(0,10);
+  populateModifDemandeTimeSelect();
+  document.getElementById('modifDemandeOverlay').classList.add('open');
+}
+
+function populateModifDemandeTimeSelect(){
+  if(!modifDemandeState) return;
+  const dateVal = document.getElementById('modifDemandeDate').value;
+  const sel = document.getElementById('modifDemandeTime');
+  sel.innerHTML = '';
+  if(!dateVal){
+    sel.innerHTML = '<option value="" disabled selected>Choisir une date d\'abord</option>';
+    updateModifDemandePreview();
     return;
   }
-  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(heureVal)){
-    alert('Format d\'heure invalide — utilisez HH:MM (ex: 17:20).');
+  const slots = getModifSlotsList(modifDemandeState.activite, dateVal);
+  const ph = document.createElement('option');
+  ph.value = ''; ph.disabled = true; ph.selected = true;
+  ph.textContent = 'Choisir un horaire de départ…';
+  sel.appendChild(ph);
+  slots.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t; opt.textContent = t;
+    sel.appendChild(opt);
+  });
+  updateModifDemandePreview();
+}
+
+function onModifDemandeChange(){
+  populateModifDemandeTimeSelect();
+}
+
+function updateModifDemandePreview(){
+  const preview = document.getElementById('modifDemandePreview');
+  if(!modifDemandeState || !preview) return;
+  const dateVal = document.getElementById('modifDemandeDate').value;
+  const timeVal = document.getElementById('modifDemandeTime').value;
+  if(!dateVal || !timeVal){ preview.textContent = ''; return; }
+
+  const { membres, activite, activiteLabel } = modifDemandeState;
+  if(membres.length <= 1){
+    preview.textContent = `Session unique le ${dateVal} à ${timeVal}.`;
+    return;
+  }
+  const slots = getModifSlotsList(activite, dateVal);
+  const gap = modifGapSteps(activiteLabel);
+  const times = computeCascadeTimes(slots, timeVal, gap, membres.length);
+  if(times.length < membres.length){
+    preview.innerHTML = `<span style="color:#dc2626">⚠️ Pas assez de créneaux disponibles ce jour-là pour les ${membres.length} sessions à partir de cet horaire.</span>`;
+  } else {
+    preview.textContent = `${membres.length} sessions prévues : ${times.join(', ')}`;
+  }
+}
+
+function closeModifDemandeModal(){
+  document.getElementById('modifDemandeOverlay').classList.remove('open');
+  modifDemandeState = null;
+}
+
+async function confirmModifierParStaff(){
+  if(!modifDemandeState) return;
+  const dateVal   = document.getElementById('modifDemandeDate').value;
+  const startTime = document.getElementById('modifDemandeTime').value;
+  if(!dateVal || !startTime){ alert('Merci de choisir une date et un horaire.'); return; }
+
+  const { membres, activite, activiteLabel } = modifDemandeState;
+  const slots = getModifSlotsList(activite, dateVal);
+  const gap   = modifGapSteps(activiteLabel);
+  const times = computeCascadeTimes(slots, startTime, gap, membres.length);
+  if(times.length < membres.length){
+    alert('Pas assez de créneaux disponibles ce jour-là pour toutes les sessions à partir de cet horaire — choisissez un horaire plus tôt ou une autre date.');
     return;
   }
 
+  const premier = membres[0].d;
   if(!confirm(
-    `Confirmer le nouvel horaire pour ${d.nom||'ce client'} : ${dateVal} à ${heureVal} ` +
-    `(au lieu du ${d.date} à ${d.time}) ?\n\n` +
-    `La réservation sera créée directement à ce nouvel horaire, la demande passera en "Confirmée", ` +
+    `Confirmer le nouvel horaire pour ${premier.nom||'ce client'} :\n` +
+    times.map((t,i) => `Session ${i+1} : ${dateVal} à ${t}`).join('\n') +
+    `\n\n(au lieu du ${premier.date} à ${premier.time})\n\n` +
+    `La réservation sera créée directement à ce${times.length>1?'s':''} nouvel${times.length>1?'s':''} horaire${times.length>1?'s':''}, la demande passera en "Confirmée", ` +
     `et un email sera envoyé au client pour l'informer du changement.`
   )) return;
 
   try {
-    const activite = d.activite || 'laser';
-    const span = d.slotSpan || 1;
-    const times = span > 1 ? getVrSpanTimes(dateVal, heureVal, span) : [heureVal];
+    for(let i = 0; i < membres.length; i++){
+      const { d } = membres[i];
+      const time = times[i];
+      const span = d.slotSpan || 1;
+      const occupiedTimes = span > 1 ? getVrSpanTimes(dateVal, time, span) : [time];
 
-    const MAX = activite === 'vr' ? VR_COLS : (activite === 'laser' ? LASER_COLS : 1);
-    let slot = 1;
-    while(slot <= MAX && times.some(t => bookings[`${activite}|${dateVal}|${t}|${slot}`])) slot++;
-    if(slot > MAX){
-      alert('⚠️ Ce nouveau créneau est déjà complet — merci d\'en choisir un autre.');
-      return;
+      const MAX = activite === 'vr' ? VR_COLS : (activite === 'laser' ? LASER_COLS : 1);
+      let slot = 1;
+      while(slot <= MAX && occupiedTimes.some(t => bookings[`${activite}|${dateVal}|${t}|${slot}`])) slot++;
+      if(slot > MAX){
+        alert(`⚠️ Le créneau ${time} est déjà complet — modification annulée, aucune réservation n'a été créée.`);
+        return;
+      }
+
+      occupiedTimes.forEach(t => {
+        bookings[`${activite}|${dateVal}|${t}|${slot}`] = {
+          nom: d.nom||'', tel: d.tel||'', mail: d.mail||'',
+          pers: d.pers||1, type: d.forceType || d.type || 't-particulier',
+          comment: d.comment ? `[En ligne — modifié par le staff] ${d.comment}` : '[Réservation en ligne — modifiée par le staff]',
+          pay: 'attente', confirmed: false, present: false,
+          ...(d.profil ? {profil: d.profil} : {}),
+          ...(d.enfants79   !== undefined ? {enfants79:   d.enfants79}   : {}),
+          ...(d.enfants1012 !== undefined ? {enfants1012: d.enfants1012} : {}),
+          ...(d.ados1315    !== undefined ? {ados1315:    d.ados1315}    : {}),
+          ...(d.ados1618    !== undefined ? {ados1618:    d.ados1618}    : {}),
+          ...(d.adultes     !== undefined ? {adultes:     d.adultes}     : {}),
+          ...(d.groupId ? {groupId: d.groupId} : {})
+        };
+      });
     }
 
-    times.forEach(t => {
-      bookings[`${activite}|${dateVal}|${t}|${slot}`] = {
-        nom: d.nom||'', tel: d.tel||'', mail: d.mail||'',
-        pers: d.pers||1, type: d.forceType || d.type || 't-particulier',
-        comment: d.comment ? `[En ligne — modifié par le staff] ${d.comment}` : '[Réservation en ligne — modifiée par le staff]',
-        pay: 'attente', confirmed: false, present: false,
-        ...(d.profil ? {profil: d.profil} : {}),
-        ...(d.enfants79   !== undefined ? {enfants79:   d.enfants79}   : {}),
-        ...(d.enfants1012 !== undefined ? {enfants1012: d.enfants1012} : {}),
-        ...(d.ados1315    !== undefined ? {ados1315:    d.ados1315}    : {}),
-        ...(d.ados1618    !== undefined ? {ados1618:    d.ados1618}    : {}),
-        ...(d.adultes     !== undefined ? {adultes:     d.adultes}     : {}),
-        ...(d.groupId ? {groupId: d.groupId} : {})
-      };
-    });
-
     saveBookings();
-    const ancienneDate = d.date, ancienneHeure = d.time;
-    await db.ref(`demandes/${ref}`).update({ date: dateVal, time: heureVal, status: 'accepted' });
-    await sendClientRescheduleEmail({ ...d, date: dateVal, time: heureVal }, ref, ancienneDate, ancienneHeure);
+
+    const ancienneDate = premier.date, ancienneHeure = premier.time;
+    for(let i = 0; i < membres.length; i++){
+      await db.ref(`demandes/${membres[i].ref}`).update({ date: dateVal, time: times[i], status: 'accepted' });
+    }
+
+    if(membres.length > 1){
+      await sendClientRescheduleEmailGroupe(
+        membres.map((m,i) => ({ ...m.d, date: dateVal, time: times[i] })),
+        membres[0].ref,
+        ancienneDate, ancienneHeure
+      );
+    } else {
+      await sendClientRescheduleEmail({ ...premier, date: dateVal, time: times[0] }, membres[0].ref, ancienneDate, ancienneHeure);
+    }
+
+    closeModifDemandeModal();
     renderCalendar();
     renderDemandes();
-    alert('✅ Réservation confirmée au nouvel horaire. Email envoyé au client.');
+    alert('✅ Réservation(s) confirmée(s) au nouvel horaire. Email envoyé au client.');
   } catch(e) {
-    console.error('Erreur modifierParStaff:', e);
+    console.error('Erreur confirmModifierParStaff:', e);
     alert('⚠️ Erreur lors de la modification : ' + e.message);
   }
 }
@@ -3475,6 +3631,50 @@ async function sendClientRescheduleEmail(d, ref, ancienneDate, ancienneHeure){
   } catch(e) {
     console.warn('⚠️ Erreur réseau — email de reprogrammation non envoyé à', d.mail, e);
     alert(`⚠️ La réservation est confirmée, mais l'email n'a pas pu être envoyé (erreur réseau). Contactez le client : ${d.tel}`);
+  }
+}
+
+// Variante groupée de sendClientRescheduleEmail — une seule sessions liées
+// (multi-sessions) : un seul email listant tous les nouveaux horaires.
+async function sendClientRescheduleEmailGroupe(membresModifies, ref, ancienneDate, ancienneHeure){
+  const premier = membresModifies[0];
+  if(!premier.mail) return;
+  const [y, mo, da]    = (premier.date||'').split('-');
+  const dateF          = da ? `${da}/${mo}/${y}` : premier.date;
+  const [ay, amo, ada] = (ancienneDate||'').split('-');
+  const ancienneDateF  = ada ? `${ada}/${amo}/${ay}` : ancienneDate;
+  const activiteLabel  = getClientActivityLabel(premier);
+  const sessionsTxt    = membresModifies.map((m,i) => `Session ${i+1} : ${m.time}`).join('\n');
+
+  const message =
+    `Bonjour ${premier.nom} 👋\n\n` +
+    `Suite à votre demande de réservation pour le ${ancienneDateF} à ${ancienneHeure}, nous vous proposons ` +
+    `de nouveaux horaires pour ${activiteLabel} le ${dateF} :\n\n${sessionsTxt}\n\n` +
+    `Cette réservation est confirmée à ces nouveaux horaires. Si cela ne vous convient pas, merci de nous ` +
+    `contacter rapidement au 05.63.03.79.32 pour trouver une meilleure solution ensemble.\n\n` +
+    `───────────────────────────────────\n` +
+    `📍 Game Zone Montauban\n📞 05.63.03.79.32\n\n` +
+    `À très bientôt ! 🎯\nL'équipe Game Zone Montauban`;
+
+  try {
+    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  EJS_SERVICE,
+        template_id: EJS_TPL_CLIENT,
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: { to_email: premier.mail, ref: ref, message: message }
+      })
+    });
+    if(!r.ok){
+      const t = await r.text();
+      console.warn('⚠️ Erreur envoi email de reprogrammation groupée :', t);
+      alert(`⚠️ Les réservations sont confirmées, mais l'email n'a pas pu être envoyé. Contactez le client : ${premier.tel}`);
+    }
+  } catch(e) {
+    console.warn('⚠️ Erreur réseau — email de reprogrammation groupée non envoyé', e);
+    alert(`⚠️ Les réservations sont confirmées, mais l'email n'a pas pu être envoyé (erreur réseau). Contactez le client : ${premier.tel}`);
   }
 }
 
