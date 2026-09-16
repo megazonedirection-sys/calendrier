@@ -68,6 +68,29 @@ nav{
   0%,100%{ background:#ef4444; }
   50%    { background:#b91c1c; }
 }
+
+/* ── PILE DE NOTIFICATIONS : nouvelle réservation en ligne ── */
+#online-toast-stack{
+  position:fixed;top:70px;right:16px;z-index:9999;
+  display:flex;flex-direction:column;gap:8px;
+  max-width:320px;max-height:80vh;overflow-y:auto;
+}
+.online-booking-toast{
+  position:relative;background:#0f172a;color:#e2e8f0;
+  border-left:4px solid #22c55e;border-radius:8px;
+  padding:10px 30px 10px 12px;font-size:12.5px;line-height:1.55;
+  box-shadow:0 6px 18px rgba(0,0,0,.28);
+  animation: online-toast-in .2s ease-out;
+}
+.online-booking-toast button{
+  position:absolute;top:6px;right:8px;background:none;border:none;
+  color:#94a3b8;font-size:13px;cursor:pointer;line-height:1;padding:2px;
+}
+.online-booking-toast button:hover{ color:#fff; }
+@keyframes online-toast-in{
+  from{ opacity:0; transform:translateX(16px); }
+  to  { opacity:1; transform:translateX(0); }
+}
 .nav-spacer{flex:1}
 .theme-toggle{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--muted);margin-right:10px;white-space:nowrap}
 .tog{width:34px;height:18px;background:#334155;border-radius:9px;position:relative;cursor:pointer;transition:background .2s}
@@ -1025,6 +1048,7 @@ function initFirebaseSync(){
   setSyncDot('syncing');
   window._fbListener = db.ref('bookings').on('value', snap => {
     bookings = snap.val() || {};
+    checkNewOnlineBookings(bookings);
     setSyncDot('ok');
     renderCalendar();
     // Resynchronise systématiquement dispo/dispo_profil sur la vraie
@@ -1039,6 +1063,14 @@ function initFirebaseSync(){
       requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 120); });
     }
   }, ()=>setSyncDot('error'));
+
+  // Pile de notifications "nouvelle réservation en ligne", partagée entre
+  // tous les postes du staff : se met à jour sur tous les écrans dès qu'une
+  // entrée est ajoutée (nouvelle réservation) ou retirée (fermée par un agent,
+  // sur n'importe quel poste).
+  db.ref('onlineToastQueue').on('value', snap => {
+    renderOnlineToastQueue(snap.val() || {});
+  });
 
   // Écouter les demandes en ligne
   db.ref('demandes').on('value', snap => {
@@ -1792,6 +1824,110 @@ function makeVrSlots(base){
 }
 
 const VR_SLOTS     = makeVrSlots(ALL_SLOTS);
+
+// ══════════════════════════════════════════════════════════════════════
+// Notifications "nouvelle réservation en ligne" (Laser, VR, Blind Test).
+// Persistantes via localStorage : une bulle reste affichée tant que
+// l'agent ne clique pas sur la croix, même après un rafraîchissement de
+// la page ou une fermeture/réouverture de l'onglet.
+// ══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// Notifications "nouvelle réservation en ligne" (Laser, VR, Blind Test).
+// Partagées entre TOUS les postes du staff via Firebase (onlineToastQueue) :
+// une bulle apparaît sur tous les postes connectés dès qu'une réservation
+// en ligne est créée, et disparaît PARTOUT dès qu'un agent la ferme —
+// peu importe qui la ferme ni sur quel poste.
+// ══════════════════════════════════════════════════════════════════════
+let seenBookingKeys = null; // référence propre à cet onglet, réinitialisée à chaque chargement
+
+// Les clés Firebase ne supportent pas '.', '#', '$', '[', ']', '/'
+function firebaseSafeKey(k){
+  return k.replace(/[.#$/[\]]/g, '_');
+}
+
+function checkNewOnlineBookings(newBookings){
+  const allKeys = Object.keys(newBookings);
+
+  if (seenBookingKeys === null){
+    // Premier passage de cet onglet : mémoriser l'état actuel comme
+    // référence, sans rien notifier — seules les VRAIES nouveautés à venir
+    // comptent. L'affichage des bulles déjà en file est géré séparément par
+    // le listener Firebase sur onlineToastQueue (partagé entre postes).
+    seenBookingKeys = new Set(allKeys);
+    return;
+  }
+
+  const added = allKeys.filter(k => !seenBookingKeys.has(k));
+  if (!added.length) return;
+  added.forEach(k => seenBookingKeys.add(k));
+
+  // Ne notifier que les réservations issues du formulaire en ligne
+  // (commentaire préfixé "[En ligne]"), pas les créations manuelles du staff.
+  const onlineAdded = added.filter(k => newBookings[k].comment && newBookings[k].comment.startsWith('[En ligne]'));
+  if (!onlineAdded.length) return;
+
+  // Regrouper par client (tel + date) pour n'ajouter qu'une seule bulle
+  // même si la réservation occupe plusieurs créneaux/casques (ex: Escape
+  // Game VR = jusqu'à 6 entrées pour une seule réservation).
+  const groups = {};
+  onlineAdded.forEach(k => {
+    const [activite, date, time] = k.split('|');
+    const v = newBookings[k];
+    const groupKey = `${v.tel}|${date}`;
+    if (!groups[groupKey]) groups[groupKey] = { activite, date, nom: v.nom, tel: v.tel, times: [] };
+    if (!groups[groupKey].times.includes(time)) groups[groupKey].times.push(time);
+  });
+
+  Object.entries(groups).forEach(async ([groupKey, g]) => {
+    g.times.sort();
+    const ref = db.ref(`onlineToastQueue/${firebaseSafeKey(groupKey)}`);
+    try {
+      const snap = await ref.once('value');
+      const existing = snap.val();
+      // Fusionne avec une bulle déjà en file (ex: nouveau créneau ajouté
+      // pour le même client le même jour) plutôt que d'écraser sa date
+      // d'arrivée (firstSeenAt), qui fixe sa position dans la pile.
+      const merged = existing
+        ? { ...existing, times: [...new Set([...existing.times, ...g.times])].sort() }
+        : { ...g, firstSeenAt: Date.now() };
+      await ref.set(merged);
+    } catch(e){ console.warn('Erreur file de notification :', e); }
+  });
+}
+
+// Reconstruit entièrement la pile de bulles à partir de l'état partagé
+// Firebase — appelé sur TOUS les postes à chaque changement (nouvelle
+// entrée ajoutée par n'importe quel poste, ou fermeture par n'importe qui).
+function renderOnlineToastQueue(queue){
+  let stack = document.getElementById('online-toast-stack');
+  const entries = Object.entries(queue || {}).sort((a,b) => (a[1].firstSeenAt||0) - (b[1].firstSeenAt||0));
+  if (!entries.length){
+    if (stack) stack.innerHTML = '';
+    return;
+  }
+  if(!stack){
+    stack = document.createElement('div');
+    stack.id = 'online-toast-stack';
+    document.body.appendChild(stack);
+  }
+  stack.innerHTML = entries.map(([groupKey, g]) => {
+    const actLabel = ACTIVITE_LABEL[g.activite] || g.activite;
+    const [y, mo, da] = (g.date||'').split('-');
+    return `
+      <div class="online-booking-toast">
+        <div style="font-weight:700;margin-bottom:2px">🆕 Nouvelle réservation en ligne</div>
+        <div>${actLabel}</div>
+        <div>${g.nom||'?'} · ${g.tel||''}</div>
+        <div>${da}/${mo}/${y} à ${(g.times||[]).join(', ')}</div>
+        <button aria-label="Fermer" onclick="dismissOnlineToast('${groupKey}')">✕</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function dismissOnlineToast(groupKey){
+  db.ref(`onlineToastQueue/${groupKey}`).remove().catch(()=>{});
+}
 const VR_SLOTS_NEW = makeVrSlots(ALL_SLOTS_NEW);
 
 // Renvoie les `span` créneaux VR consécutifs à partir de `time`, en marchant
