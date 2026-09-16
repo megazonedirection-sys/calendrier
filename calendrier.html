@@ -3397,11 +3397,13 @@ function getModifSlotsList(activite, dateStr){
 }
 
 // Nombre d'index de créneaux à sauter entre 2 sessions d'une même réservation
-// multi-sessions : Laser Game laisse une vraie pause de repos (index +2), les
-// autres activités (VR Zone, Blind Test) s'enchaînent directement (+1) —
-// même règle que côté formulaire client (resa-en-ligne.html).
+// multi-sessions à pas UNIFORME : Laser Game et EVG/EVJF laissent une vraie
+// pause de repos d'1 créneau (index +2), les autres activités (VR Zone,
+// Blind Test) s'enchaînent directement (+1) — même règle que côté formulaire
+// client (resa-en-ligne.html). Ne couvre PAS le Forfait Anniversaire, dont
+// les pauses sont asymétriques (voir computeAnnivCascadeTimes ci-dessous).
 function modifGapSteps(activiteLabel){
-  return activiteLabel === 'Laser Game' ? 2 : 1;
+  return (activiteLabel === 'Laser Game' || activiteLabel === 'EVG / EVJF') ? 2 : 1;
 }
 
 // Calcule, à partir d'une liste de créneaux et d'un horaire de départ, les
@@ -3416,6 +3418,27 @@ function computeCascadeTimes(slotsList, startTime, gapSteps, count){
     times.push(slotsList[idx]);
   }
   return times;
+}
+
+// Cas particulier du Forfait Anniversaire (3 parties, pauses ASYMÉTRIQUES) :
+// 1 créneau de pause après la 1ère partie, puis 2 créneaux de pause après la
+// 2e — ne peut pas être exprimé par un pas uniforme comme computeCascadeTimes.
+// Même règle que dans resa-en-ligne.html (submitForm).
+function computeAnnivCascadeTimes(slotsList, startTime){
+  const startIdx = slotsList.indexOf(startTime);
+  if(startIdx === -1) return [];
+  const idx2 = startIdx + 2; // +1 pour la partie 1, +1 pour la pause d'1 créneau
+  const idx3 = idx2 + 3;     // +1 pour la partie 2, +2 pour la pause de 2 créneaux
+  if(idx2 >= slotsList.length || idx3 >= slotsList.length) return [slotsList[startIdx]];
+  return [slotsList[startIdx], slotsList[idx2], slotsList[idx3]];
+}
+
+// Calcule les temps de cascade pour un groupe multi-sessions, en tenant
+// compte du cas particulier (asymétrique) du Forfait Anniversaire.
+function computeModifCascadeTimes(slotsList, startTime, activiteLabel, count){
+  return activiteLabel === 'Forfait Anniversaire'
+    ? computeAnnivCascadeTimes(slotsList, startTime)
+    : computeCascadeTimes(slotsList, startTime, modifGapSteps(activiteLabel), count);
 }
 
 // Ouvre la modale de proposition de nouvel horaire. Si la demande fait
@@ -3486,8 +3509,7 @@ function updateModifDemandePreview(){
     return;
   }
   const slots = getModifSlotsList(activite, dateVal);
-  const gap = modifGapSteps(activiteLabel);
-  const times = computeCascadeTimes(slots, timeVal, gap, membres.length);
+  const times = computeModifCascadeTimes(slots, timeVal, activiteLabel, membres.length);
   if(times.length < membres.length){
     preview.innerHTML = `<span style="color:#dc2626">⚠️ Pas assez de créneaux disponibles ce jour-là pour les ${membres.length} sessions à partir de cet horaire.</span>`;
   } else {
@@ -3508,8 +3530,7 @@ async function confirmModifierParStaff(){
 
   const { membres, activite, activiteLabel } = modifDemandeState;
   const slots = getModifSlotsList(activite, dateVal);
-  const gap   = modifGapSteps(activiteLabel);
-  const times = computeCascadeTimes(slots, startTime, gap, membres.length);
+  const times = computeModifCascadeTimes(slots, startTime, activiteLabel, membres.length);
   if(times.length < membres.length){
     alert('Pas assez de créneaux disponibles ce jour-là pour toutes les sessions à partir de cet horaire — choisissez un horaire plus tôt ou une autre date.');
     return;
