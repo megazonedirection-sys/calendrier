@@ -1266,6 +1266,16 @@ function initFirebaseSync(){
     renderOnlineToastQueue(snap.val() || {});
   });
 
+  // Nombre de gilets laser disponibles : partagé entre tous les postes du
+  // staff (modifié via le badge 🦺), et lu séparément par le formulaire en
+  // ligne pour respecter la vraie capacité.
+  db.ref('config/maxVests').on('value', snap => {
+    if (snap.exists()) {
+      MAX_VESTS = snap.val();
+      renderCalendar();
+    }
+  });
+
   // Écouter les demandes en ligne
   db.ref('demandes').on('value', snap => {
     demandes = snap.val() || {};
@@ -3225,6 +3235,11 @@ function confirmVest(){
   const v = parseInt(document.getElementById('vestInput').value);
   if(isNaN(v)||v<1||v>24){ alert('Valeur entre 1 et 24'); return; }
   MAX_VESTS = v;
+  // Persisté dans Firebase (et non une simple variable mémoire) : partagé
+  // entre tous les postes du staff, et lu aussi par le formulaire en ligne
+  // pour que le nombre maximum de joueurs en réservation en ligne respecte
+  // toujours la vraie capacité (ex: un gilet en réparation).
+  db.ref('config/maxVests').set(v).catch(e => console.warn('Erreur sauvegarde nombre de gilets:', e));
   closeVestModal();
   renderCalendar();
 }
