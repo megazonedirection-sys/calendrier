@@ -1595,18 +1595,50 @@ async function autoValiderGroupe(groupId, membres){
   }
 }
 
-// Email dédié au Forfait Anniversaire (2 ou 3 parties) — conditions et
-// tarifs spécifiques à cette formule, distincts du récapitulatif générique
-// multi-sessions utilisé pour Laser Game/VR Zone/Blind Test.
-function buildAnnivMessage(nom, dateF, heureDebut, heureFin, pers, prenomEnfant, totalSessions, paidExtra){
-  const jeuTxt = totalSessions >= 3 ? '3x20min de jeu' : '2x20min de jeu';
-  const noteExtra = paidExtra ? `🟡 Vous avez choisi d'offrir une 3ème partie au tarif de 5€/pers.\n\n` : '';
+// Email dédié au Forfait Anniversaire "2 parties" (week-end/vacances/été,
+// sans l'option payante).
+function buildAnniv2PartiesMessage(nom, dateF, heureDebut, heureFin, pers, prenomEnfant){
   return `Bonjour,\n` +
     `Voici un récapitulatif de votre réservation du ${dateF} pour l'anniversaire de ${prenomEnfant || nom} au Game Zone.\n` +
     `Afin de procéder à votre installation et briefing dans les meilleures conditions, merci de donner rendez-vous à ${heureDebut}\n` +
     `Prévoyez une fin d'anniversaire à ${heureFin}\n\n` +
-    noteExtra +
-    `Le forfait anniversaire est à 18€/pers incluant ${jeuTxt}, le dressage de la table, 1 bouteille de 1,5L/4 participants, une panière de bonbons et des photos offertes.\n` +
+    `Le forfait anniversaire est à 18€/pers incluant 2x20min de jeu, le dressage de la table, 1 bouteille de 1,5L/4 participants, une panière de bonbons et des photos offertes.\n` +
+    `La présence d'un adulte est obligatoire durant les pauses pour les enfants de - de 12 ans\n` +
+    `Vous avez réservé pour un maximum de ${pers} joueurs, nous attirons votre attention sur le fait qu'au-delà de ce nombre, nous ne pourrons vous garantir des places disponibles pour les participants supplémentaires.\n\n` +
+    `L'âge minimum est de 7 ans (pour la compréhension du jeu) et la taille minimale de 1.20 m (pour utiliser pleinement le matériel).Le staff Game Zone se réserve le droit de refuser l'accès à l'activité si ces conditions ne sont pas réunies.\n\n` +
+    `Vous trouverez les cartons d'invitations sur : https://8c68eeae-d4ff-4d3d-8fdb-a1c48bb0dd0a.filesusr.com/ugd/40b917_4762d18f1ab24deca3cec45b5c1786ea.pdf Le forfait anniversaire est limité à un minimum de 6 participants(es), en cas de nombre inférieur, le montant de 6 forfaits anniversaires vous sera facturé.\n\n` +
+    `Si vous ne l'avez pas déjà fait, nous vous recontacterons par téléphone 24h avant la date de réservation afin de confirmer le nombre de participants.\n` +
+    `Pour plus d'informations sur le déroulé, vous pouvez consulter le site : https://www.gamezone-montauban.com/ ou nous contacter au 05.63.03.79.32.\n` +
+    `Cordialement,`;
+}
+
+// Email dédié au Forfait Anniversaire "3 parties" classique — semaine, hors
+// week-end et hors vacances scolaires.
+function buildAnniv3PartiesSemaineMessage(nom, dateF, heureDebut, heureFin, pers, prenomEnfant){
+  return `Bonjour,\n` +
+    `Voici un récapitulatif de votre réservation du ${dateF} pour l'anniversaire de ${prenomEnfant || nom} au Game Zone.\n` +
+    `Afin de procéder à votre installation et briefing dans les meilleures conditions, merci de donner rendez-vous à ${heureDebut}\n` +
+    `Prévoyez une fin d'anniversaire à ${heureFin}\n\n` +
+    `Le forfait anniversaire hors week-end et semaine et hors vacances scolaires est à 18€/pers incluant 3x20min de jeu, le dressage de la table, 1 bouteille de 1,5L/4 participants, une panière de bonbons et des photos offertes.\n` +
+    `La présence d'un adulte est obligatoire durant les pauses pour les enfants de - de 12 ans\n` +
+    `Vous avez réservé pour un maximum de ${pers} joueurs, nous attirons votre attention sur le fait qu'au-delà de ce nombre, nous ne pourrons vous garantir des places disponibles pour les participants supplémentaires.\n\n` +
+    `L'âge minimum est de 7 ans (pour la compréhension du jeu) et la taille minimale de 1.20 m (pour utiliser pleinement le matériel).Le staff Game Zone se réserve le droit de refuser l'accès à l'activité si ces conditions ne sont pas réunies.\n\n` +
+    `Vous trouverez les cartons d'invitations sur : https://8c68eeae-d4ff-4d3d-8fdb-a1c48bb0dd0a.filesusr.com/ugd/40b917_4762d18f1ab24deca3cec45b5c1786ea.pdf Le forfait anniversaire est limité à un minimum de 6 participants(es), en cas de nombre inférieur, le montant de 6 forfaits anniversaires vous sera facturé.\n\n` +
+    `Si vous ne l'avez pas déjà fait, nous vous recontacterons par téléphone 24h avant la date de réservation afin de confirmer le nombre de participants.\n` +
+    `Pour plus d'informations sur le déroulé, vous pouvez consulter le site : https://www.gamezone-montauban.com/lasergame ou nous contacter au 05.63.03.79.32.\n` +
+    `Cordialement,`;
+}
+
+// Email dédié au Forfait Anniversaire "3 parties" avec option payante en
+// période réduite (week-end/vacances/été + 3e partie ajoutée à 5€/pers) —
+// même base que le forfait 2 parties, avec la mention de la 3e partie.
+function buildAnniv3PartiesOptionMessage(nom, dateF, heureDebut, heureFin, pers, prenomEnfant){
+  return `Bonjour,\n` +
+    `Voici un récapitulatif de votre réservation du ${dateF} pour l'anniversaire de ${prenomEnfant || nom} au Game Zone.\n` +
+    `Afin de procéder à votre installation et briefing dans les meilleures conditions, merci de donner rendez-vous à ${heureDebut}\n` +
+    `Prévoyez une fin d'anniversaire à ${heureFin}\n\n` +
+    `🟡 Vous avez choisi d'offrir une 3ème partie au tarif de 5€/pers.\n\n` +
+    `Le forfait anniversaire est à 18€/pers incluant 3x20min de jeu, le dressage de la table, 1 bouteille de 1,5L/4 participants, une panière de bonbons et des photos offertes.\n` +
     `La présence d'un adulte est obligatoire durant les pauses pour les enfants de - de 12 ans\n` +
     `Vous avez réservé pour un maximum de ${pers} joueurs, nous attirons votre attention sur le fait qu'au-delà de ce nombre, nous ne pourrons vous garantir des places disponibles pour les participants supplémentaires.\n\n` +
     `L'âge minimum est de 7 ans (pour la compréhension du jeu) et la taille minimale de 1.20 m (pour utiliser pleinement le matériel).Le staff Game Zone se réserve le droit de refuser l'accès à l'activité si ces conditions ne sont pas réunies.\n\n` +
@@ -1632,12 +1664,20 @@ async function sendGroupConfirmationEmail(membres){
   const heureFin   = addMinutesToTime(derniere.time, dureeDerniere);
   const activiteLabel = getClientActivityLabel(first);
 
-  // Forfait Anniversaire (2 ou 3 parties, t-anniv ou t-anniv3) → toujours le
-  // template dédié ; tout le reste garde le récapitulatif générique.
-  const isAnniv = first.forceType === 't-anniv' || first.forceType === 't-anniv3';
-  const message = isAnniv
-    ? buildAnnivMessage(first.nom, dateF, heureDebut, heureFin, first.pers, first.annivPrenom, membres.length, !!first.annivPaidExtra)
-    : buildClientMessage(first.nom, membres.map(m => m.ref).join(','), activiteLabel, dateF, heureDebut, heureFin, first.pers, membres.length, first.offerLabel || null);
+  // Forfait Anniversaire : 3 modèles distincts selon le cas exact.
+  let message;
+  if (first.forceType === 't-anniv') {
+    // 2 parties (week-end/vacances/été, sans option payante)
+    message = buildAnniv2PartiesMessage(first.nom, dateF, heureDebut, heureFin, first.pers, first.annivPrenom);
+  } else if (first.forceType === 't-anniv3' && first.annivPaidExtra) {
+    // 3 parties avec option payante (week-end/vacances/été)
+    message = buildAnniv3PartiesOptionMessage(first.nom, dateF, heureDebut, heureFin, first.pers, first.annivPrenom);
+  } else if (first.forceType === 't-anniv3') {
+    // 3 parties classique (semaine, hors vacances/week-end)
+    message = buildAnniv3PartiesSemaineMessage(first.nom, dateF, heureDebut, heureFin, first.pers, first.annivPrenom);
+  } else {
+    message = buildClientMessage(first.nom, membres.map(m => m.ref).join(','), activiteLabel, dateF, heureDebut, heureFin, first.pers, membres.length, first.offerLabel || null);
+  }
 
   try {
     const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
