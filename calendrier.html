@@ -1403,6 +1403,7 @@ async function sendClientConfirmationEmail(d, ref, notify){
         template_params: {
           to_email: d.mail,
           ref:      ref,
+          subject:  `Votre réservation est confirmée ! — Game Zone Montauban (réf. ${ref})`,
           message:  message
         }
       })
@@ -1670,7 +1671,7 @@ function buildAnnivMessageFor(d, dateF, heureDebut, heureFin){
 
 // Envoi générique d'un message déjà construit au client (utilisé quand le
 // message a été sélectionné en amont via buildAnnivMessageFor, entre autres).
-async function sendRawClientEmail(mail, ref, message){
+async function sendRawClientEmail(mail, ref, message, subject){
   if(!mail) return;
   try {
     const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
@@ -1680,7 +1681,7 @@ async function sendRawClientEmail(mail, ref, message){
         service_id:  EJS_SERVICE,
         template_id: EJS_TPL_CLIENT,
         user_id:     'DsCuGiMtzFItllTJk',
-        template_params: { to_email: mail, ref: ref, message: message }
+        template_params: { to_email: mail, ref: ref, subject: subject || `Votre réservation est confirmée ! — Game Zone Montauban (réf. ${ref})`, message: message }
       })
     });
     if(!r.ok){
@@ -1730,6 +1731,7 @@ async function sendGroupConfirmationEmail(membres){
         template_params: {
           to_email: first.mail,
           ref:      membres.map(m => m.ref).join(','),
+          subject:  `Votre réservation est confirmée ! — Game Zone Montauban (réf. ${membres.map(m => m.ref).join(',')})`,
           message:  message
         }
       })
@@ -3923,7 +3925,7 @@ async function sendClientRescheduleEmail(d, ref, ancienneDate, ancienneHeure){
         service_id:  EJS_SERVICE,
         template_id: EJS_TPL_CLIENT,
         user_id:     'DsCuGiMtzFItllTJk',
-        template_params: { to_email: d.mail, ref: ref, message: message }
+        template_params: { to_email: d.mail, ref: ref, subject: `Votre réservation est confirmée ! — Game Zone Montauban (réf. ${ref})`, message: message }
       })
     });
     if(!r.ok){
@@ -3967,7 +3969,7 @@ async function sendClientRescheduleEmailGroupe(membresModifies, ref, ancienneDat
         service_id:  EJS_SERVICE,
         template_id: EJS_TPL_CLIENT,
         user_id:     'DsCuGiMtzFItllTJk',
-        template_params: { to_email: premier.mail, ref: ref, message: message }
+        template_params: { to_email: premier.mail, ref: ref, subject: `Votre réservation est confirmée ! — Game Zone Montauban (réf. ${ref})`, message: message }
       })
     });
     if(!r.ok){
@@ -4092,6 +4094,7 @@ async function refuserDemande(ref){
         template_params: {
           to_email: d.mail,
           ref:      ref,
+          subject:  `Votre demande n'a pas pu être confirmée — Game Zone Montauban (réf. ${ref})`,
           message:
             `Bonjour ${d.nom} 👋\n\n` +
             `Merci d'avoir pensé à Game Zone Montauban pour votre prochaine aventure !\n\n` +
