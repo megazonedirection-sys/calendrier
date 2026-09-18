@@ -1648,6 +1648,50 @@ function buildAnniv3PartiesOptionMessage(nom, dateF, heureDebut, heureFin, pers,
     `Cordialement,`;
 }
 
+// Sélectionne le bon template email Forfait Anniversaire selon le type réel
+// de la réservation (2 parties / 3 parties classique / 3 parties option) —
+// utilisé aussi bien pour une validation normale (sendGroupConfirmationEmail)
+// que pour une reprogrammation via le bouton Modifier, afin que le client
+// reçoive toujours le mail correspondant à sa vraie formule, jamais le
+// récapitulatif générique multi-sessions. Renvoie null si ce n'est pas un
+// forfait anniversaire.
+function buildAnnivMessageFor(d, dateF, heureDebut, heureFin){
+  if (d.forceType === 't-anniv') {
+    return buildAnniv2PartiesMessage(d.nom, dateF, heureDebut, heureFin, d.pers, d.annivPrenom);
+  }
+  if (d.forceType === 't-anniv3' && d.annivPaidExtra) {
+    return buildAnniv3PartiesOptionMessage(d.nom, dateF, heureDebut, heureFin, d.pers, d.annivPrenom);
+  }
+  if (d.forceType === 't-anniv3') {
+    return buildAnniv3PartiesSemaineMessage(d.nom, dateF, heureDebut, heureFin, d.pers, d.annivPrenom);
+  }
+  return null;
+}
+
+// Envoi générique d'un message déjà construit au client (utilisé quand le
+// message a été sélectionné en amont via buildAnnivMessageFor, entre autres).
+async function sendRawClientEmail(mail, ref, message){
+  if(!mail) return;
+  try {
+    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  EJS_SERVICE,
+        template_id: EJS_TPL_CLIENT,
+        user_id:     'DsCuGiMtzFItllTJk',
+        template_params: { to_email: mail, ref: ref, message: message }
+      })
+    });
+    if(!r.ok){
+      const t = await r.text();
+      console.warn('⚠️ Erreur envoi email :', t);
+    }
+  } catch(e) {
+    console.warn('⚠️ Erreur réseau — email non envoyé à', mail, e);
+  }
+}
+
 // Email de confirmation unique pour une réservation multi-session
 // (Laser Game, VR Zone ou Blind Test Musical).
 async function sendGroupConfirmationEmail(membres){
@@ -1664,17 +1708,13 @@ async function sendGroupConfirmationEmail(membres){
   const heureFin   = addMinutesToTime(derniere.time, dureeDerniere);
   const activiteLabel = getClientActivityLabel(first);
 
-  // Forfait Anniversaire : 3 modèles distincts selon le cas exact.
+  // Forfait Anniversaire (2 ou 3 parties, t-anniv ou t-anniv3) → toujours le
+  // template dédié via buildAnnivMessageFor ; tout le reste garde le
+  // récapitulatif générique.
+  const annivMsg = buildAnnivMessageFor(first, dateF, heureDebut, heureFin);
   let message;
-  if (first.forceType === 't-anniv') {
-    // 2 parties (week-end/vacances/été, sans option payante)
-    message = buildAnniv2PartiesMessage(first.nom, dateF, heureDebut, heureFin, first.pers, first.annivPrenom);
-  } else if (first.forceType === 't-anniv3' && first.annivPaidExtra) {
-    // 3 parties avec option payante (week-end/vacances/été)
-    message = buildAnniv3PartiesOptionMessage(first.nom, dateF, heureDebut, heureFin, first.pers, first.annivPrenom);
-  } else if (first.forceType === 't-anniv3') {
-    // 3 parties classique (semaine, hors vacances/week-end)
-    message = buildAnniv3PartiesSemaineMessage(first.nom, dateF, heureDebut, heureFin, first.pers, first.annivPrenom);
+  if (annivMsg !== null) {
+    message = annivMsg;
   } else {
     message = buildClientMessage(first.nom, membres.map(m => m.ref).join(','), activiteLabel, dateF, heureDebut, heureFin, first.pers, membres.length, first.offerLabel || null);
   }
@@ -3690,14 +3730,27 @@ async function confirmModifierParStaff(){
       await db.ref(`demandes/${membres[i].ref}`).update({ date: dateVal, time: times[i], status: 'accepted' });
     }
 
-    if(membres.length > 1){
+    // Forfait Anniversaire : toujours le template dédié (2/3 parties, avec ou
+    // sans option), avec les NOUVEAUX horaires — jamais le mail générique de
+    // reprogrammation, qui ne mentionne ni la formule ni le prénom de l'enfant.
+    const premierModifie = { ...premier, date: dateVal, time: times[0] };
+    const dureeDerniereModif = SESSION_DURATION_MIN['Forfait Anniversaire'] || 20;
+    const heureDebutModif = addMinutesToTime(times[0], -15);
+    const heureFinModif   = addMinutesToTime(times[times.length - 1], dureeDerniereModif);
+    const [my, mmo, mda]  = dateVal.split('-');
+    const dateFModif      = mda ? `${mda}/${mmo}/${my}` : dateVal;
+    const annivMsgModif   = buildAnnivMessageFor(premierModifie, dateFModif, heureDebutModif, heureFinModif);
+
+    if (annivMsgModif !== null) {
+      await sendRawClientEmail(premierModifie.mail, membres[0].ref, annivMsgModif);
+    } else if(membres.length > 1){
       await sendClientRescheduleEmailGroupe(
         membres.map((m,i) => ({ ...m.d, date: dateVal, time: times[i] })),
         membres[0].ref,
         ancienneDate, ancienneHeure
       );
     } else {
-      await sendClientRescheduleEmail({ ...premier, date: dateVal, time: times[0] }, membres[0].ref, ancienneDate, ancienneHeure);
+      await sendClientRescheduleEmail(premierModifie, membres[0].ref, ancienneDate, ancienneHeure);
     }
 
     closeModifDemandeModal();
