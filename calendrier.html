@@ -1741,7 +1741,19 @@ async function sendGroupConfirmationEmail(membres){
 }
 
 function updateDemandesBadge(){
-  const pending = Object.values(demandes).filter(d=>d.status==='pending').length;
+  // Compte les réservations réelles (une réservation multi-sessions groupée
+  // = 1, pas le nombre de sessions qui la composent) — cohérent avec
+  // l'affichage groupé du panneau Demandes.
+  const seenGroups = new Set();
+  let pending = 0;
+  Object.values(demandes).forEach(d => {
+    if(d.status !== 'pending') return;
+    if(d.groupId){
+      if(seenGroups.has(d.groupId)) return;
+      seenGroups.add(d.groupId);
+    }
+    pending++;
+  });
 
   // ── Pastille dans le menu ──
   let badge = document.getElementById('demandesBadge');
@@ -3439,28 +3451,54 @@ function openDemandesPanel(){
   document.getElementById('demandesOverlay').style.display='flex';
 }
 
+// Regroupe les entrées partageant un même groupId (réservations multi-
+// sessions : anniversaire, EVG, Just Play, Four Play, VR Zone multi) en un
+// seul groupe, pour n'afficher qu'une seule carte par réservation réelle
+// dans le panneau Demandes.
+function groupDemandesEntries(entries){
+  const seen = new Set();
+  const groups = [];
+  entries.forEach(([ref, d]) => {
+    if(d.groupId){
+      if(seen.has(d.groupId)) return;
+      seen.add(d.groupId);
+      const membres = entries
+        .filter(([r, dd]) => dd.groupId === d.groupId)
+        .sort((a,b) => (a[1].time||'').localeCompare(b[1].time||''))
+        .map(([r, dd]) => ({ref:r, d:dd}));
+      groups.push(membres);
+    } else {
+      groups.push([{ref, d}]);
+    }
+  });
+  return groups;
+}
+
 function renderDemandes(){
   const body = document.getElementById('demandesBody');
   const list = Object.entries(demandes).sort((a,b)=>b[1].createdAt-a[1].createdAt);
-  const pending = list.filter(([,d])=>d.status==='pending');
-  const done    = list.filter(([,d])=>d.status!=='pending');
+  const pendingGroups = groupDemandesEntries(list.filter(([,d])=>d.status==='pending'));
+  const doneGroups    = groupDemandesEntries(list.filter(([,d])=>d.status!=='pending'));
 
   let html = '';
-  if(!pending.length && !done.length){
+  if(!pendingGroups.length && !doneGroups.length){
     html = '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:15px">Aucune demande reçue pour le moment.</div>';
   }
-  if(pending.length){
-    html += `<div style="font-size:13px;font-weight:800;color:#0369a1;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">⏳ En attente de validation (${pending.length})</div>`;
-    pending.forEach(([ref,d])=>{ html += demandeCard(ref,d); });
+  if(pendingGroups.length){
+    html += `<div style="font-size:13px;font-weight:800;color:#0369a1;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">⏳ En attente de validation (${pendingGroups.length})</div>`;
+    pendingGroups.forEach(membres => { html += demandeCard(membres); });
   }
-  if(done.length){
+  if(doneGroups.length){
     html += `<div style="font-size:13px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin:24px 0 12px">Traitées</div>`;
-    done.forEach(([ref,d])=>{ html += demandeCard(ref,d); });
+    doneGroups.forEach(membres => { html += demandeCard(membres); });
   }
   body.innerHTML = html;
 }
 
-function demandeCard(ref, d){
+function demandeCard(membres){
+  const ref = membres[0].ref;
+  const d   = membres[0].d;
+  const isGroup = membres.length > 1;
   const [y,mo,da] = (d.date||'').split('-');
   const dateF = da?`${da}/${mo}/${y}`:d.date;
   const isPending = d.status==='pending';
@@ -3470,6 +3508,29 @@ function demandeCard(ref, d){
   const isSuccess = d.status === 'accepted' || d.status === 'processed';
   const borderColor = isPending ? '#f97316' : isSuccess ? '#16a34a' : isRefused ? '#ef4444' : '#94a3b8';
   const statusLabel = isPending ? '⏳ En attente' : isSuccess ? '✅ Confirmée' : isRefused ? '❌ Refusée' : `❓ ${d.status || 'Statut inconnu'}`;
+  // Plusieurs sessions liées → une seule ligne "📅 date à h1, h2, h3" au lieu
+  // d'une carte par session.
+  const heures = membres.map(m => m.d.time).join(', ');
+  const sessionsBadge = isGroup
+    ? `<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">🔗 ${membres.length} sessions liées</span>`
+    : '';
+  // Pour un groupe : Valider/Refuser restent globaux (toute la réservation),
+  // mais Modifier/Supprimer sont proposés PAR session ci-dessous — permet de
+  // corriger ou retirer une seule session erronée sans toucher aux autres,
+  // plutôt que de risquer de reprendre/supprimer toute la réservation par
+  // erreur.
+  const sessionsList = isGroup ? `
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+          ${membres.map(m => `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:5px 8px">
+              <span style="font-size:12px;font-weight:600">🕐 ${m.d.time}</span>
+              <div style="display:flex;gap:4px">
+                ${isPending?`<button onclick="openModifSingleSessionModal('${m.ref}')" title="Modifier uniquement cette session" style="padding:3px 8px;background:#fff;color:#7c3aed;border:1px solid #c4b5fd;border-radius:6px;font-size:11px;cursor:pointer">✏️</button>`:''}
+                <button onclick="supprimerDemande('${m.ref}')" title="Supprimer uniquement cette session" style="padding:3px 8px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;cursor:pointer">🗑</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>` : '';
 
   return `
   <div style="border:2px solid ${borderColor};border-radius:10px;padding:16px;margin-bottom:12px;background:${isPending?'#fff7ed':'#f8fafc'}">
@@ -3481,21 +3542,23 @@ function demandeCard(ref, d){
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${d.activiteLabel==='Escape Game VR'?'🔓 Escape Game VR':d.activiteLabel&&d.activiteLabel.startsWith('VR Zone')?'🥽 VR Zone':(ACTIVITE_LABEL[d.activite]||d.activite)}</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.forceType || d.type]||d.forceType||d.type}</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">👥 ${d.pers} joueurs</span>
-          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${d.time}</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${heures}</span>
+          ${sessionsBadge}
           ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
         </div>
         ${isPending && d.autoReason && AUTO_REASON_LABEL[d.autoReason]?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">${AUTO_REASON_LABEL[d.autoReason]}</div>`:''}
         ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${boldBreakdownNumbers(d.comment)}</div>`:''}
-        <div style="margin-top:6px;font-size:11px;color:#94a3b8">Ref: ${ref} · Reçue ${ago}</div>
+        ${sessionsList}
+        <div style="margin-top:6px;font-size:11px;color:#94a3b8">${isGroup ? '' : `Ref: ${ref} · `}Reçue ${ago}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
         <span style="font-size:12px;font-weight:700;color:${borderColor};text-align:center">${statusLabel}</span>
         ${isPending?`
         <button onclick="accepterDemande('${ref}')" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">✅ Valider</button>
         <button onclick="refuserDemande('${ref}')" style="padding:8px 16px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">❌ Refuser</button>
-        <button onclick="openModifDemandeModal('${ref}')" title="Propose un nouvel horaire au client : la réservation passe directement en Confirmée à ce nouvel horaire" style="padding:6px 12px;background:#fff;color:#7c3aed;border:1.5px solid #c4b5fd;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">✏️ Modifier</button>
+        ${!isGroup?`<button onclick="openModifDemandeModal('${ref}')" title="Propose un nouvel horaire au client : la réservation passe directement en Confirmée à ce nouvel horaire" style="padding:6px 12px;background:#fff;color:#7c3aed;border:1.5px solid #c4b5fd;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">✏️ Modifier</button>`:''}
         `:''}
-        <button onclick="supprimerDemande('${ref}')" style="padding:6px 12px;background:#f1f5f9;color:#64748b;border:1.5px solid #e2e8f0;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">🗑 Supprimer</button>
+        ${!isGroup?`<button onclick="supprimerDemande('${ref}')" style="padding:6px 12px;background:#f1f5f9;color:#64748b;border:1.5px solid #e2e8f0;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">🗑 Supprimer</button>`:''}
       </div>
     </div>
   </div>`;
@@ -3567,6 +3630,13 @@ function computeAnnivCascadeTimes(slotsList, startTime, count){
   const startIdx = slotsList.indexOf(startTime);
   if(startIdx === -1) return [];
 
+  if(count === 1){
+    // Modification d'une seule session isolée (via openModifSingleSessionModal),
+    // même si elle fait partie d'un groupe — ne jamais recalculer de sessions
+    // supplémentaires dans ce cas.
+    return [slotsList[startIdx]];
+  }
+
   if(count === 2){
     const idx2 = startIdx + 3; // 1 partie + 2 créneaux de pause
     if(idx2 >= slotsList.length) return [slotsList[startIdx]];
@@ -3612,6 +3682,32 @@ function openModifDemandeModal(ref){
 
   document.getElementById('modifDemandeSub').textContent =
     `${d.nom||'Client'} — ${membres.length > 1 ? membres.length + ' sessions liées, à partir du ' + d.date + ' à ' + d.time : (ACTIVITE_LABEL[d.activite]||d.activite) + ', actuellement le ' + d.date + ' à ' + d.time}`;
+
+  const dateInput = document.getElementById('modifDemandeDate');
+  dateInput.value = d.date;
+  dateInput.min = new Date().toISOString().slice(0,10);
+  populateModifDemandeTimeSelect();
+  document.getElementById('modifDemandeOverlay').classList.add('open');
+}
+
+// Variante "session unique" : modifie UNIQUEMENT la session cliquée, même si
+// elle fait partie d'un groupe multi-sessions — jamais les autres sessions
+// liées. Utile pour corriger une session erronée sans risquer de reprendre
+// toute la réservation par erreur (contrairement à openModifDemandeModal,
+// volontairement group-aware pour la validation globale).
+function openModifSingleSessionModal(ref){
+  const d = demandes[ref];
+  if(!d){ alert('Demande introuvable (déjà traitée ?).'); return; }
+
+  modifDemandeState = {
+    membres: [{ref, d}],
+    activite: d.activite || 'laser',
+    activiteLabel: d.activiteLabel || '',
+    singleSessionOnly: true,
+  };
+
+  document.getElementById('modifDemandeSub').textContent =
+    `${d.nom||'Client'} — cette session uniquement (${ACTIVITE_LABEL[d.activite]||d.activite}), actuellement le ${d.date} à ${d.time}`;
 
   const dateInput = document.getElementById('modifDemandeDate');
   dateInput.value = d.date;
@@ -3675,7 +3771,33 @@ async function confirmModifierParStaff(){
   const startTime = document.getElementById('modifDemandeTime').value;
   if(!dateVal || !startTime){ alert('Merci de choisir une date et un horaire.'); return; }
 
-  const { membres, activite, activiteLabel } = modifDemandeState;
+  const { membres, activite, activiteLabel, singleSessionOnly } = modifDemandeState;
+
+  // Correction d'une session isolée (avant validation) : on ajuste juste
+  // l'horaire de CETTE demande, qui reste "en attente" — aucune réservation
+  // créée, aucun email envoyé (aucun email ne part avant validation). Le mail
+  // de confirmation partira normalement au moment du "Valider" global, avec
+  // les horaires corrigés.
+  if(singleSessionOnly){
+    const ref = membres[0].ref;
+    const ancien = membres[0].d;
+    if(!confirm(
+      `Corriger cette session : ${dateVal} à ${startTime} (au lieu du ${ancien.date} à ${ancien.time}) ?\n\n` +
+      `Aucun email n'est envoyé à ce stade — la demande reste en attente de validation.`
+    )) return;
+    try {
+      await db.ref(`demandes/${ref}`).update({ date: dateVal, time: startTime });
+      if(demandes[ref]){ demandes[ref].date = dateVal; demandes[ref].time = startTime; }
+      closeModifDemandeModal();
+      renderDemandes();
+      alert('✅ Horaire de cette session corrigé. Cliquez sur "Valider" sur la carte de la réservation quand elle est prête à être confirmée.');
+    } catch(e) {
+      console.error('Erreur correction session:', e);
+      alert('⚠️ Erreur lors de la correction : ' + e.message);
+    }
+    return;
+  }
+
   const slots = getModifSlotsList(activite, dateVal);
   const times = computeModifCascadeTimes(slots, startTime, activiteLabel, membres.length);
   if(times.length < membres.length){
@@ -3734,6 +3856,10 @@ async function confirmModifierParStaff(){
     // Forfait Anniversaire : toujours le template dédié (2/3 parties, avec ou
     // sans option), avec les NOUVEAUX horaires — jamais le mail générique de
     // reprogrammation, qui ne mentionne ni la formule ni le prénom de l'enfant.
+    // Exception : correction d'une SEULE session isolée (openModifSingleSessionModal)
+    // — dans ce cas, envoyer le mail complet "réservation confirmée" serait
+    // trompeur puisque les autres sessions du forfait peuvent rester
+    // inchangées ou encore en attente ; on garde alors le mail générique.
     const premierModifie = { ...premier, date: dateVal, time: times[0] };
     const dureeDerniereModif = SESSION_DURATION_MIN['Forfait Anniversaire'] || 20;
     const heureDebutModif = addMinutesToTime(times[0], -15);
@@ -3938,10 +4064,23 @@ async function accepterDemandeInner(ref){
 }
 
 async function refuserDemande(ref){
-  if(!confirm('Refuser cette demande ?')) return;
   const d = demandes[ref];
-  await db.ref(`demandes/${ref}/status`).set('refused');
-  // Email de refus au client via EmailJS
+  if(!d) return;
+  // Group-aware : si cette demande fait partie d'un groupe multi-sessions
+  // (anniversaire, EVG, Just Play, Four Play, VR Zone multi), refuser
+  // TOUTES les sessions liées ensemble — sinon les autres resteraient
+  // orphelines "en attente" sans qu'aucune carte ne les affiche plus.
+  const membres = d.groupId
+    ? Object.entries(demandes).filter(([r, dd]) => dd.groupId === d.groupId && dd.status === 'pending')
+    : [[ref, d]];
+
+  if(!confirm(membres.length > 1 ? `Refuser ces ${membres.length} sessions liées ?` : 'Refuser cette demande ?')) return;
+
+  for(const [r] of membres){
+    await db.ref(`demandes/${r}/status`).set('refused');
+  }
+
+  // Email de refus au client via EmailJS (un seul email, pas un par session)
   if(d && d.mail){
     fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
