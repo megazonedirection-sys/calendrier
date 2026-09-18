@@ -3430,7 +3430,8 @@ const AUTO_REASON_LABEL = {
 const TYPE_LABEL_D = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
   't-anniv3':'Anniversaire 3 parties','t-evc':'EVC','t-club':'Club & Asso',
-  't-centre':'Centre de loisirs','t-team':'All Play'
+  't-centre':'Centre de loisirs','t-team':'All Play','t-jeu3':'Just Play',
+  't-vendredi':'Four Play','t-escapevr':'Escape Game VR'
 };
 
 function openDemandesPanel(){
@@ -3478,7 +3479,7 @@ function demandeCard(ref, d){
         ${d.mail?`<div style="font-size:12px;color:#64748b">${escapeHtml(d.mail)}</div>`:''}
         <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${d.activiteLabel==='Escape Game VR'?'🔓 Escape Game VR':d.activiteLabel&&d.activiteLabel.startsWith('VR Zone')?'🥽 VR Zone':(ACTIVITE_LABEL[d.activite]||d.activite)}</span>
-          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.type]||d.type}</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.forceType || d.type]||d.forceType||d.type}</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">👥 ${d.pers} joueurs</span>
           <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${d.time}</span>
           ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
