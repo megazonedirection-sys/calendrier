@@ -3502,13 +3502,25 @@ function computeCascadeTimes(slotsList, startTime, gapSteps, count){
   return times;
 }
 
-// Cas particulier du Forfait Anniversaire (3 parties, pauses ASYMÉTRIQUES) :
-// 1 créneau de pause après la 1ère partie, puis 2 créneaux de pause après la
-// 2e — ne peut pas être exprimé par un pas uniforme comme computeCascadeTimes.
-// Même règle que dans resa-en-ligne.html (submitForm).
-function computeAnnivCascadeTimes(slotsList, startTime){
+// Cas particulier du Forfait Anniversaire, pauses ASYMÉTRIQUES — ne peut pas
+// être exprimé par un pas uniforme comme computeCascadeTimes :
+// - `count` (le nombre réel de membres du groupe) fait foi : 2 membres → 2
+//   parties par défaut (week-end/vacances/été), avec 2 créneaux de pause.
+// - 3 membres → 3 parties (semaine normale, OU week-end/vacances avec la 3e
+//   partie payante) : 1 créneau de pause après la 1ère, 2 créneaux après la 2e.
+// Se baser sur `count` plutôt que sur la seule période évite justement le
+// bug où une "session 3" fantôme apparaissait dans l'aperçu/la confirmation
+// du bouton Modifier pour un groupe qui n'avait réellement que 2 sessions.
+function computeAnnivCascadeTimes(slotsList, startTime, count){
   const startIdx = slotsList.indexOf(startTime);
   if(startIdx === -1) return [];
+
+  if(count === 2){
+    const idx2 = startIdx + 3; // 1 partie + 2 créneaux de pause
+    if(idx2 >= slotsList.length) return [slotsList[startIdx]];
+    return [slotsList[startIdx], slotsList[idx2]];
+  }
+
   const idx2 = startIdx + 2; // +1 pour la partie 1, +1 pour la pause d'1 créneau
   const idx3 = idx2 + 3;     // +1 pour la partie 2, +2 pour la pause de 2 créneaux
   if(idx2 >= slotsList.length || idx3 >= slotsList.length) return [slotsList[startIdx]];
@@ -3516,10 +3528,11 @@ function computeAnnivCascadeTimes(slotsList, startTime){
 }
 
 // Calcule les temps de cascade pour un groupe multi-sessions, en tenant
-// compte du cas particulier (asymétrique) du Forfait Anniversaire.
+// compte du cas particulier (asymétrique, 2 ou 3 parties) du Forfait
+// Anniversaire.
 function computeModifCascadeTimes(slotsList, startTime, activiteLabel, count){
   return activiteLabel === 'Forfait Anniversaire'
-    ? computeAnnivCascadeTimes(slotsList, startTime)
+    ? computeAnnivCascadeTimes(slotsList, startTime, count)
     : computeCascadeTimes(slotsList, startTime, modifGapSteps(activiteLabel), count);
 }
 
