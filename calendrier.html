@@ -751,7 +751,7 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
       <!-- RIGHT -->
       <div class="modal-col">
         <div class="col-title">Détails réservation</div>
-        <div class="fg">
+        <div class="fg" id="fPersGroup">
           <label>👥 Nombre de joueurs *</label>
           <input type="number" id="fPers" min="1" max="24" value="4" readonly oninput="autoUpdateType()">
           <div style="font-size:11px;color:#94a3b8;margin-top:4px" id="fPers-hint">Champ indicatif — modifiez la répartition par âge ci-dessous pour changer le nombre.</div>
@@ -1951,6 +1951,10 @@ const PAY_CLASS = {'attente':'pay-attente','paye':'pay-paye','incomplet':'pay-in
 
 // Nombre minimal de joueurs selon la formule
 const MIN_PERS_BY_TYPE = {'t-anniv':6,'t-anniv3':6,'t-evc':6,'t-groupe':12};
+// Ces 3 types servent uniquement à noter une info/un "post-it" pour le staff
+// (congé, créneau bloqué, message libre) — ce ne sont pas de vraies
+// réservations, donc pas de nombre de joueurs à renseigner.
+const NO_PERS_TYPES = ['t-message', 't-conge', 't-bloque'];
 // Durée VR en nombre de créneaux ALL_SLOTS (20 min chacun)
 const VR_DURATION = {'t-vrzone':1,'t-escapevr':3}; // 20 min (opérateur valide la suite) / 60 min
 
@@ -2664,7 +2668,7 @@ function adaptModalForView(){
 function updateAgeGroupVisibility(){
   const type = document.getElementById('fType') ? document.getElementById('fType').value : '';
   const isEscape = (currentView === 'vr' && type === 't-escapevr');
-  const show = (currentView === 'laser' || currentView === 'bt' || currentView === 'vr');
+  const show = (currentView === 'laser' || currentView === 'bt' || currentView === 'vr') && !NO_PERS_TYPES.includes(type);
   document.getElementById('fAgeGroup').style.display = show ? '' : 'none';
   if(!show) return;
 
@@ -2773,6 +2777,8 @@ function autoUpdateType(){
 function updatePersMin(){
   if(!pendingSlot) return;
   const type = document.getElementById('fType').value;
+  const persGroup = document.getElementById('fPersGroup');
+  if(persGroup) persGroup.style.display = NO_PERS_TYPES.includes(type) ? 'none' : '';
   const isVR = currentView==='vr';
   const isBT = currentView==='bt';
   const baseMin = isVR ? 1 : (isBT ? 4 : 1);
@@ -2860,9 +2866,12 @@ function confirmBooking(){
   const nom=document.getElementById('fNom').value.trim();
   const mail=document.getElementById('fMail').value.trim();
   const comment=document.getElementById('fComment').value.trim();
-  const pers=parseInt(document.getElementById('fPers').value)||0;
+  let pers=parseInt(document.getElementById('fPers').value)||0;
   const type=document.getElementById('fType').value;
   const pay=document.getElementById('fPay').value;
+  // Types "post-it" pour le staff (message, congé, bloqué) : aucun impact sur
+  // la capacité, quelle que soit la valeur restée dans le champ caché.
+  if(NO_PERS_TYPES.includes(type)) pers = 0;
 
   // ── Répartition d'âge (Laser Game, Blind Test, VR Zone, Escape Game VR) ──
   let ageFields = {};
@@ -2884,17 +2893,19 @@ function confirmBooking(){
   if(!/^\d{10}$/.test(tel)){ alert('Le numéro de téléphone doit contenir exactement 10 chiffres.'); document.getElementById('fTel').focus(); return; }
   if(!nom){ document.getElementById('fNom').focus(); return; }
   const maxP = currentView==='vr' ? 4 : (currentView==='bt' ? 12 : 24);
-  if(pers<1||pers>maxP){ alert(`Nombre de joueurs invalide (1-${maxP})`); return; }
+  if(!NO_PERS_TYPES.includes(type) && (pers<1||pers>maxP)){ alert(`Nombre de joueurs invalide (1-${maxP})`); return; }
 
   // ── Validation minimum par type ─────────────────────────────────────────────
-  const minP = MIN_PERS_BY_TYPE[type] || 1;
-  if(pers < minP){
-    showAlert(
-      'Nombre de joueurs insuffisant',
-      `La formule « ${TYPES_LABEL[type]} » nécessite au minimum ${minP} joueurs.\nActuellement saisi : ${pers}.`
-    );
-    document.getElementById('fPers').focus();
-    return;
+  if(!NO_PERS_TYPES.includes(type)){
+    const minP = MIN_PERS_BY_TYPE[type] || 1;
+    if(pers < minP){
+      showAlert(
+        'Nombre de joueurs insuffisant',
+        `La formule « ${TYPES_LABEL[type]} » nécessite au minimum ${minP} joueurs.\nActuellement saisi : ${pers}.`
+      );
+      document.getElementById('fPers').focus();
+      return;
+    }
   }
 
   const{date,time,slot,isEdit,key}=pendingSlot;
