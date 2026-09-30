@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Planning équipe – GameZone Montauban</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#150d1f; --panel:#1f1430; --panel2:#281a3d; --line:#3a2852;
+  --text:#f3ecfa; --muted:#a898bd;
+  --boss:#ff8a2a; --melodie:#ff3d9a; --kelian:#9d6bff;
+  --ok:#4ade80; --warn:#ffcc33; --bad:#ff5a5a;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.45 "Barlow",system-ui,sans-serif;min-height:100vh}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:.45rem .8rem}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--boss);border-color:var(--boss);color:#1a0d05;font-weight:600}
+button.danger{border-color:var(--bad);color:var(--bad)}
+:focus-visible{outline:2px solid var(--melodie);outline-offset:2px}
+
+.top{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.8rem 1.2rem;border-bottom:1px solid var(--line)}
+.brand{font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:1.05rem;letter-spacing:.02em}
+.brand small{font-weight:500;color:var(--muted);margin-left:.4rem;font-size:.9rem}
+.auth{display:flex;align-items:center;gap:.6rem;font-size:.85rem;color:var(--muted)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-right:.35rem}
+.dot.on{background:var(--ok)}
+
+.monthbar{display:flex;align-items:center;justify-content:center;gap:1.2rem;padding:1.4rem 1rem .6rem}
+.monthbar h1{font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:clamp(1.8rem,5vw,2.8rem);margin:0;min-width:9ch;text-align:center;text-transform:capitalize;
+  background:linear-gradient(90deg,var(--boss),var(--melodie) 55%,var(--kelian));-webkit-background-clip:text;background-clip:text;color:transparent}
+.monthbar button{font-size:1.4rem;line-height:1;width:2.6rem;height:2.6rem;border-radius:50%;padding:0}
+
+.people{display:flex;justify-content:center;flex-wrap:wrap;gap:.5rem;padding:.2rem 1rem 1rem}
+.chip{display:flex;align-items:center;gap:.45rem;border-radius:999px;padding:.3rem .8rem;background:transparent}
+.chip i{width:10px;height:10px;border-radius:50%}
+.chip[aria-pressed="true"]{background:var(--panel2);border-color:var(--text)}
+
+.adminbar{display:flex;flex-wrap:wrap;justify-content:center;gap:.5rem;padding:0 1rem 1rem}
+.banner{max-width:900px;margin:0 auto 1rem;padding:.8rem 1rem;border:1px dashed var(--warn);border-radius:10px;color:var(--warn);font-size:.9rem}
+.banner code{color:var(--text);user-select:all;word-break:break-all}
+
+#weeks{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,460px),1fr));gap:1.2rem;padding:0 1rem 3rem;max-width:1500px;margin:0 auto}
+.week{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.week header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:.5rem;padding:.7rem .9rem;border-bottom:1px solid var(--line)}
+.week h2{font-family:"Chakra Petch",sans-serif;font-size:1rem;margin:0;font-weight:700}
+.period{font-size:.8rem;color:var(--muted)}
+.wkadmin{display:flex;flex-wrap:wrap;gap:.35rem;width:100%}
+.wkadmin select,.wkadmin button{font-size:.8rem;padding:.25rem .5rem;background:var(--panel2);border:1px solid var(--line);border-radius:6px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:360px}
+th,td{padding:.45rem .4rem;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+thead th{font-family:"Chakra Petch",sans-serif;font-size:.85rem;font-weight:500}
+thead th.c-boss{color:var(--boss)} thead th.c-melodie{color:var(--melodie)} thead th.c-kelian{color:var(--kelian)}
+th.day,td.day{width:64px;color:var(--muted);font-size:.85rem}
+td.day b{display:block;color:var(--text);font-size:1rem;font-family:"Chakra Petch",sans-serif}
+tr.out td{opacity:.35}
+tr.today td.day b{color:var(--warn)}
+tr.closed td{background:repeating-linear-gradient(135deg,transparent 0 6px,rgba(255,255,255,.025) 6px 12px);color:var(--muted);font-size:.85rem}
+td.cell{font-size:.9rem;white-space:nowrap}
+td.cell.editable{cursor:pointer}
+td.cell.editable:hover{background:var(--panel2)}
+.t{font-weight:600}
+.bar{position:relative;height:4px;border-radius:2px;background:rgba(255,255,255,.07);margin-top:.3rem}
+.bar span{position:absolute;top:0;bottom:0;border-radius:2px}
+.c-boss .bar span{background:var(--boss)} .c-melodie .bar span{background:var(--melodie)} .c-kelian .bar span{background:var(--kelian)}
+.off{color:var(--muted);font-style:italic}
+.empty{color:var(--line)}
+.note{display:block;font-size:.75rem;color:var(--muted);white-space:normal}
+.short td.day::after{content:"⚠";color:var(--warn);margin-left:.2rem}
+.shortmsg td{color:var(--warn);font-size:.78rem;padding-top:0;border-bottom:1px solid var(--line)}
+tfoot td{font-weight:600;font-family:"Chakra Petch",sans-serif;border-bottom:none}
+.tot-ok{color:var(--ok)} .tot-under{color:var(--warn)} .tot-over{color:var(--bad)}
+
+main[data-focus="boss"] .c-melodie, main[data-focus="boss"] .c-kelian,
+main[data-focus="melodie"] .c-boss, main[data-focus="melodie"] .c-kelian,
+main[data-focus="kelian"] .c-boss, main[data-focus="kelian"] .c-melodie{opacity:.28}
+
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:1.2rem;width:min(92vw,380px)}
+dialog::backdrop{background:rgba(8,4,14,.7)}
+dialog h3{font-family:"Chakra Petch",sans-serif;margin:0 0 .8rem}
+dialog label{display:block;font-size:.85rem;color:var(--muted);margin:.6rem 0 .2rem}
+dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:.5rem}
+.row{display:flex;gap:.6rem} .row>*{flex:1}
+.actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem;justify-content:flex-end}
+.err{color:var(--bad);font-size:.85rem;min-height:1.2em;margin-top:.5rem}
+.check{display:flex;align-items:center;gap:.5rem;color:var(--text)!important}
+.check input{width:auto}
+.loading{text-align:center;color:var(--muted);padding:3rem;grid-column:1/-1}
+@media (prefers-reduced-motion:no-preference){ .week{animation:in .35s ease-out both} @keyframes in{from{opacity:0;transform:translateY(6px)}} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">GameZone<small>Planning équipe</small></div>
+  <div class="auth">
+    <span><span id="dot" class="dot"></span><span id="connTxt">Connexion…</span></span>
+    <button id="btnLogin" type="button">Connexion Boss</button>
+  </div>
+</header>
+
+<section class="monthbar">
+  <button id="prev" type="button" aria-label="Mois précédent">‹</button>
+  <h1 id="monthTitle"></h1>
+  <button id="next" type="button" aria-label="Mois suivant">›</button>
+</section>
+
+<nav class="people" id="people" aria-label="Mettre une personne en évidence"></nav>
+
+<div id="adminBar" class="adminbar" hidden>
+  <button id="btnFill" class="primary" type="button">Remplir le mois</button>
+  <button id="btnToday" type="button">Revenir au mois en cours</button>
+</div>
+<div id="uidBanner" class="banner" hidden></div>
+
+<main id="weeks"><p class="loading">Chargement du planning…</p></main>
+
+<!-- Modification d'un créneau -->
+<dialog id="dlgEdit">
+  <h3 id="editTitle"></h3>
+  <div class="row">
+    <div><label for="inS">Début</label><input id="inS" type="time" step="300"></div>
+    <div><label for="inE">Fin</label><input id="inE" type="time" step="300"></div>
+  </div>
+  <label for="inN">Note (facultatif)</label>
+  <input id="inN" type="text" maxlength="60" placeholder="ex. anniversaire 15h, inventaire…">
+  <div class="err" id="editErr"></div>
+  <div class="actions">
+    <button id="btnClear" class="danger" type="button">Effacer</button>
+    <button id="btnOff" type="button">Repos</button>
+    <button id="btnCancel" type="button">Annuler</button>
+    <button id="btnSave" class="primary" type="button">Enregistrer</button>
+  </div>
+</dialog>
+
+<!-- Connexion -->
+<dialog id="dlgLogin">
+  <h3>Connexion Boss</h3>
+  <label for="inMail">E-mail</label><input id="inMail" type="email" autocomplete="username">
+  <label for="inPwd">Mot de passe</label><input id="inPwd" type="password" autocomplete="current-password">
+  <div class="err" id="loginErr"></div>
+  <div class="actions">
+    <button id="btnLoginCancel" type="button">Annuler</button>
+    <button id="btnLoginGo" class="primary" type="button">Se connecter</button>
+  </div>
+</dialog>
+
+<!-- Remplissage du mois -->
+<dialog id="dlgFill">
+  <h3>Remplir le mois</h3>
+  <label for="fillPeriod">Période</label>
+  <select id="fillPeriod">
+    <option value="normale">Période normale</option>
+    <option value="vacances">Vacances scolaires</option>
+    <option value="ete">Été (juillet-août)</option>
+  </select>
+  <label for="fillStart">Première semaine du mois</label>
+  <select id="fillStart">
+    <option value="A">Semaine A – Boss en repos le week-end</option>
+    <option value="B">Semaine B – Boss présent</option>
+    <option value="Ai">Semaine A inversée</option>
+    <option value="Bi">Semaine B inversée</option>
+  </select>
+  <label class="check"><input id="fillOverwrite" type="checkbox"> Remplacer les jours déjà remplis</label>
+  <p class="period" style="margin:.6rem 0 0">Les semaines suivantes s'enchaînent dans l'ordre A, B, A inversée, B inversée. Vous pourrez ensuite changer la période ou le modèle de chaque semaine.</p>
+  <div class="err" id="fillErr"></div>
+  <div class="actions">
+    <button id="btnFillCancel" type="button">Annuler</button>
+    <button id="btnFillGo" class="primary" type="button">Remplir</button>
+  </div>
+</dialog>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { initializeAuth, browserSessionPersistence, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getDatabase, ref, onValue, update, set, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+/* Configuration Firebase (identique à CalendIT) */
+const firebaseConfig = {
+  apiKey: "AIzaSyDVfVKnP00xCreo-j-0Qo5-t1Tq03W19Xc",
+  authDomain: "calend-it2-7e681.firebaseapp.com",
+  databaseURL: "https://calend-it2-7e681-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "calend-it2-7e681",
+  storageBucket: "calend-it2-7e681.firebasestorage.app",
+  messagingSenderId: "84584922938",
+  appId: "1:84584922938:web:8c4d0d07a45d0948a49a03"
+};
+/* ===== À COMPLÉTER après la 1re connexion : votre UID (affiché à l'écran) ===== */
+const BOSS_UID = "";
+
+const app = initializeApp(firebaseConfig);
+// Session limitée à cet onglet, comme CalendIT : aucune interférence entre les pages du site
+const auth = initializeAuth(app, { persistence: browserSessionPersistence });
+const db = getDatabase(app);
+
+/* ---------- Données fixes ---------- */
+const PEOPLE = [
+  { id:"boss", name:"Boss" },
+  { id:"melodie", name:"Mélodie" },
+  { id:"kelian", name:"Kélian" }
+];
+const AGENT_TARGET = 28 * 60;
+const DAYS = ["mar.","mer.","jeu.","ven.","sam.","dim."]; // mardi → dimanche (lundi fermé)
+const PERIODS = { normale:"Période normale", vacances:"Vacances scolaires", ete:"Été" };
+const MODELS = { A:"Semaine A", B:"Semaine B", Ai:"Semaine A inversée", Bi:"Semaine B inversée" };
+const CYCLE = ["A","B","Ai","Bi"];
+
+const OPEN = {
+  normale:  [["17:00","21:00"],["14:00","20:00"],["17:00","21:00"],["17:00","22:15"],["14:00","22:15"],["14:00","19:00"]],
+  vacances: [["14:00","20:00"],["14:00","20:00"],["14:00","22:00"],["14:00","22:00"],["14:00","22:00"],["14:00","19:00"]],
+  ete:      [["14:00","20:00"],["14:00","20:00"],["14:00","20:00"],["14:00","20:00"],["14:00","20:00"],["14:00","19:00"]]
+};
+
+const S = ["13:30","20:30"];
+const TPL = {
+  normale: {
+    A: { boss:[["16:45","21:00"],["13:45","20:00"],["16:45","21:00"],null,null,null],
+         melodie:[["16:45","21:00"],null,["16:45","20:15"],["16:45","22:15"],["13:45","22:15"],["13:45","20:00"]],
+         kelian:[null,["13:45","20:00"],["19:30","21:00"],["16:45","22:15"],["13:45","22:15"],["13:45","20:00"]] },
+    B: { boss:[["16:30","21:00"],["13:30","20:00"],["16:30","21:00"],["16:30","22:15"],["13:30","22:15"],["13:30","20:00"]],
+         melodie:[["16:30","21:00"],["13:30","20:00"],["16:30","21:00"],["18:30","22:15"],["13:30","22:15"],null],
+         kelian:[null,["13:00","20:00"],null,["16:30","22:15"],["13:30","22:15"],["13:30","20:00"]] }
+  },
+  vacances: {
+    A: { boss:[["13:30","20:00"],["13:30","20:00"],["13:30","22:00"],["13:30","22:00"],null,null],
+         melodie:[["14:00","20:00"],null,null,["14:00","22:00"],["13:45","22:00"],["14:00","19:45"]],
+         kelian:[null,["14:00","20:00"],["14:00","22:00"],null,["14:00","22:00"],["13:45","19:45"]] },
+    B: { boss:[["13:30","20:00"],["13:30","20:00"],["13:30","22:00"],["13:30","22:00"],["13:30","22:00"],["13:30","20:00"]],
+         melodie:[["13:30","20:00"],["13:30","18:00"],null,["13:30","22:00"],["13:30","22:00"],null],
+         kelian:[null,["15:30","20:00"],["13:30","22:00"],null,["13:30","22:00"],["13:30","20:00"]] }
+  },
+  ete: {
+    A: { boss:[S,S,S,S,null,null], melodie:[S,S,null,null,S,S], kelian:[null,null,S,S,S,S] },
+    B: { boss:[S,S,S,S,S,S], melodie:[S,S,null,S,S,null], kelian:[null,S,S,null,S,S] }
+  }
+};
+
+/* ---------- Utilitaires ---------- */
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,"0");
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const addDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
+const fmtT = t => t.replace(":","h");
+const fmtDur = m => `${Math.floor(m/60)}h${pad(m%60)}`;
+const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const wd = (x.getDay()+6)%7; return addDays(x,-wd); };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- État ---------- */
+let data = { days:{}, weeks:{} };
+let user = null;
+let subscribed = false;
+let cursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let focus = "";
+let editing = null;
+try { focus = new URLSearchParams(location.search).get("qui") || localStorage.getItem("gz-focus") || ""; } catch(e) {}
+
+const isAdmin = () => !!user && !user.isAnonymous && (BOSS_UID === "" || user.uid === BOSS_UID);
+
+/* ---------- Authentification ---------- */
+onAuthStateChanged(auth, u => {
+  user = u;
+  if (!u) { signInAnonymously(auth).catch(err => showLoadError(err)); return; }
+  $("btnLogin").textContent = u.isAnonymous ? "Connexion Boss" : "Déconnexion";
+  const banner = $("uidBanner");
+  if (!u.isAnonymous && BOSS_UID === "") {
+    banner.hidden = false;
+    banner.innerHTML = `Configuration à terminer : votre UID est <code>${esc(u.uid)}</code>. Copiez-le dans la ligne <code>BOSS_UID</code> du fichier et dans les règles Firebase, pour que vous seul puissiez modifier le planning.`;
+  } else if (!u.isAnonymous && u.uid !== BOSS_UID) {
+    banner.hidden = false;
+    banner.textContent = "Ce compte peut consulter le planning mais pas le modifier.";
+  } else banner.hidden = true;
+  $("adminBar").hidden = !isAdmin();
+  if (!subscribed) subscribe();
+  render();
+});
+
+function subscribe(){
+  subscribed = true;
+  onValue(ref(db, "planning"), snap => {
+    const v = snap.val() || {};
+    data = { days: v.days || {}, weeks: v.weeks || {} };
+    render();
+  }, err => showLoadError(err));
+  onValue(ref(db, ".info/connected"), snap => {
+    const on = snap.val() === true;
+    $("dot").classList.toggle("on", on);
+    $("connTxt").textContent = on ? "En direct" : "Hors ligne";
+  });
+}
+
+function showLoadError(err){
+  console.error(err);
+  $("weeks").innerHTML = `<p class="loading">Impossible de lire le planning (${esc(err.code || err.message)}). Vérifiez la configuration Firebase en haut du fichier et les règles de la base.</p>`;
+}
+
+$("btnLogin").onclick = () => {
+  if (user && !user.isAnonymous) { signOut(auth); return; }
+  $("loginErr").textContent = "";
+  $("dlgLogin").showModal();
+};
+$("btnLoginCancel").onclick = () => $("dlgLogin").close();
+$("btnLoginGo").onclick = async () => {
+  try {
+    await signInWithEmailAndPassword(auth, $("inMail").value.trim(), $("inPwd").value);
+    $("inPwd").value = "";
+    $("dlgLogin").close();
+  } catch(e) { $("loginErr").textContent = "E-mail ou mot de passe incorrect."; }
+};
+$("inPwd").addEventListener("keydown", e => { if (e.key === "Enter") $("btnLoginGo").click(); });
+
+/* ---------- Navigation ---------- */
+$("prev").onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth()-1, 1); render(); };
+$("next").onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth()+1, 1); render(); };
+$("btnToday").onclick = () => { cursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); render(); };
+
+function renderPeople(){
+  const nav = $("people");
+  nav.innerHTML = "";
+  PEOPLE.forEach(p => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip";
+    b.setAttribute("aria-pressed", String(focus === p.id));
+    b.innerHTML = `<i style="background:var(--${p.id})"></i>${p.name}`;
+    b.onclick = () => {
+      focus = focus === p.id ? "" : p.id;
+      try { localStorage.setItem("gz-focus", focus); } catch(e) {}
+      render();
+    };
+    nav.appendChild(b);
+  });
+}
+
+/* ---------- Calculs ---------- */
+function monthWeeks(){
+  const first = cursor, last = new Date(cursor.getFullYear(), cursor.getMonth()+1, 0);
+  const weeks = [];
+  for (let m = mondayOf(first); m <= last; m = addDays(m,7)) {
+    // on garde la semaine si au moins un jour ouvert (mar→dim) tombe dans le mois
+    if (addDays(m,6) >= first) weeks.push(m);
+  }
+  return weeks.filter(m => [1,2,3,4,5,6].some(i => addDays(m,i).getMonth() === cursor.getMonth()));
+}
+
+function entry(key, pid){ return data.days[key] && data.days[key][pid]; }
+function minutes(e){ return e && e.s && e.e ? Math.max(0, toMin(e.e) - toMin(e.s)) : 0; }
+
+function coverage(key, i, period){
+  const [o,c] = OPEN[period][i].map(toMin);
+  let min = 9, from = null, to = null;
+  for (let t = o; t < c; t += 15) {
+    const n = PEOPLE.filter(p => { const e = entry(key,p.id); return e && e.s && toMin(e.s) <= t && toMin(e.e) >= t+15; }).length;
+    if (n < 2) { if (from === null) from = t; to = t+15; }
+    min = Math.min(min, n);
+  }
+  if (from === null) return null;
+  const f = m => `${Math.floor(m/60)}h${pad(m%60)}`;
+  return { min, text: min === 0 ? `Personne sur place entre ${f(from)} et ${f(to)}` : `Une seule personne sur place entre ${f(from)} et ${f(to)}` };
+}
+
+/* ---------- Rendu ---------- */
+function render(){
+  $("monthTitle").textContent = cursor.toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
+  renderPeople();
+  const main = $("weeks");
+  main.dataset.focus = focus;
+  if (!subscribed) return;
+  main.innerHTML = "";
+  const today = iso(new Date());
+  monthWeeks().forEach(monday => main.appendChild(renderWeek(monday, today)));
+}
+
+function renderWeek(monday, today){
+  const wkKey = iso(monday);
+  const meta = data.weeks[wkKey] || {};
+  const period = meta.period || "normale";
+  const art = document.createElement("article");
+  art.className = "week";
+
+  const hasData = [1,2,3,4,5,6].some(i => data.days[iso(addDays(monday,i))]);
+  let head = `<h2>Semaine du ${monday.getDate()} ${monday.toLocaleDateString("fr-FR",{month:"short"})}</h2>
+    <span class="period">${hasData ? PERIODS[period] + (isAdmin() && meta.model ? ", " + MODELS[meta.model].toLowerCase() : "") : "Pas encore rempli"}</span>`;
+  if (isAdmin()) {
+    head += `<div class="wkadmin">
+      <select data-k="period" aria-label="Période">${Object.entries(PERIODS).map(([k,v]) => `<option value="${k}" ${k===period?"selected":""}>${v}</option>`).join("")}</select>
+      <select data-k="model" aria-label="Modèle">${Object.entries(MODELS).map(([k,v]) => `<option value="${k}" ${k===(meta.model||"A")?"selected":""}>${v}</option>`).join("")}</select>
+      <button type="button" data-a="apply">Appliquer le modèle</button>
+      <button type="button" data-a="clear">Vider la semaine</button>
+    </div>`;
+  }
+
+  let rows = "";
+  const totals = { boss:0, melodie:0, kelian:0 };
+  rows += `<tr class="closed"><td class="day"><b>${monday.getDate()}</b>lun.</td><td colspan="3">Fermé</td></tr>`;
+  for (let i = 0; i < 6; i++) {
+    const d = addDays(monday, i+1), key = iso(d);
+    const out = d.getMonth() !== cursor.getMonth();
+    const cov = data.days[key] ? coverage(key, i, period) : null;
+    const cls = [out ? "out" : "", key === today ? "today" : "", cov ? "short" : ""].join(" ").trim();
+    let cells = "";
+    PEOPLE.forEach(p => {
+      const e = entry(key, p.id);
+      totals[p.id] += minutes(e);
+      let inner;
+      if (!e) inner = `<span class="empty">${isAdmin() ? "+" : "–"}</span>`;
+      else if (e.off) inner = `<span class="off">Repos</span>`;
+      else {
+        const L = Math.max(0, (toMin(e.s) - 750) / 630 * 100), W = Math.min(100 - L, minutes(e) / 630 * 100);
+        inner = `<span class="t">${fmtT(e.s)}–${fmtT(e.e)}</span><div class="bar"><span style="left:${L}%;width:${W}%"></span></div>`;
+      }
+      if (e && e.n) inner += `<span class="note">${esc(e.n)}</span>`;
+      cells += `<td class="cell c-${p.id}${isAdmin() ? " editable" : ""}" data-key="${key}" data-p="${p.id}" ${isAdmin() ? 'tabindex="0" role="button"' : ""}>${inner}</td>`;
+    });
+    rows += `<tr class="${cls}"><td class="day"><b>${d.getDate()}</b>${DAYS[i]}</td>${cells}</tr>`;
+    if (cov) rows += `<tr class="shortmsg${out ? " out" : ""}"><td></td><td colspan="3">${cov.text}</td></tr>`;
+  }
+
+  const totCell = p => {
+    const m = totals[p.id];
+    if (p.id === "boss") return `<td class="c-boss">${fmtDur(m)}</td>`;
+    const c = m === AGENT_TARGET ? "tot-ok" : m > AGENT_TARGET ? "tot-over" : "tot-under";
+    return `<td class="c-${p.id} ${c}" title="Objectif 28h00">${fmtDur(m)}</td>`;
+  };
+
+  art.innerHTML = `<header>${head}</header>
+    <div class="scroll"><table>
+      <thead><tr><th class="day"></th>${PEOPLE.map(p => `<th class="c-${p.id}">${p.name}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td class="day">Total</td>${PEOPLE.map(totCell).join("")}</tr></tfoot>
+    </table></div>`;
+
+  if (isAdmin()) {
+    art.querySelectorAll("td.editable").forEach(td => {
+      td.onclick = () => openEdit(td.dataset.key, td.dataset.p);
+      td.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(td.dataset.key, td.dataset.p); } };
+    });
+    const sel = k => art.querySelector(`select[data-k="${k}"]`).value;
+    art.querySelector('[data-a="apply"]').onclick = async () => {
+      if (hasData && !confirm("Remplacer tous les créneaux de cette semaine par le modèle choisi ?")) return;
+      await applyTemplate(monday, sel("period"), sel("model"), true);
+    };
+    art.querySelector('[data-a="clear"]').onclick = async () => {
+      if (!confirm("Vider tous les créneaux de cette semaine ?")) return;
+      const up = { [`weeks/${wkKey}`]: null };
+      for (let i = 1; i <= 6; i++) up[`days/${iso(addDays(monday,i))}`] = null;
+      await write(() => update(ref(db, "planning"), up));
+    };
+  }
+  return art;
+}
+
+/* ---------- Écriture ---------- */
+async function write(fn){
+  try { await fn(); return true; }
+  catch(e) {
+    console.error(e);
+    alert(e.code === "PERMISSION_DENIED"
+      ? "Modification refusée par Firebase. Vérifiez que votre UID est bien renseigné dans les règles de la base."
+      : "Erreur d'enregistrement : " + (e.message || e));
+    return false;
+  }
+}
+
+async function applyTemplate(monday, period, model, overwrite){
+  const base = TPL[period][model[0]], inverted = model.endsWith("i");
+  const up = { [`weeks/${iso(monday)}`]: { period, model } };
+  for (let i = 0; i < 6; i++) {
+    const key = iso(addDays(monday, i+1));
+    PEOPLE.forEach(p => {
+      if (!overwrite && entry(key, p.id)) return;
+      const src = inverted && p.id !== "boss" ? (p.id === "melodie" ? "kelian" : "melodie") : p.id;
+      const v = base[src][i];
+      up[`days/${key}/${p.id}`] = v ? { s:v[0], e:v[1] } : { off:true };
+    });
+  }
+  return write(() => update(ref(db, "planning"), up));
+}
+
+/* ---------- Dialogue de modification ---------- */
+function openEdit(key, pid){
+  editing = { key, pid };
+  const e = entry(key, pid) || {};
+  const d = new Date(key + "T12:00:00");
+  $("editTitle").textContent = `${PEOPLE.find(p => p.id === pid).name}, ${d.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}`;
+  $("inS").value = e.s || "";
+  $("inE").value = e.e || "";
+  $("inN").value = e.n || "";
+  $("editErr").textContent = "";
+  $("dlgEdit").showModal();
+}
+const cellRef = () => ref(db, `planning/days/${editing.key}/${editing.pid}`);
+$("btnCancel").onclick = () => $("dlgEdit").close();
+$("btnSave").onclick = async () => {
+  const s = $("inS").value, e = $("inE").value, n = $("inN").value.trim();
+  if (!s || !e) { $("editErr").textContent = "Indiquez une heure de début et de fin."; return; }
+  if (toMin(e) <= toMin(s)) { $("editErr").textContent = "L'heure de fin doit être après l'heure de début."; return; }
+  const v = { s, e }; if (n) v.n = n;
+  if (await write(() => set(cellRef(), v))) $("dlgEdit").close();
+};
+$("btnOff").onclick = async () => {
+  const n = $("inN").value.trim(); const v = { off:true }; if (n) v.n = n;
+  if (await write(() => set(cellRef(), v))) $("dlgEdit").close();
+};
+$("btnClear").onclick = async () => { if (await write(() => remove(cellRef()))) $("dlgEdit").close(); };
+
+/* ---------- Remplissage du mois ---------- */
+$("btnFill").onclick = () => { $("fillErr").textContent = ""; $("dlgFill").showModal(); };
+$("btnFillCancel").onclick = () => $("dlgFill").close();
+$("btnFillGo").onclick = async () => {
+  const period = $("fillPeriod").value, start = CYCLE.indexOf($("fillStart").value), overwrite = $("fillOverwrite").checked;
+  const weeks = monthWeeks();
+  for (let w = 0; w < weeks.length; w++) {
+    const ok = await applyTemplate(weeks[w], period, CYCLE[(start + w) % 4], overwrite);
+    if (!ok) return;
+  }
+  $("dlgFill").close();
+};
+
+render();
+</script>
+</body>
+</html>
