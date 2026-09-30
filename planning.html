@@ -17,6 +17,7 @@
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 *,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--bg);color:var(--text);font:15px/1.45 "Barlow",system-ui,sans-serif;min-height:100vh}
 button,input,select{font:inherit;color:inherit}
@@ -144,8 +145,8 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
 <!-- Connexion -->
 <dialog id="dlgLogin">
   <h3>Connexion Boss</h3>
-  <label for="inMail">E-mail</label><input id="inMail" type="email" autocomplete="username">
-  <label for="inPwd">Mot de passe</label><input id="inPwd" type="password" autocomplete="current-password">
+  <label for="inPwd">Code</label>
+  <input id="inPwd" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••" style="font-size:1.6rem;letter-spacing:.4em;text-align:center">
   <div class="err" id="loginErr"></div>
   <div class="actions">
     <button id="btnLoginCancel" type="button">Annuler</button>
@@ -193,8 +194,9 @@ const firebaseConfig = {
   messagingSenderId: "84584922938",
   appId: "1:84584922938:web:8c4d0d07a45d0948a49a03"
 };
-/* ===== À COMPLÉTER après la 1re connexion : votre UID (affiché à l'écran) ===== */
-const BOSS_UID = "";
+/* Compte Boss : seul ce compte peut modifier le planning */
+const BOSS_UID = "GfZn01X81vcsrlaAL3ZoeqxweGF2";
+const BOSS_EMAIL = "laurentdauduit@gmail.com";
 
 const app = initializeApp(firebaseConfig);
 // Session limitée à cet onglet, comme CalendIT : aucune interférence entre les pages du site
@@ -305,15 +307,22 @@ function showLoadError(err){
 $("btnLogin").onclick = () => {
   if (user && !user.isAnonymous) { signOut(auth); return; }
   $("loginErr").textContent = "";
+  $("inPwd").value = "";
   $("dlgLogin").showModal();
+  $("inPwd").focus();
 };
 $("btnLoginCancel").onclick = () => $("dlgLogin").close();
 $("btnLoginGo").onclick = async () => {
   try {
-    await signInWithEmailAndPassword(auth, $("inMail").value.trim(), $("inPwd").value);
+    await signInWithEmailAndPassword(auth, BOSS_EMAIL, $("inPwd").value);
     $("inPwd").value = "";
     $("dlgLogin").close();
-  } catch(e) { $("loginErr").textContent = "E-mail ou mot de passe incorrect."; }
+  } catch(e) {
+    $("inPwd").value = "";
+    $("loginErr").textContent = e.code === "auth/too-many-requests"
+      ? "Trop d'essais. Réessayez dans quelques minutes."
+      : "Code incorrect.";
+  }
 };
 $("inPwd").addEventListener("keydown", e => { if (e.key === "Enter") $("btnLoginGo").click(); });
 
