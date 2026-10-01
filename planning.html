@@ -12,6 +12,7 @@
   --bg:#150d1f; --panel:#1f1430; --panel2:#281a3d; --line:#3a2852;
   --text:#f3ecfa; --muted:#a898bd;
   --boss:#ff8a2a; --melodie:#ff3d9a; --kelian:#9d6bff;
+  --vac:#2dd4bf; --ete:#facc15;
   --ok:#4ade80; --warn:#ffcc33; --bad:#ff5a5a;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
@@ -78,6 +79,42 @@ td.cell.editable:hover{background:var(--panel2)}
 .short td.day::after{content:"⚠";color:var(--warn);margin-left:.2rem}
 .shortmsg td{color:var(--warn);font-size:.78rem;padding-top:0;border-bottom:1px solid var(--line)}
 tfoot td{font-weight:600;font-family:"Chakra Petch",sans-serif;border-bottom:none}
+.abs{color:var(--bad);font-weight:600}
+.cp{color:var(--vac);font-weight:600}
+.mod{display:inline-block;font-size:.68rem;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:0 .3rem;margin-top:.25rem}
+td.day.editable{cursor:pointer} td.day.editable:hover{background:var(--panel2)}
+td.day i.star{color:var(--warn);font-style:normal;margin-left:.15rem}
+.daynote td{color:var(--warn);font-size:.8rem;padding-top:0;white-space:normal}
+.notice{color:var(--warn);font-size:.85rem;margin-top:.6rem}
+.week.p-vacances{border-color:var(--vac);box-shadow:inset 0 3px 0 var(--vac)}
+.week.p-vacances header{background:rgba(45,212,191,.08)}
+.week.p-ete{border-color:var(--ete);box-shadow:inset 0 3px 0 var(--ete)}
+.week.p-ete header{background:rgba(250,204,21,.07)}
+.pill{display:inline-block;font-size:.75rem;font-weight:600;border-radius:999px;padding:.12rem .6rem}
+.pill.vacances{background:var(--vac);color:#062b26}
+.pill.ete{background:var(--ete);color:#2b2205}
+.printbar{display:flex;justify-content:center;padding:0 1rem 1rem}
+#printArea{display:none}
+@media print{
+  @page{size:A4;margin:12mm}
+  body>*:not(#printArea){display:none!important}
+  html,body{background:#fff!important;color:#000!important;padding:0!important}
+  #printArea{display:block;font:11pt/1.35 "Barlow",Arial,sans-serif;color:#000}
+  .sheet{page-break-after:always}
+  .sheet:last-child{page-break-after:auto}
+  .sheet h1{font:700 15pt "Chakra Petch",Arial,sans-serif;margin:0 0 2mm}
+  .sheet .meta{display:flex;justify-content:space-between;margin:0 0 4mm;font-size:10.5pt}
+  .sheet table{width:100%;border-collapse:collapse;table-layout:auto;min-width:0}
+  .sheet th,.sheet td{border:0.6pt solid #888;padding:1.2mm 2mm;font-size:9.5pt;text-align:left;color:#000;background:#fff;opacity:1}
+  .sheet th{background:#eee}
+  .sheet tr.mon td{color:#777}
+  .sheet tr.wk td{background:#f3f3f3;font-weight:600}
+  .sheet tr.month td{background:#ddd;font-weight:700}
+  .sheet td.r{text-align:right;white-space:nowrap}
+  .sheet .sign{display:flex;gap:10mm;margin-top:8mm}
+  .sheet .sign div{flex:1;border:0.6pt solid #888;height:22mm;padding:1.5mm 2mm;font-size:9pt}
+  .sheet .foot{margin-top:3mm;font-size:8.5pt;color:#555}
+}
 .tot-ok{color:var(--ok)} .tot-under{color:var(--warn)} .tot-over{color:var(--bad)}
 
 main[data-focus="boss"] .c-melodie, main[data-focus="boss"] .c-kelian,
@@ -116,9 +153,12 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
 
 <nav class="people" id="people" aria-label="Mettre une personne en évidence"></nav>
 
+<div class="printbar"><button id="btnPrint" type="button">🖨 Imprimer / PDF du mois</button></div>
+<div id="offlineBanner" class="banner" hidden></div>
 <div id="adminBar" class="adminbar" hidden>
   <button id="btnFill" class="primary" type="button">Remplir le mois</button>
   <button id="btnToday" type="button">Revenir au mois en cours</button>
+  <button id="btnClearMonth" class="danger" type="button">Vider le mois</button>
 </div>
 <div id="uidBanner" class="banner" hidden></div>
 
@@ -127,18 +167,63 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
 <!-- Modification d'un créneau -->
 <dialog id="dlgEdit">
   <h3 id="editTitle"></h3>
-  <div class="row">
+  <label for="inType">Statut</label>
+  <select id="inType">
+    <option value="work">Travail</option>
+    <option value="off">Repos</option>
+    <option value="cp">Congé</option>
+    <option value="maladie">Absent – maladie</option>
+    <option value="autre">Absent – autre</option>
+  </select>
+  <p class="period" id="cpHint" style="margin:.5rem 0 0" hidden>Indiquez les horaires prévus si vous voulez que ces heures comptent dans le total de la semaine (congé payé). Laissez vide sinon.</p>
+  <div class="row" id="timesRow">
     <div><label for="inS">Début</label><input id="inS" type="time" step="300"></div>
     <div><label for="inE">Fin</label><input id="inE" type="time" step="300"></div>
   </div>
   <label for="inN">Note (facultatif)</label>
   <input id="inN" type="text" maxlength="60" placeholder="ex. anniversaire 15h, inventaire…">
+  <div class="notice" id="editNotice"></div>
   <div class="err" id="editErr"></div>
   <div class="actions">
     <button id="btnClear" class="danger" type="button">Effacer</button>
-    <button id="btnOff" type="button">Repos</button>
     <button id="btnCancel" type="button">Annuler</button>
     <button id="btnSave" class="primary" type="button">Enregistrer</button>
+  </div>
+</dialog>
+
+<!-- Infos de la journée -->
+<dialog id="dlgDay">
+  <h3 id="dayTitle"></h3>
+  <label for="dayNote">Information pour l'équipe</label>
+  <input id="dayNote" type="text" maxlength="80" placeholder="ex. groupe anniversaire 10h–12h">
+  <label>Ouverture exceptionnelle (facultatif)</label>
+  <div class="row">
+    <div><input id="dayO" type="time" step="300" aria-label="Début"></div>
+    <div><input id="dayC" type="time" step="300" aria-label="Fin"></div>
+  </div>
+  <p class="period" style="margin:.5rem 0 0">Le contrôle « 2 personnes minimum » s'appliquera aussi sur ce créneau.</p>
+  <div class="err" id="dayErr"></div>
+  <div class="actions">
+    <button id="dayClear" class="danger" type="button">Effacer</button>
+    <button id="dayCancel" type="button">Annuler</button>
+    <button id="daySave" class="primary" type="button">Enregistrer</button>
+  </div>
+</dialog>
+
+<!-- Impression -->
+<dialog id="dlgPrint">
+  <h3>Imprimer les horaires du mois</h3>
+  <label for="printWho">Pour qui ?</label>
+  <select id="printWho">
+    <option value="agents">Mélodie et Kélian (une page chacun)</option>
+    <option value="melodie">Mélodie</option>
+    <option value="kelian">Kélian</option>
+    <option value="boss">Boss</option>
+  </select>
+  <p class="period" style="margin:.6rem 0 0">Dans la fenêtre d'impression, choisissez « Enregistrer au format PDF » comme imprimante pour obtenir un fichier.</p>
+  <div class="actions">
+    <button id="printCancel" type="button">Annuler</button>
+    <button id="printGo" class="primary" type="button">Imprimer</button>
   </div>
 </dialog>
 
@@ -171,13 +256,15 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
     <option value="Bi">Semaine B inversée</option>
   </select>
   <label class="check"><input id="fillOverwrite" type="checkbox"> Remplacer les jours déjà remplis</label>
-  <p class="period" style="margin:.6rem 0 0">Les semaines suivantes s'enchaînent dans l'ordre A, B, A inversée, B inversée. Vous pourrez ensuite changer la période ou le modèle de chaque semaine.</p>
+  <p class="period" style="margin:.6rem 0 0">Seuls les jours du mois affiché sont remplis. Les semaines suivantes s'enchaînent dans l'ordre A, B, A inversée, B inversée. Vous pourrez ensuite changer la période ou le modèle de chaque semaine.</p>
   <div class="err" id="fillErr"></div>
   <div class="actions">
     <button id="btnFillCancel" type="button">Annuler</button>
     <button id="btnFillGo" class="primary" type="button">Remplir</button>
   </div>
 </dialog>
+
+<section id="printArea"></section>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -261,6 +348,16 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":
 let data = { days:{}, weeks:{} };
 let user = null;
 let subscribed = false;
+let cacheTs = null;
+try {
+  const c = JSON.parse(localStorage.getItem("gz-planning-cache") || "null");
+  if (c && c.data) { data = c.data; cacheTs = c.ts; }
+} catch(e) {}
+function showOffline(){
+  const b = document.getElementById("offlineBanner");
+  if (!b) return;
+  if (cacheTs) { b.hidden = false; b.textContent = `Pas de connexion : affichage de la dernière version enregistrée sur cet appareil (${new Date(cacheTs).toLocaleString("fr-FR")}).`; }
+}
 let cursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let focus = "";
 let editing = null;
@@ -271,7 +368,7 @@ const isAdmin = () => !!user && !user.isAnonymous && (BOSS_UID === "" || user.ui
 /* ---------- Authentification ---------- */
 onAuthStateChanged(auth, u => {
   user = u;
-  if (!u) { signInAnonymously(auth).catch(err => showLoadError(err)); return; }
+  if (!u) { signInAnonymously(auth).catch(err => showLoadError(err)); if (cacheTs) { showOffline(); render(); } return; }
   $("btnLogin").textContent = u.isAnonymous ? "Connexion Boss" : "Déconnexion";
   const banner = $("uidBanner");
   if (!u.isAnonymous && BOSS_UID === "") {
@@ -291,6 +388,9 @@ function subscribe(){
   onValue(ref(db, "planning"), snap => {
     const v = snap.val() || {};
     data = { days: v.days || {}, weeks: v.weeks || {} };
+    cacheTs = null;
+    $("offlineBanner").hidden = true;
+    try { localStorage.setItem("gz-planning-cache", JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
     render();
   }, err => showLoadError(err));
   onValue(ref(db, ".info/connected"), snap => {
@@ -302,6 +402,7 @@ function subscribe(){
 
 function showLoadError(err){
   console.error(err);
+  if (cacheTs) { showOffline(); render(); return; }
   $("weeks").innerHTML = `<p class="loading">Impossible de lire le planning (${esc(err.code || err.message)}). Vérifiez la configuration Firebase en haut du fichier et les règles de la base.</p>`;
 }
 
@@ -363,11 +464,16 @@ function monthWeeks(){
 function entry(key, pid){ return data.days[key] && data.days[key][pid]; }
 function minutes(e){ return e && e.s && e.e ? Math.max(0, toMin(e.e) - toMin(e.s)) : 0; }
 
+const ABS = { maladie:"Maladie", conge:"Congé", autre:"Absent" };
 function coverage(key, i, period){
   const [o,c] = OPEN[period][i].map(toMin);
+  const info = entry(key, "_info");
+  const steps = new Set();
+  for (let t = o; t < c; t += 15) steps.add(t);
+  if (info && info.o && info.c) for (let t = toMin(info.o); t < toMin(info.c); t += 15) steps.add(t);
   let min = 9, from = null, to = null;
-  for (let t = o; t < c; t += 15) {
-    const n = PEOPLE.filter(p => { const e = entry(key,p.id); return e && e.s && toMin(e.s) <= t && toMin(e.e) >= t+15; }).length;
+  for (const t of [...steps].sort((a,b) => a-b)) {
+    const n = PEOPLE.filter(p => { const e = entry(key,p.id); return e && e.s && !e.cp && toMin(e.s) <= t && toMin(e.e) >= t+15; }).length;
     if (n < 2) { if (from === null) from = t; to = t+15; }
     min = Math.min(min, n);
   }
@@ -382,7 +488,7 @@ function render(){
   renderPeople();
   const main = $("weeks");
   main.dataset.focus = focus;
-  if (!subscribed) return;
+  if (!subscribed && !cacheTs) return;
   main.innerHTML = "";
   const today = iso(new Date());
   monthWeeks().forEach(monday => main.appendChild(renderWeek(monday, today)));
@@ -393,11 +499,12 @@ function renderWeek(monday, today){
   const meta = data.weeks[wkKey] || {};
   const period = meta.period || "normale";
   const art = document.createElement("article");
-  art.className = "week";
-
   const hasData = [1,2,3,4,5,6].some(i => data.days[iso(addDays(monday,i))]);
+  art.className = "week" + (hasData && period !== "normale" ? " p-" + period : "");
+  const periodLabel = period === "vacances" ? '<span class="pill vacances">🏖 Vacances scolaires</span>'
+    : period === "ete" ? '<span class="pill ete">☀ Été</span>' : PERIODS[period];
   let head = `<h2>Semaine du ${monday.getDate()} ${monday.toLocaleDateString("fr-FR",{month:"short"})}</h2>
-    <span class="period">${hasData ? PERIODS[period] + (isAdmin() && meta.model ? ", " + MODELS[meta.model].toLowerCase() : "") : "Pas encore rempli"}</span>`;
+    <span class="period">${hasData ? periodLabel + (isAdmin() && meta.model ? ", " + MODELS[meta.model].toLowerCase() : "") : "Pas encore rempli"}</span>`;
   if (isAdmin()) {
     head += `<div class="wkadmin">
       <select data-k="period" aria-label="Période">${Object.entries(PERIODS).map(([k,v]) => `<option value="${k}" ${k===period?"selected":""}>${v}</option>`).join("")}</select>
@@ -409,6 +516,7 @@ function renderWeek(monday, today){
 
   let rows = "";
   const totals = { boss:0, melodie:0, kelian:0 };
+  const absent = {};
   rows += `<tr class="closed"><td class="day"><b>${monday.getDate()}</b>lun.</td><td colspan="3">Fermé</td></tr>`;
   for (let i = 0; i < 6; i++) {
     const d = addDays(monday, i+1), key = iso(d);
@@ -422,15 +530,20 @@ function renderWeek(monday, today){
       let inner;
       if (!e) inner = `<span class="empty">${isAdmin() ? "+" : "–"}</span>`;
       else if (e.off) inner = `<span class="off">Repos</span>`;
+      else if (e.cp) inner = `<span class="cp">Congé</span>${e.s ? `<span class="note">${fmtDur(minutes(e))} comptées</span>` : ""}`;
+      else if (e.abs) { inner = `<span class="abs">${ABS[e.abs] || "Absent"}</span>`; absent[p.id] = true; }
       else {
         const L = Math.max(0, (toMin(e.s) - 750) / 630 * 100), W = Math.min(100 - L, minutes(e) / 630 * 100);
         inner = `<span class="t">${fmtT(e.s)}–${fmtT(e.e)}</span><div class="bar"><span style="left:${L}%;width:${W}%"></span></div>`;
         if (p.id !== "boss" && minutes(e) < MIN_SHIFT) inner += `<span class="note" style="color:var(--warn)">⚠ moins de 4h</span>`;
       }
       if (e && e.n) inner += `<span class="note">${esc(e.n)}</span>`;
+      if (e && e.mod) inner += `<br><span class="mod" title="Modifié le ${new Date(e.mod).toLocaleString("fr-FR")}">modifié le ${new Date(e.mod).toLocaleDateString("fr-FR",{day:"numeric",month:"numeric"})}</span>`;
       cells += `<td class="cell c-${p.id}${isAdmin() ? " editable" : ""}" data-key="${key}" data-p="${p.id}" ${isAdmin() ? 'tabindex="0" role="button"' : ""}>${inner}</td>`;
     });
-    rows += `<tr class="${cls}"><td class="day"><b>${d.getDate()}</b>${DAYS[i]}</td>${cells}</tr>`;
+    const info = entry(key, "_info");
+    rows += `<tr class="${cls}"><td class="day${isAdmin() ? " editable" : ""}" data-day="${key}" ${isAdmin() ? 'tabindex="0" role="button" title="Ajouter une information pour la journée"' : ""}><b>${d.getDate()}${info ? '<i class="star">★</i>' : ""}</b>${DAYS[i]}</td>${cells}</tr>`;
+    if (info && (info.n || info.o)) rows += `<tr class="daynote${out ? " out" : ""}"><td></td><td colspan="3">★ ${info.n ? esc(info.n) : ""}${info.o ? `${info.n ? " · " : ""}ouverture exceptionnelle ${fmtT(info.o)}–${fmtT(info.c)}` : ""}</td></tr>`;
     if (cov) rows += `<tr class="shortmsg${out ? " out" : ""}"><td></td><td colspan="3">${cov.text}</td></tr>`;
   }
 
@@ -438,7 +551,7 @@ function renderWeek(monday, today){
     const m = totals[p.id];
     if (p.id === "boss") return `<td class="c-boss">${fmtDur(m)}</td>`;
     const c = m === AGENT_TARGET ? "tot-ok" : m > AGENT_TARGET ? "tot-over" : "tot-under";
-    return `<td class="c-${p.id} ${c}" title="Objectif 28h00">${fmtDur(m)}</td>`;
+    return `<td class="c-${p.id} ${absent[p.id] ? "" : c}" title="Objectif 28h00">${fmtDur(m)}${absent[p.id] ? ' <span class="note" style="display:inline">(absence)</span>' : ""}</td>`;
   };
 
   art.innerHTML = `<header>${head}</header>
@@ -449,7 +562,11 @@ function renderWeek(monday, today){
     </table></div>`;
 
   if (isAdmin()) {
-    art.querySelectorAll("td.editable").forEach(td => {
+    art.querySelectorAll("td.day.editable").forEach(td => {
+      td.onclick = () => openDay(td.dataset.day);
+      td.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDay(td.dataset.day); } };
+    });
+    art.querySelectorAll("td.cell.editable").forEach(td => {
       td.onclick = () => openEdit(td.dataset.key, td.dataset.p);
       td.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(td.dataset.key, td.dataset.p); } };
     });
@@ -459,9 +576,9 @@ function renderWeek(monday, today){
       await applyTemplate(monday, sel("period"), sel("model"), true);
     };
     art.querySelector('[data-a="clear"]').onclick = async () => {
-      if (!confirm("Vider tous les créneaux de cette semaine ?")) return;
-      const up = { [`weeks/${wkKey}`]: null };
-      for (let i = 1; i <= 6; i++) up[`days/${iso(addDays(monday,i))}`] = null;
+      if (!confirm("Vider les créneaux de cette semaine (jours du mois affiché) ?")) return;
+      const up = {};
+      for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === cursor.getMonth()) up[`days/${iso(d)}`] = null; }
       await write(() => update(ref(db, "planning"), up));
     };
   }
@@ -480,11 +597,12 @@ async function write(fn){
   }
 }
 
-async function applyTemplate(monday, period, model, overwrite){
+async function applyTemplate(monday, period, model, overwrite, onlyMonth = true){
   const base = TPL[period][model[0]], inverted = model.endsWith("i");
   const up = { [`weeks/${iso(monday)}`]: { period, model } };
   for (let i = 0; i < 6; i++) {
-    const key = iso(addDays(monday, i+1));
+    const day = addDays(monday, i+1), key = iso(day);
+    if (onlyMonth && day.getMonth() !== cursor.getMonth()) continue;
     PEOPLE.forEach(p => {
       if (!overwrite && entry(key, p.id)) return;
       const src = inverted && p.id !== "boss" ? (p.id === "melodie" ? "kelian" : "melodie") : p.id;
@@ -496,31 +614,144 @@ async function applyTemplate(monday, period, model, overwrite){
 }
 
 /* ---------- Dialogue de modification ---------- */
+function daysUntil(key){
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.round((new Date(key + "T00:00:00") - t) / 86400000);
+}
+function syncType(){
+  const t = $("inType").value;
+  $("timesRow").hidden = t !== "work" && t !== "cp";
+  $("cpHint").hidden = t !== "cp";
+}
+$("inType").onchange = syncType;
 function openEdit(key, pid){
   editing = { key, pid };
   const e = entry(key, pid) || {};
   const d = new Date(key + "T12:00:00");
   $("editTitle").textContent = `${PEOPLE.find(p => p.id === pid).name}, ${d.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}`;
+  $("inType").value = e.off ? "off" : e.cp ? "cp" : e.abs ? e.abs : "work";
   $("inS").value = e.s || "";
   $("inE").value = e.e || "";
   $("inN").value = e.n || "";
   $("editErr").textContent = "";
+  const dl = daysUntil(key);
+  $("editNotice").textContent = pid !== "boss" && dl >= 0 && dl < 7
+    ? "Modification à moins de 7 jours : prévenez l'agent directement (délai de prévenance)." : "";
+  syncType();
   $("dlgEdit").showModal();
 }
 const cellRef = () => ref(db, `planning/days/${editing.key}/${editing.pid}`);
 $("btnCancel").onclick = () => $("dlgEdit").close();
 $("btnSave").onclick = async () => {
-  const s = $("inS").value, e = $("inE").value, n = $("inN").value.trim();
-  if (!s || !e) { $("editErr").textContent = "Indiquez une heure de début et de fin."; return; }
-  if (toMin(e) <= toMin(s)) { $("editErr").textContent = "L'heure de fin doit être après l'heure de début."; return; }
-  const v = { s, e }; if (n) v.n = n;
-  if (await write(() => set(cellRef(), v))) $("dlgEdit").close();
-};
-$("btnOff").onclick = async () => {
-  const n = $("inN").value.trim(); const v = { off:true }; if (n) v.n = n;
+  const type = $("inType").value, n = $("inN").value.trim();
+  let v;
+  if (type === "work") {
+    const s = $("inS").value, e = $("inE").value;
+    if (!s || !e) { $("editErr").textContent = "Indiquez une heure de début et de fin."; return; }
+    if (toMin(e) <= toMin(s)) { $("editErr").textContent = "L'heure de fin doit être après l'heure de début."; return; }
+    v = { s, e };
+  } else if (type === "cp") {
+    const s = $("inS").value, e = $("inE").value;
+    v = { cp:true };
+    if (s || e) {
+      if (!s || !e) { $("editErr").textContent = "Indiquez le début et la fin, ou laissez les deux vides."; return; }
+      if (toMin(e) <= toMin(s)) { $("editErr").textContent = "L'heure de fin doit être après l'heure de début."; return; }
+      v.s = s; v.e = e;
+    }
+  } else if (type === "off") v = { off:true };
+  else v = { abs:type };
+  if (n) v.n = n;
+  v.mod = Date.now();
   if (await write(() => set(cellRef(), v))) $("dlgEdit").close();
 };
 $("btnClear").onclick = async () => { if (await write(() => remove(cellRef()))) $("dlgEdit").close(); };
+
+/* ---------- Infos de la journée ---------- */
+let editingDay = null;
+function openDay(key){
+  editingDay = key;
+  const info = entry(key, "_info") || {};
+  $("dayTitle").textContent = new Date(key + "T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
+  $("dayNote").value = info.n || ""; $("dayO").value = info.o || ""; $("dayC").value = info.c || "";
+  $("dayErr").textContent = "";
+  $("dlgDay").showModal();
+}
+const dayRef = () => ref(db, `planning/days/${editingDay}/_info`);
+$("dayCancel").onclick = () => $("dlgDay").close();
+$("dayClear").onclick = async () => { if (await write(() => remove(dayRef()))) $("dlgDay").close(); };
+$("daySave").onclick = async () => {
+  const n = $("dayNote").value.trim(), o = $("dayO").value, c = $("dayC").value;
+  if ((o && !c) || (!o && c)) { $("dayErr").textContent = "Indiquez le début et la fin de l'ouverture exceptionnelle."; return; }
+  if (o && toMin(c) <= toMin(o)) { $("dayErr").textContent = "La fin doit être après le début."; return; }
+  if (!n && !o) { $("dayErr").textContent = "Ajoutez une information ou une ouverture exceptionnelle."; return; }
+  const v = {}; if (n) v.n = n; if (o) { v.o = o; v.c = c; }
+  if (await write(() => set(dayRef(), v))) $("dlgDay").close();
+};
+
+/* ---------- Impression mensuelle ---------- */
+const DAYNAMES = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+function describe(e){
+  if (!e) return { h:"—", m:0 };
+  if (e.off) return { h:"Repos", m:0 };
+  if (e.cp) return { h:"Congé" + (e.s ? ` (${fmtT(e.s)}–${fmtT(e.e)})` : ""), m:minutes(e) };
+  if (e.abs) return { h:ABS[e.abs] || "Absent", m:0 };
+  return { h:`${fmtT(e.s)} – ${fmtT(e.e)}`, m:minutes(e) };
+}
+function buildSheet(pid){
+  const person = PEOPLE.find(p => p.id === pid);
+  const y = cursor.getFullYear(), mo = cursor.getMonth();
+  const last = new Date(y, mo+1, 0).getDate();
+  const monthLabel = cursor.toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
+  let rows = "", week = 0, monthTot = 0, weekStart = null;
+  const flush = (endDay) => {
+    if (weekStart === null) return;
+    rows += `<tr class="wk"><td colspan="3">Total semaine du ${weekStart} au ${endDay}</td><td class="r">${fmtDur(week)}</td><td></td></tr>`;
+    week = 0; weekStart = null;
+  };
+  for (let d = 1; d <= last; d++) {
+    const date = new Date(y, mo, d), key = iso(date), wd = date.getDay();
+    if (weekStart === null) weekStart = d;
+    const label = `${DAYNAMES[wd]}`;
+    if (wd === 1) {
+      rows += `<tr class="mon"><td>${pad(d)}/${pad(mo+1)}</td><td>${label}</td><td>Fermé</td><td class="r"></td><td></td></tr>`;
+    } else {
+      const e = entry(key, pid), info = entry(key, "_info");
+      const { h, m } = describe(e);
+      week += m; monthTot += m;
+      const obs = [e && e.n, info && info.n].filter(Boolean).map(esc).join(" · ");
+      rows += `<tr><td>${pad(d)}/${pad(mo+1)}</td><td>${label}</td><td>${h}</td><td class="r">${m ? fmtDur(m) : ""}</td><td>${obs}</td></tr>`;
+    }
+    if (wd === 0) flush(d);
+  }
+  flush(last);
+  rows += `<tr class="month"><td colspan="3">Total du mois</td><td class="r">${fmtDur(monthTot)}</td><td></td></tr>`;
+  return `<div class="sheet">
+    <h1>GameZone Montauban · Horaires de travail</h1>
+    <div class="meta"><span><b>Salarié :</b> ${person.name}${pid !== "boss" ? " · contrat 28h hebdomadaires" : ""}</span><span><b>Mois :</b> ${monthLabel}</span></div>
+    <table><thead><tr><th>Date</th><th>Jour</th><th>Horaires</th><th>Durée</th><th>Observations</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="sign"><div>Signature de l'employeur</div><div>Signature du salarié</div></div>
+    <p class="foot">Document édité le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} depuis le planning en ligne.</p>
+  </div>`;
+}
+$("btnPrint").onclick = () => $("dlgPrint").showModal();
+$("printCancel").onclick = () => $("dlgPrint").close();
+$("printGo").onclick = () => {
+  const who = $("printWho").value;
+  const ids = who === "agents" ? ["melodie","kelian"] : [who];
+  $("printArea").innerHTML = ids.map(buildSheet).join("");
+  $("dlgPrint").close();
+  setTimeout(() => window.print(), 150);
+};
+
+/* ---------- Vider le mois ---------- */
+$("btnClearMonth").onclick = async () => {
+  const label = cursor.toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
+  if (!confirm(`Effacer tout le planning de ${label} ? Cette action est définitive.`)) return;
+  const up = {};
+  const last = new Date(cursor.getFullYear(), cursor.getMonth()+1, 0).getDate();
+  for (let d = 1; d <= last; d++) up[`days/${iso(new Date(cursor.getFullYear(), cursor.getMonth(), d))}`] = null;
+  await write(() => update(ref(db, "planning"), up));
+};
 
 /* ---------- Remplissage du mois ---------- */
 $("btnFill").onclick = () => { $("fillErr").textContent = ""; $("dlgFill").showModal(); };
