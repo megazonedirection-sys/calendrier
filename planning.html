@@ -210,6 +210,7 @@ const PEOPLE = [
   { id:"kelian", name:"Kélian" }
 ];
 const AGENT_TARGET = 28 * 60;
+const MIN_SHIFT = 4 * 60;
 const DAYS = ["mar.","mer.","jeu.","ven.","sam.","dim."]; // mardi → dimanche (lundi fermé)
 const PERIODS = { normale:"Période normale", vacances:"Vacances scolaires", ete:"Été" };
 const MODELS = { A:"Semaine A", B:"Semaine B", Ai:"Semaine A inversée", Bi:"Semaine B inversée" };
@@ -224,24 +225,24 @@ const OPEN = {
 const S = ["13:30","20:30"];
 const TPL = {
   normale: {
-    A: { boss:[["16:45","21:00"],["13:45","20:00"],["16:45","21:00"],null,null,null],
-         melodie:[["16:45","21:00"],null,["16:45","20:15"],["16:45","22:15"],["13:45","22:15"],["13:45","20:00"]],
-         kelian:[null,["13:45","20:00"],["19:30","21:00"],["16:45","22:15"],["13:45","22:15"],["13:45","20:00"]] },
-    B: { boss:[["16:30","21:00"],["13:30","20:00"],["16:30","21:00"],["16:30","22:15"],["13:30","22:15"],["13:30","20:00"]],
-         melodie:[["16:30","21:00"],["13:30","20:00"],["16:30","21:00"],["18:30","22:15"],["13:30","22:15"],null],
-         kelian:[null,["13:00","20:00"],null,["16:30","22:15"],["13:30","22:15"],["13:30","20:00"]] }
+    A: { boss:[["16:45","21:00"],["13:45","20:15"],["16:45","21:00"],null,null,null],
+         melodie:[["17:00","21:00"],null,["17:00","21:00"],["17:00","22:15"],["13:45","22:15"],["13:45","20:00"]],
+         kelian:[null,["13:30","20:15"],null,["16:30","22:15"],["13:30","22:15"],["13:45","20:00"]] },
+    B: { boss:[["17:00","21:00"],["13:45","20:15"],["16:45","21:00"],null,["13:45","22:15"],["13:45","20:00"]],
+         melodie:[["16:45","21:00"],["13:45","20:15"],["16:45","21:00"],["16:45","22:15"],["14:00","21:30"],null],
+         kelian:[null,["13:45","17:45"],["17:00","21:00"],["17:00","22:15"],["13:45","22:15"],["13:45","20:00"]] }
   },
   vacances: {
     A: { boss:[["13:30","20:00"],["13:30","20:00"],["13:30","22:00"],["13:30","22:00"],null,null],
          melodie:[["14:00","20:00"],null,null,["14:00","22:00"],["13:45","22:00"],["14:00","19:45"]],
          kelian:[null,["14:00","20:00"],["14:00","22:00"],null,["14:00","22:00"],["13:45","19:45"]] },
-    B: { boss:[["13:30","20:00"],["13:30","20:00"],["13:30","22:00"],["13:30","22:00"],["13:30","22:00"],["13:30","20:00"]],
-         melodie:[["13:30","20:00"],["13:30","18:00"],null,["13:30","22:00"],["13:30","22:00"],null],
-         kelian:[null,["15:30","20:00"],["13:30","22:00"],null,["13:30","22:00"],["13:30","20:00"]] }
+    B: { boss:[["13:30","20:00"],["13:30","20:00"],["13:30","22:00"],null,["13:30","22:00"],["13:30","20:00"]],
+         melodie:[["13:30","20:00"],["13:30","20:00"],null,["13:30","22:00"],["15:30","22:00"],null],
+         kelian:[null,null,["13:30","22:00"],["13:45","22:00"],["13:30","18:15"],["13:30","20:00"]] }
   },
   ete: {
     A: { boss:[S,S,S,S,null,null], melodie:[S,S,null,null,S,S], kelian:[null,null,S,S,S,S] },
-    B: { boss:[S,S,S,S,S,S], melodie:[S,S,null,S,S,null], kelian:[null,S,S,null,S,S] }
+    B: { boss:[null,null,S,S,S,S], melodie:[S,S,S,S,null,null], kelian:[S,S,null,null,S,S] }
   }
 };
 
@@ -424,6 +425,7 @@ function renderWeek(monday, today){
       else {
         const L = Math.max(0, (toMin(e.s) - 750) / 630 * 100), W = Math.min(100 - L, minutes(e) / 630 * 100);
         inner = `<span class="t">${fmtT(e.s)}–${fmtT(e.e)}</span><div class="bar"><span style="left:${L}%;width:${W}%"></span></div>`;
+        if (p.id !== "boss" && minutes(e) < MIN_SHIFT) inner += `<span class="note" style="color:var(--warn)">⚠ moins de 4h</span>`;
       }
       if (e && e.n) inner += `<span class="note">${esc(e.n)}</span>`;
       cells += `<td class="cell c-${p.id}${isAdmin() ? " editable" : ""}" data-key="${key}" data-p="${p.id}" ${isAdmin() ? 'tabindex="0" role="button"' : ""}>${inner}</td>`;
