@@ -81,6 +81,7 @@ td.cell.editable:hover{background:var(--panel2)}
 .s.cp{background:#facc15;color:#2b2205}
 .s.abs{background:#22c55e;color:#04210f}
 .s.mal{background:#d4d4dc;color:#1e1e26}
+.s.adm{background:#60a5fa;color:#061a33}
 td.cell{text-align:center} thead th:not(.day){text-align:center} tfoot td:not(.day){text-align:center}
 .fer{display:block;text-align:center;border-radius:7px;padding:.35rem;font-weight:700;background:#ff2d2d;color:#fff;letter-spacing:.03em}
 .empty{color:var(--line)}
@@ -180,10 +181,12 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
   <select id="inType">
     <option value="work">Travail</option>
     <option value="off">Repos</option>
+    <option value="admin">Admin</option>
     <option value="cp">Congé</option>
     <option value="maladie">Absent – maladie</option>
     <option value="autre">Absent – autre</option>
   </select>
+  <p class="period" id="admHint" style="margin:.5rem 0 0" hidden>Travail administratif, hors présence en salle. Indiquez les horaires si vous voulez les compter dans votre total, sinon laissez vide.</p>
   <p class="period" id="cpHint" style="margin:.5rem 0 0" hidden>Indiquez les horaires prévus si vous voulez que ces heures comptent dans le total de la semaine (congé payé). Laissez vide sinon.</p>
   <div class="row" id="timesRow">
     <div><label for="inS">Début</label><input id="inS" type="time" step="300"></div>
@@ -538,7 +541,7 @@ function entry(key, pid){
   if (pid === "boss" && isAdmin()) return data.boss && data.boss[key];
   const d = dayData(key); return d && d[pid];
 }
-const maskBoss = v => !v ? null : v.off ? { off:true } : v.abs ? { abs:v.abs } : v.cp ? { cp:true } : { p:true };
+const maskBoss = v => !v ? null : v.off ? { off:true } : v.abs ? { abs:v.abs } : v.cp ? { cp:true } : v.adm ? { adm:true } : { p:true };
 function putCell(up, key, pid, v){
   if (pid === "boss") { up[`boss/${key}`] = v; up[`${dayPath(key)}/boss`] = maskBoss(v); }
   else up[`${dayPath(key)}/${pid}`] = v;
@@ -577,7 +580,7 @@ function coverage(key, i, period){
   if (info && info.o && info.c) for (let t = toMin(info.o); t < toMin(info.c); t += 15) steps.add(t);
   let min = 9, from = null, to = null;
   for (const t of [...steps].sort((a,b) => a-b)) {
-    const n = PEOPLE.filter(p => { const e = entry(key,p.id); return e && e.s && !e.cp && toMin(e.s) <= t && toMin(e.e) >= t+15; }).length;
+    const n = PEOPLE.filter(p => { const e = entry(key,p.id); return e && e.s && !e.cp && !e.adm && toMin(e.s) <= t && toMin(e.e) >= t+15; }).length;
     if (n < 2) { if (from === null) from = t; to = t+15; }
     min = Math.min(min, n);
   }
@@ -640,6 +643,7 @@ function renderWeek(monday, today){
       if (!e) inner = `<span class="empty">${isAdmin() ? "+" : "–"}</span>`;
       else if (e.off) inner = `<span class="s rep">Repos</span>`;
       else if (e.p) inner = `<span class="h">Présent</span>`;
+      else if (e.adm) inner = `<span class="s adm">Admin</span>${e.s && isAdmin() ? `<span class="note">${fmtT(e.s)}–${fmtT(e.e)}</span>` : ""}`;
       else if (e.cp) inner = `<span class="s cp">Congé</span>${e.s ? `<span class="note">${fmtDur(minutes(e))} comptées</span>` : ""}`;
       else if (e.abs) { inner = `<span class="s ${e.abs === "maladie" ? "mal" : e.abs === "conge" ? "cp" : "abs"}">${ABS[e.abs] || "Absent"}</span>`; absent[p.id] = true; }
       else {
@@ -741,6 +745,8 @@ function syncType(){
   const t = $("inType").value;
   $("timesRow").hidden = t !== "work" && t !== "cp";
   $("cpHint").hidden = t !== "cp";
+  $("admHint").hidden = t !== "admin";
+  $("timesRow").hidden = !["work","cp","admin"].includes(t);
 }
 $("inType").onchange = syncType;
 function openEdit(key, pid){
@@ -748,7 +754,9 @@ function openEdit(key, pid){
   const e = entry(key, pid) || {};
   const d = new Date(key + "T12:00:00");
   $("editTitle").textContent = `${PEOPLE.find(p => p.id === pid).name}, ${d.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}`;
-  $("inType").value = e.off ? "off" : e.cp ? "cp" : e.abs ? e.abs : "work";
+  const admOpt = $("inType").querySelector('option[value="admin"]');
+  admOpt.hidden = admOpt.disabled = pid !== "boss";
+  $("inType").value = e.off ? "off" : e.adm ? "admin" : e.cp ? "cp" : e.abs ? e.abs : "work";
   $("inS").value = e.s || "";
   $("inE").value = e.e || "";
   $("inN").value = e.n || "";
@@ -769,6 +777,14 @@ $("btnSave").onclick = async () => {
     if (!s || !e) { $("editErr").textContent = "Indiquez une heure de début et de fin."; return; }
     if (toMin(e) <= toMin(s)) { $("editErr").textContent = "L'heure de fin doit être après l'heure de début."; return; }
     v = { s, e };
+  } else if (type === "admin") {
+    const s = $("inS").value, e = $("inE").value;
+    v = { adm:true };
+    if (s || e) {
+      if (!s || !e) { $("editErr").textContent = "Indiquez le début et la fin, ou laissez les deux vides."; return; }
+      if (toMin(e) <= toMin(s)) { $("editErr").textContent = "L'heure de fin doit être après l'heure de début."; return; }
+      v.s = s; v.e = e;
+    }
   } else if (type === "cp") {
     const s = $("inS").value, e = $("inE").value;
     v = { cp:true };
@@ -814,6 +830,7 @@ function describe(e){
   if (!e) return { h:"—", m:0 };
   if (e.off) return { h:"Repos", m:0 };
   if (e.p) return { h:"Présent", m:0 };
+  if (e.adm) return { h:"Admin" + (e.s ? ` (${fmtT(e.s)}–${fmtT(e.e)})` : ""), m:minutes(e) };
   if (e.cp) return { h:"Congé" + (e.s ? ` (${fmtT(e.s)}–${fmtT(e.e)})` : ""), m:minutes(e) };
   if (e.abs) return { h:ABS[e.abs] || "Absent", m:0 };
   return { h:`${fmtT(e.s)} – ${fmtT(e.e)}`, m:minutes(e) };
