@@ -371,7 +371,7 @@ const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getD
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 /* ---------- État ---------- */
-let data = { months:{}, weeks:{}, config:{} };
+let data = { months:{}, weeks:{}, config:{}, boss:{} };
 const denied = {};
 let unsubs = [];
 let user = null;
@@ -432,6 +432,7 @@ function subscribe(){
   listen("planning/config", v => { data.config = v || {}; saveCache(); render(); });
   if (isAdmin()) {
     listen("planning/months", v => { data.months = v || {}; saveCache(); render(); });
+    listen("planning/boss", v => { data.boss = v || {}; render(); });
   } else {
     data.months = {};
     ensureMonths();
@@ -523,7 +524,18 @@ function monthWeeks(){
 const mk = key => key.slice(0,7);
 const dayPath = key => `months/${mk(key)}/days/${key}`;
 function dayData(key){ const m = data.months[mk(key)]; return m && m.days && m.days[key]; }
-function entry(key, pid){ const d = dayData(key); return d && d[pid]; }
+// Horaires détaillés du Boss : dans planning/boss (lisible par le Boss seul).
+// Le mois partagé avec les agents ne contient qu'un statut (présent, repos, absent, congé).
+function entry(key, pid){
+  if (pid === "boss" && isAdmin()) return data.boss && data.boss[key];
+  const d = dayData(key); return d && d[pid];
+}
+const maskBoss = v => !v ? null : v.off ? { off:true } : v.abs ? { abs:v.abs } : v.cp ? { cp:true } : { p:true };
+function putCell(up, key, pid, v){
+  if (pid === "boss") { up[`boss/${key}`] = v; up[`${dayPath(key)}/boss`] = maskBoss(v); }
+  else up[`${dayPath(key)}/${pid}`] = v;
+  return up;
+}
 function bounds(up, key){
   const [y,m] = mk(key).split("-").map(Number);
   up[`months/${mk(key)}/start`] = new Date(y, m-1, 1).getTime();
@@ -610,7 +622,7 @@ function renderWeek(monday, today){
   for (let i = 0; i < 6; i++) {
     const d = addDays(monday, i+1), key = iso(d);
     const out = d.getMonth() !== cursor.getMonth();
-    const cov = dayData(key) ? coverage(key, i, period) : null;
+    const cov = isAdmin() && dayData(key) ? coverage(key, i, period) : null;
     const cls = [out ? "out" : "", key === today ? "today" : "", cov ? "short" : ""].join(" ").trim();
     let cells = "";
     PEOPLE.forEach(p => {
@@ -619,6 +631,7 @@ function renderWeek(monday, today){
       let inner;
       if (!e) inner = `<span class="empty">${isAdmin() ? "+" : "–"}</span>`;
       else if (e.off) inner = `<span class="off">Repos</span>`;
+      else if (e.p) inner = `<span class="t">Présent</span>`;
       else if (e.cp) inner = `<span class="cp">Congé</span>${e.s ? `<span class="note">${fmtDur(minutes(e))} comptées</span>` : ""}`;
       else if (e.abs) { inner = `<span class="abs">${ABS[e.abs] || "Absent"}</span>`; absent[p.id] = true; }
       else {
@@ -638,7 +651,7 @@ function renderWeek(monday, today){
 
   const totCell = p => {
     const m = totals[p.id];
-    if (p.id === "boss") return `<td class="c-boss">${fmtDur(m)}</td>`;
+    if (p.id === "boss") return `<td class="c-boss">${isAdmin() ? fmtDur(m) : ""}</td>`;
     const c = m === AGENT_TARGET ? "tot-ok" : m > AGENT_TARGET ? "tot-over" : "tot-under";
     return `<td class="c-${p.id} ${absent[p.id] ? "" : c}" title="Objectif 28h00">${fmtDur(m)}${absent[p.id] ? ' <span class="note" style="display:inline">(absence)</span>' : ""}</td>`;
   };
@@ -677,7 +690,7 @@ function renderWeek(monday, today){
     art.querySelector('[data-a="clear"]').onclick = async () => {
       if (!confirm("Vider les créneaux de cette semaine (jours du mois affiché) ?")) return;
       const up = {};
-      for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === cursor.getMonth()) up[dayPath(iso(d))] = null; }
+      for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === cursor.getMonth()) { up[dayPath(iso(d))] = null; up[`boss/${iso(d)}`] = null; } }
       await write(() => update(ref(db, "planning"), up));
     };
   }
@@ -706,7 +719,7 @@ function buildWeek(up, monday, period, model, overwrite, y, m){
       if (!overwrite && entry(key, p.id)) return;
       const src = inverted && p.id !== "boss" ? (p.id === "melodie" ? "kelian" : "melodie") : p.id;
       const v = base[src][i];
-      up[`${dayPath(key)}/${p.id}`] = v ? { s:v[0], e:v[1] } : { off:true };
+      putCell(up, key, p.id, v ? { s:v[0], e:v[1] } : { off:true });
     });
   }
   return up;
@@ -739,8 +752,7 @@ function openEdit(key, pid){
   syncType();
   $("dlgEdit").showModal();
 }
-const cellPath = () => `${dayPath(editing.key)}/${editing.pid}`;
-const saveCell = v => write(() => update(ref(db, "planning"), bounds({ [cellPath()]: v }, editing.key)));
+const saveCell = v => write(() => update(ref(db, "planning"), bounds(putCell({}, editing.key, editing.pid, v), editing.key)));
 $("btnCancel").onclick = () => $("dlgEdit").close();
 $("btnSave").onclick = async () => {
   const type = $("inType").value, n = $("inN").value.trim();
@@ -761,7 +773,8 @@ $("btnSave").onclick = async () => {
   } else if (type === "off") v = { off:true };
   else v = { abs:type };
   if (n) v.n = n;
-  v.mod = Date.now();
+  // Badge « modifié le » seulement pour un agent, quand le changement tombe dans les 7 jours (délai de prévenance)
+  if (editing.pid !== "boss" && daysUntil(editing.key) < 7) v.mod = Date.now();
   if (await saveCell(v)) $("dlgEdit").close();
 };
 $("btnClear").onclick = async () => { if (await saveCell(null)) $("dlgEdit").close(); };
@@ -793,6 +806,7 @@ const DAYNAMES = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","same
 function describe(e){
   if (!e) return { h:"—", m:0 };
   if (e.off) return { h:"Repos", m:0 };
+  if (e.p) return { h:"Présent", m:0 };
   if (e.cp) return { h:"Congé" + (e.s ? ` (${fmtT(e.s)}–${fmtT(e.e)})` : ""), m:minutes(e) };
   if (e.abs) return { h:ABS[e.abs] || "Absent", m:0 };
   return { h:`${fmtT(e.s)} – ${fmtT(e.e)}`, m:minutes(e) };
@@ -833,7 +847,12 @@ function buildSheet(pid){
     <p class="foot">Document édité le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} depuis le planning en ligne.</p>
   </div>`;
 }
-$("btnPrint").onclick = () => $("dlgPrint").showModal();
+$("btnPrint").onclick = () => {
+  const o = $("printWho").querySelector('option[value="boss"]');
+  o.hidden = o.disabled = !isAdmin();
+  if (!isAdmin() && $("printWho").value === "boss") $("printWho").value = "agents";
+  $("dlgPrint").showModal();
+};
 $("printCancel").onclick = () => $("dlgPrint").close();
 $("printGo").onclick = () => {
   const who = $("printWho").value;
@@ -847,7 +866,10 @@ $("printGo").onclick = () => {
 $("btnClearMonth").onclick = async () => {
   const label = cursor.toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
   if (!confirm(`Effacer tout le planning de ${label} ? Cette action est définitive.`)) return;
-  await write(() => update(ref(db, "planning"), { [`months/${cursor.getFullYear()}-${pad(cursor.getMonth()+1)}/days`]: null }));
+  const up = { [`months/${cursor.getFullYear()}-${pad(cursor.getMonth()+1)}/days`]: null };
+  const last = new Date(cursor.getFullYear(), cursor.getMonth()+1, 0).getDate();
+  for (let d = 1; d <= last; d++) up[`boss/${iso(new Date(cursor.getFullYear(), cursor.getMonth(), d))}`] = null;
+  await write(() => update(ref(db, "planning"), up));
 };
 
 /* ---------- Génération automatique ---------- */
