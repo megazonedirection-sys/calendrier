@@ -542,8 +542,10 @@ function autoModel(monday){
   const weeks = Math.round((monday - new Date(c.anchor + "T00:00:00")) / (7*86400000));
   return CYCLE[(((CYCLE.indexOf(c.model) + weeks) % 4) + 4) % 4];
 }
-function weekPeriod(monday){ const o = data.weeks[iso(monday)]; return (o && o.period) || autoPeriod(monday); }
-function weekModel(monday){ const o = data.weeks[iso(monday)]; return (o && o.model) || autoModel(monday); }
+// Seules les semaines forcées à la main (manual) priment sur le calcul automatique
+function override(monday){ const o = data.weeks[iso(monday)]; return o && o.manual ? o : null; }
+function weekPeriod(monday){ const o = override(monday); return (o && o.period) || autoPeriod(monday); }
+function weekModel(monday){ const o = override(monday); return (o && o.model) || autoModel(monday); }
 function minutes(e){ return e && e.s && e.e ? Math.max(0, toMin(e.e) - toMin(e.s)) : 0; }
 
 const ABS = { maladie:"Maladie", conge:"Congé", autre:"Absent" };
@@ -597,6 +599,7 @@ function renderWeek(monday, today){
       <select data-k="model" aria-label="Modèle">${Object.entries(MODELS).map(([k,v]) => `<option value="${k}" ${k===(meta.model||"A")?"selected":""}>${v}</option>`).join("")}</select>
       <button type="button" data-a="apply">Appliquer le modèle</button>
       <button type="button" data-a="clear">Vider la semaine</button>
+      ${override(monday) ? '<button type="button" data-a="auto">Revenir au cycle</button>' : ""}
     </div>`;
   }
 
@@ -659,8 +662,16 @@ function renderWeek(monday, today){
     const sel = k => art.querySelector(`select[data-k="${k}"]`).value;
     art.querySelector('[data-a="apply"]').onclick = async () => {
       if (hasData && !confirm("Remplacer tous les créneaux de cette semaine par le modèle choisi ?")) return;
-      const up = { [`weeks/${wkKey}`]: { period: sel("period"), model: sel("model") } };
+      const up = { [`weeks/${wkKey}`]: { period: sel("period"), model: sel("model"), manual: true } };
       buildWeek(up, monday, sel("period"), sel("model"), true, cursor.getFullYear(), cursor.getMonth());
+      await write(() => update(ref(db, "planning"), up));
+    };
+    const autoBtn = art.querySelector('[data-a="auto"]');
+    if (autoBtn) autoBtn.onclick = async () => {
+      if (!autoModel(monday)) { alert("Réglez d'abord le cycle dans « Cycle et vacances »."); return; }
+      if (!confirm("Remettre cette semaine sur le cycle automatique ? Ses créneaux seront recalculés.")) return;
+      const up = { [`weeks/${wkKey}`]: null };
+      buildWeek(up, monday, autoPeriod(monday), autoModel(monday), true, cursor.getFullYear(), cursor.getMonth());
       await write(() => update(ref(db, "planning"), up));
     };
     art.querySelector('[data-a="clear"]').onclick = async () => {
