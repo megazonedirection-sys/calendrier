@@ -11,7 +11,7 @@
 :root{
   --bg:#150d1f; --panel:#1f1430; --panel2:#281a3d; --line:#3a2852;
   --text:#f3ecfa; --muted:#a898bd;
-  --boss:#ff8a2a; --melodie:#ff3d9a; --kelian:#9d6bff;
+  --boss:#3b9dff; --melodie:#ff3d9a; --kelian:#9d6bff;
   --vac:#2dd4bf; --ete:#facc15;
   --ok:#4ade80; --warn:#ffcc33; --bad:#ff5a5a;
   box-sizing:border-box;
@@ -24,7 +24,7 @@ body{background:var(--bg);color:var(--text);font:15px/1.45 "Barlow",system-ui,sa
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:.45rem .8rem}
 button:hover{border-color:var(--muted)}
-button.primary{background:var(--boss);border-color:var(--boss);color:#1a0d05;font-weight:600}
+button.primary{background:#ff8a2a;border-color:#ff8a2a;color:#1a0d05;font-weight:600}
 button.danger{border-color:var(--bad);color:var(--bad)}
 :focus-visible{outline:2px solid var(--melodie);outline-offset:2px}
 
@@ -70,17 +70,24 @@ td.cell{font-size:.9rem;white-space:nowrap}
 td.cell.editable{cursor:pointer}
 td.cell.editable:hover{background:var(--panel2)}
 .t{font-weight:600}
-.bar{position:relative;height:4px;border-radius:2px;background:rgba(255,255,255,.07);margin-top:.3rem}
-.bar span{position:absolute;top:0;bottom:0;border-radius:2px}
-.c-boss .bar span{background:var(--boss)} .c-melodie .bar span{background:var(--melodie)} .c-kelian .bar span{background:var(--kelian)}
-.off{color:var(--muted);font-style:italic}
+/* Horaires : cadre aux couleurs de la personne */
+.h{display:block;text-align:center;border-radius:7px;padding:.35rem .2rem;font-weight:600;white-space:nowrap;border:1.5px solid}
+.c-boss .h{border-color:var(--boss);background:#3b9dff1f;color:#8cc6ff}
+.c-melodie .h{border-color:var(--melodie);background:#ff3d9a1f;color:#ff8cc2}
+.c-kelian .h{border-color:var(--kelian);background:#9d6bff1f;color:#c4a6ff}
+/* Statuts : pastilles compactes */
+.s{display:inline-block;border-radius:999px;padding:.18rem .75rem;font-weight:600;font-size:.8rem}
+.s.rep{background:#ff8a2a;color:#1a0d05}
+.s.cp{background:#facc15;color:#2b2205}
+.s.abs{background:#22c55e;color:#04210f}
+.s.mal{background:#d4d4dc;color:#1e1e26}
+.fer{display:block;text-align:center;border-radius:7px;padding:.35rem;font-weight:700;background:#ff2d2d;color:#fff;letter-spacing:.03em}
 .empty{color:var(--line)}
 .note{display:block;font-size:.75rem;color:var(--muted);white-space:normal}
 .short td.day::after{content:"⚠";color:var(--warn);margin-left:.2rem}
 .shortmsg td{color:var(--warn);font-size:.78rem;padding-top:0;border-bottom:1px solid var(--line)}
 tfoot td{font-weight:600;font-family:"Chakra Petch",sans-serif;border-bottom:none}
-.abs{color:var(--bad);font-weight:600}
-.cp{color:var(--vac);font-weight:600}
+
 .mod{display:inline-block;font-size:.68rem;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:0 .3rem;margin-top:.25rem}
 td.day.editable{cursor:pointer} td.day.editable:hover{background:var(--panel2)}
 td.day i.star{color:var(--warn);font-style:normal;margin-left:.15rem}
@@ -618,7 +625,7 @@ function renderWeek(monday, today){
   let rows = "";
   const totals = { boss:0, melodie:0, kelian:0 };
   const absent = {};
-  rows += `<tr class="closed"><td class="day"><b>${monday.getDate()}</b>lun.</td><td colspan="3">Fermé</td></tr>`;
+  rows += `<tr class="closed"><td class="day"><b>${monday.getDate()}</b>lun.</td><td colspan="3"><span class="fer">Fermé</span></td></tr>`;
   for (let i = 0; i < 6; i++) {
     const d = addDays(monday, i+1), key = iso(d);
     const out = d.getMonth() !== cursor.getMonth();
@@ -630,13 +637,12 @@ function renderWeek(monday, today){
       totals[p.id] += minutes(e);
       let inner;
       if (!e) inner = `<span class="empty">${isAdmin() ? "+" : "–"}</span>`;
-      else if (e.off) inner = `<span class="off">Repos</span>`;
-      else if (e.p) inner = `<span class="t">Présent</span>`;
-      else if (e.cp) inner = `<span class="cp">Congé</span>${e.s ? `<span class="note">${fmtDur(minutes(e))} comptées</span>` : ""}`;
-      else if (e.abs) { inner = `<span class="abs">${ABS[e.abs] || "Absent"}</span>`; absent[p.id] = true; }
+      else if (e.off) inner = `<span class="s rep">Repos</span>`;
+      else if (e.p) inner = `<span class="h">Présent</span>`;
+      else if (e.cp) inner = `<span class="s cp">Congé</span>${e.s ? `<span class="note">${fmtDur(minutes(e))} comptées</span>` : ""}`;
+      else if (e.abs) { inner = `<span class="s ${e.abs === "maladie" ? "mal" : e.abs === "conge" ? "cp" : "abs"}">${ABS[e.abs] || "Absent"}</span>`; absent[p.id] = true; }
       else {
-        const L = Math.max(0, (toMin(e.s) - 750) / 630 * 100), W = Math.min(100 - L, minutes(e) / 630 * 100);
-        inner = `<span class="t">${fmtT(e.s)}–${fmtT(e.e)}</span><div class="bar"><span style="left:${L}%;width:${W}%"></span></div>`;
+        inner = `<span class="h">${fmtT(e.s)}–${fmtT(e.e)}</span>`;
         if (p.id !== "boss" && minutes(e) < MIN_SHIFT) inner += `<span class="note" style="color:var(--warn)">⚠ moins de 4h</span>`;
       }
       if (e && e.n) inner += `<span class="note">${esc(e.n)}</span>`;
