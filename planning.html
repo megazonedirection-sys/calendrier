@@ -156,7 +156,8 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
 <div class="printbar"><button id="btnPrint" type="button">🖨 Imprimer / PDF du mois</button></div>
 <div id="offlineBanner" class="banner" hidden></div>
 <div id="adminBar" class="adminbar" hidden>
-  <button id="btnFill" class="primary" type="button">Remplir le mois</button>
+  <button id="btnGen" class="primary" type="button">Générer le planning</button>
+  <button id="btnCycle" type="button">Cycle et vacances</button>
   <button id="btnToday" type="button">Revenir au mois en cours</button>
   <button id="btnClearMonth" class="danger" type="button">Vider le mois</button>
 </div>
@@ -240,27 +241,43 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
 </dialog>
 
 <!-- Remplissage du mois -->
-<dialog id="dlgFill">
-  <h3>Remplir le mois</h3>
-  <label for="fillPeriod">Période</label>
-  <select id="fillPeriod">
-    <option value="normale">Période normale</option>
-    <option value="vacances">Vacances scolaires</option>
-    <option value="ete">Été (juillet-août)</option>
+<dialog id="dlgGen">
+  <h3>Générer le planning</h3>
+  <p class="period" id="genInfo" style="margin:0"></p>
+  <label for="genCount">Durée</label>
+  <select id="genCount">
+    <option value="1">Le mois affiché</option>
+    <option value="3">3 mois à partir du mois affiché</option>
+    <option value="6">6 mois à partir du mois affiché</option>
+    <option value="12">12 mois à partir du mois affiché</option>
   </select>
-  <label for="fillStart">Première semaine du mois</label>
-  <select id="fillStart">
-    <option value="A">Semaine A – Boss en repos le week-end</option>
-    <option value="B">Semaine B – Boss présent</option>
-    <option value="Ai">Semaine A inversée</option>
-    <option value="Bi">Semaine B inversée</option>
-  </select>
-  <label class="check"><input id="fillOverwrite" type="checkbox"> Remplacer les jours déjà remplis</label>
-  <p class="period" style="margin:.6rem 0 0">Seuls les jours du mois affiché sont remplis. Les semaines suivantes s'enchaînent dans l'ordre A, B, A inversée, B inversée. Vous pourrez ensuite changer la période ou le modèle de chaque semaine.</p>
-  <div class="err" id="fillErr"></div>
+  <label class="check"><input id="genOverwrite" type="checkbox"> Remplacer aussi les jours déjà remplis (modifications et absences comprises)</label>
+  <p class="period" style="margin:.6rem 0 0">Chaque semaine suit le cycle calé sur vos week-ends. Les vacances scolaires et l'été sont détectés automatiquement.</p>
+  <div class="err" id="genErr"></div>
   <div class="actions">
-    <button id="btnFillCancel" type="button">Annuler</button>
-    <button id="btnFillGo" class="primary" type="button">Remplir</button>
+    <button id="genCancel" type="button">Annuler</button>
+    <button id="genGo" class="primary" type="button">Générer</button>
+  </div>
+</dialog>
+
+<dialog id="dlgCycle">
+  <h3>Cycle et vacances</h3>
+  <label for="cycDate">Une date de référence</label>
+  <input id="cycDate" type="date">
+  <label for="cycModel">Cette semaine-là…</label>
+  <select id="cycModel">
+    <option value="A">Boss en week-end de repos (rôles 1)</option>
+    <option value="B">Boss travaille le week-end, Mélodie en repos le dimanche</option>
+    <option value="Ai">Boss en week-end de repos (rôles inversés)</option>
+    <option value="Bi">Boss travaille le week-end, Kélian en repos le dimanche</option>
+  </select>
+  <p class="period" style="margin:.6rem 0 0">Tout le reste de l'année se déduit de cette semaine : week-end Boss une semaine sur deux, dimanche de repos des agents en alternance.</p>
+  <label>Vacances scolaires prises en compte (zone C)</label>
+  <div id="cycHolidays" class="period"></div>
+  <div class="err" id="cycErr"></div>
+  <div class="actions">
+    <button id="cycCancel" type="button">Annuler</button>
+    <button id="cycSave" class="primary" type="button">Enregistrer</button>
   </div>
 </dialog>
 
@@ -333,6 +350,15 @@ const TPL = {
   }
 };
 
+/* Vacances scolaires zone C (académie de Toulouse) : du samedi de départ au dimanche avant la reprise */
+const HOLIDAYS = [
+  ["2026-10-17","2026-11-01","Toussaint"],
+  ["2026-12-19","2027-01-03","Noël"],
+  ["2027-02-06","2027-02-21","Hiver"],
+  ["2027-04-03","2027-04-18","Printemps"]
+];
+const PREVIEW_DAYS = 7; // doit correspondre à la règle Firebase (consultation anticipée)
+
 /* ---------- Utilitaires ---------- */
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2,"0");
@@ -345,13 +371,15 @@ const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getD
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 /* ---------- État ---------- */
-let data = { days:{}, weeks:{} };
+let data = { months:{}, weeks:{}, config:{} };
+const denied = {};
+let unsubs = [];
 let user = null;
 let subscribed = false;
 let cacheTs = null;
 try {
   const c = JSON.parse(localStorage.getItem("gz-planning-cache") || "null");
-  if (c && c.data) { data = c.data; cacheTs = c.ts; }
+  if (c && c.data && c.data.months) { data = c.data; cacheTs = c.ts; }
 } catch(e) {}
 function showOffline(){
   const b = document.getElementById("offlineBanner");
@@ -379,20 +407,51 @@ onAuthStateChanged(auth, u => {
     banner.textContent = "Ce compte peut consulter le planning mais pas le modifier.";
   } else banner.hidden = true;
   $("adminBar").hidden = !isAdmin();
-  if (!subscribed) subscribe();
+  subscribedMonths.clear();
+  subscribe();
+  listenConnection();
   render();
 });
 
+function saveCache(){
+  cacheTs = null;
+  $("offlineBanner").hidden = true;
+  try { localStorage.setItem("gz-planning-cache", JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+}
+function listen(path, onData, onDeny){
+  unsubs.push(onValue(ref(db, path), snap => onData(snap.val()), err => {
+    if (err && /permission/i.test(err.code || err.message)) { onDeny && onDeny(); render(); }
+    else showLoadError(err);
+  }));
+}
 function subscribe(){
+  unsubs.forEach(u => u()); unsubs = [];
+  Object.keys(denied).forEach(k => delete denied[k]);
   subscribed = true;
-  onValue(ref(db, "planning"), snap => {
-    const v = snap.val() || {};
-    data = { days: v.days || {}, weeks: v.weeks || {} };
-    cacheTs = null;
-    $("offlineBanner").hidden = true;
-    try { localStorage.setItem("gz-planning-cache", JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
-    render();
-  }, err => showLoadError(err));
+  listen("planning/weeks", v => { data.weeks = v || {}; saveCache(); render(); });
+  listen("planning/config", v => { data.config = v || {}; saveCache(); render(); });
+  if (isAdmin()) {
+    listen("planning/months", v => { data.months = v || {}; saveCache(); render(); });
+  } else {
+    data.months = {};
+    ensureMonths();
+  }
+}
+const subscribedMonths = new Set();
+function ensureMonths(){
+  if (!subscribed || isAdmin()) return;
+  for (const off of [-1,0,1]) {
+    const d = new Date(cursor.getFullYear(), cursor.getMonth()+off, 1);
+    const mkey = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+    if (subscribedMonths.has(mkey)) continue;
+    subscribedMonths.add(mkey);
+    listen(`planning/months/${mkey}`, v => { data.months[mkey] = v || {}; delete denied[mkey]; saveCache(); render(); },
+      () => { denied[mkey] = true; delete data.months[mkey]; subscribedMonths.delete(mkey); });
+  }
+}
+let connListening = false;
+function listenConnection(){
+  if (connListening) return; connListening = true;
   onValue(ref(db, ".info/connected"), snap => {
     const on = snap.val() === true;
     $("dot").classList.toggle("on", on);
@@ -429,9 +488,9 @@ $("btnLoginGo").onclick = async () => {
 $("inPwd").addEventListener("keydown", e => { if (e.key === "Enter") $("btnLoginGo").click(); });
 
 /* ---------- Navigation ---------- */
-$("prev").onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth()-1, 1); render(); };
-$("next").onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth()+1, 1); render(); };
-$("btnToday").onclick = () => { cursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); render(); };
+$("prev").onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth()-1, 1); ensureMonths(); render(); };
+$("next").onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth()+1, 1); ensureMonths(); render(); };
+$("btnToday").onclick = () => { cursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); ensureMonths(); render(); };
 
 function renderPeople(){
   const nav = $("people");
@@ -461,7 +520,30 @@ function monthWeeks(){
   return weeks.filter(m => [1,2,3,4,5,6].some(i => addDays(m,i).getMonth() === cursor.getMonth()));
 }
 
-function entry(key, pid){ return data.days[key] && data.days[key][pid]; }
+const mk = key => key.slice(0,7);
+const dayPath = key => `months/${mk(key)}/days/${key}`;
+function dayData(key){ const m = data.months[mk(key)]; return m && m.days && m.days[key]; }
+function entry(key, pid){ const d = dayData(key); return d && d[pid]; }
+function bounds(up, key){
+  const [y,m] = mk(key).split("-").map(Number);
+  up[`months/${mk(key)}/start`] = new Date(y, m-1, 1).getTime();
+  up[`months/${mk(key)}/end`] = new Date(y, m, 1).getTime();
+  return up;
+}
+function inHoliday(key){ return HOLIDAYS.some(([a,b]) => key >= a && key <= b); }
+function autoPeriod(monday){
+  let ete = 0, vac = 0;
+  for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === 6 || d.getMonth() === 7) ete++; if (inHoliday(iso(d))) vac++; }
+  return ete >= 3 ? "ete" : vac >= 3 ? "vacances" : "normale";
+}
+function autoModel(monday){
+  const c = data.config;
+  if (!c || !c.anchor || !c.model) return null;
+  const weeks = Math.round((monday - new Date(c.anchor + "T00:00:00")) / (7*86400000));
+  return CYCLE[(((CYCLE.indexOf(c.model) + weeks) % 4) + 4) % 4];
+}
+function weekPeriod(monday){ const o = data.weeks[iso(monday)]; return (o && o.period) || autoPeriod(monday); }
+function weekModel(monday){ const o = data.weeks[iso(monday)]; return (o && o.model) || autoModel(monday); }
 function minutes(e){ return e && e.s && e.e ? Math.max(0, toMin(e.e) - toMin(e.s)) : 0; }
 
 const ABS = { maladie:"Maladie", conge:"Congé", autre:"Absent" };
@@ -490,16 +572,20 @@ function render(){
   main.dataset.focus = focus;
   if (!subscribed && !cacheTs) return;
   main.innerHTML = "";
+  if (!isAdmin() && denied[`${cursor.getFullYear()}-${pad(cursor.getMonth()+1)}`]) {
+    main.innerHTML = `<p class="loading">Le planning de ce mois n'est pas encore consultable. Il apparaîtra ${PREVIEW_DAYS} jours avant le début du mois.</p>`;
+    return;
+  }
   const today = iso(new Date());
   monthWeeks().forEach(monday => main.appendChild(renderWeek(monday, today)));
 }
 
 function renderWeek(monday, today){
   const wkKey = iso(monday);
-  const meta = data.weeks[wkKey] || {};
-  const period = meta.period || "normale";
+  const meta = { period: weekPeriod(monday), model: weekModel(monday) };
+  const period = meta.period;
   const art = document.createElement("article");
-  const hasData = [1,2,3,4,5,6].some(i => data.days[iso(addDays(monday,i))]);
+  const hasData = [1,2,3,4,5,6].some(i => dayData(iso(addDays(monday,i))));
   art.className = "week" + (hasData && period !== "normale" ? " p-" + period : "");
   const periodLabel = period === "vacances" ? '<span class="pill vacances">🏖 Vacances scolaires</span>'
     : period === "ete" ? '<span class="pill ete">☀ Été</span>' : PERIODS[period];
@@ -521,7 +607,7 @@ function renderWeek(monday, today){
   for (let i = 0; i < 6; i++) {
     const d = addDays(monday, i+1), key = iso(d);
     const out = d.getMonth() !== cursor.getMonth();
-    const cov = data.days[key] ? coverage(key, i, period) : null;
+    const cov = dayData(key) ? coverage(key, i, period) : null;
     const cls = [out ? "out" : "", key === today ? "today" : "", cov ? "short" : ""].join(" ").trim();
     let cells = "";
     PEOPLE.forEach(p => {
@@ -573,12 +659,14 @@ function renderWeek(monday, today){
     const sel = k => art.querySelector(`select[data-k="${k}"]`).value;
     art.querySelector('[data-a="apply"]').onclick = async () => {
       if (hasData && !confirm("Remplacer tous les créneaux de cette semaine par le modèle choisi ?")) return;
-      await applyTemplate(monday, sel("period"), sel("model"), true);
+      const up = { [`weeks/${wkKey}`]: { period: sel("period"), model: sel("model") } };
+      buildWeek(up, monday, sel("period"), sel("model"), true, cursor.getFullYear(), cursor.getMonth());
+      await write(() => update(ref(db, "planning"), up));
     };
     art.querySelector('[data-a="clear"]').onclick = async () => {
       if (!confirm("Vider les créneaux de cette semaine (jours du mois affiché) ?")) return;
       const up = {};
-      for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === cursor.getMonth()) up[`days/${iso(d)}`] = null; }
+      for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === cursor.getMonth()) up[dayPath(iso(d))] = null; }
       await write(() => update(ref(db, "planning"), up));
     };
   }
@@ -597,20 +685,20 @@ async function write(fn){
   }
 }
 
-async function applyTemplate(monday, period, model, overwrite, onlyMonth = true){
+function buildWeek(up, monday, period, model, overwrite, y, m){
   const base = TPL[period][model[0]], inverted = model.endsWith("i");
-  const up = { [`weeks/${iso(monday)}`]: { period, model } };
   for (let i = 0; i < 6; i++) {
     const day = addDays(monday, i+1), key = iso(day);
-    if (onlyMonth && day.getMonth() !== cursor.getMonth()) continue;
+    if (day.getFullYear() !== y || day.getMonth() !== m) continue;
+    bounds(up, key);
     PEOPLE.forEach(p => {
       if (!overwrite && entry(key, p.id)) return;
       const src = inverted && p.id !== "boss" ? (p.id === "melodie" ? "kelian" : "melodie") : p.id;
       const v = base[src][i];
-      up[`days/${key}/${p.id}`] = v ? { s:v[0], e:v[1] } : { off:true };
+      up[`${dayPath(key)}/${p.id}`] = v ? { s:v[0], e:v[1] } : { off:true };
     });
   }
-  return write(() => update(ref(db, "planning"), up));
+  return up;
 }
 
 /* ---------- Dialogue de modification ---------- */
@@ -640,7 +728,8 @@ function openEdit(key, pid){
   syncType();
   $("dlgEdit").showModal();
 }
-const cellRef = () => ref(db, `planning/days/${editing.key}/${editing.pid}`);
+const cellPath = () => `${dayPath(editing.key)}/${editing.pid}`;
+const saveCell = v => write(() => update(ref(db, "planning"), bounds({ [cellPath()]: v }, editing.key)));
 $("btnCancel").onclick = () => $("dlgEdit").close();
 $("btnSave").onclick = async () => {
   const type = $("inType").value, n = $("inN").value.trim();
@@ -662,9 +751,9 @@ $("btnSave").onclick = async () => {
   else v = { abs:type };
   if (n) v.n = n;
   v.mod = Date.now();
-  if (await write(() => set(cellRef(), v))) $("dlgEdit").close();
+  if (await saveCell(v)) $("dlgEdit").close();
 };
-$("btnClear").onclick = async () => { if (await write(() => remove(cellRef()))) $("dlgEdit").close(); };
+$("btnClear").onclick = async () => { if (await saveCell(null)) $("dlgEdit").close(); };
 
 /* ---------- Infos de la journée ---------- */
 let editingDay = null;
@@ -676,16 +765,16 @@ function openDay(key){
   $("dayErr").textContent = "";
   $("dlgDay").showModal();
 }
-const dayRef = () => ref(db, `planning/days/${editingDay}/_info`);
+const saveDay = v => write(() => update(ref(db, "planning"), bounds({ [`${dayPath(editingDay)}/_info`]: v }, editingDay)));
 $("dayCancel").onclick = () => $("dlgDay").close();
-$("dayClear").onclick = async () => { if (await write(() => remove(dayRef()))) $("dlgDay").close(); };
+$("dayClear").onclick = async () => { if (await saveDay(null)) $("dlgDay").close(); };
 $("daySave").onclick = async () => {
   const n = $("dayNote").value.trim(), o = $("dayO").value, c = $("dayC").value;
   if ((o && !c) || (!o && c)) { $("dayErr").textContent = "Indiquez le début et la fin de l'ouverture exceptionnelle."; return; }
   if (o && toMin(c) <= toMin(o)) { $("dayErr").textContent = "La fin doit être après le début."; return; }
   if (!n && !o) { $("dayErr").textContent = "Ajoutez une information ou une ouverture exceptionnelle."; return; }
   const v = {}; if (n) v.n = n; if (o) { v.o = o; v.c = c; }
-  if (await write(() => set(dayRef(), v))) $("dlgDay").close();
+  if (await saveDay(v)) $("dlgDay").close();
 };
 
 /* ---------- Impression mensuelle ---------- */
@@ -747,23 +836,45 @@ $("printGo").onclick = () => {
 $("btnClearMonth").onclick = async () => {
   const label = cursor.toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
   if (!confirm(`Effacer tout le planning de ${label} ? Cette action est définitive.`)) return;
-  const up = {};
-  const last = new Date(cursor.getFullYear(), cursor.getMonth()+1, 0).getDate();
-  for (let d = 1; d <= last; d++) up[`days/${iso(new Date(cursor.getFullYear(), cursor.getMonth(), d))}`] = null;
-  await write(() => update(ref(db, "planning"), up));
+  await write(() => update(ref(db, "planning"), { [`months/${cursor.getFullYear()}-${pad(cursor.getMonth()+1)}/days`]: null }));
 };
 
-/* ---------- Remplissage du mois ---------- */
-$("btnFill").onclick = () => { $("fillErr").textContent = ""; $("dlgFill").showModal(); };
-$("btnFillCancel").onclick = () => $("dlgFill").close();
-$("btnFillGo").onclick = async () => {
-  const period = $("fillPeriod").value, start = CYCLE.indexOf($("fillStart").value), overwrite = $("fillOverwrite").checked;
-  const weeks = monthWeeks();
-  for (let w = 0; w < weeks.length; w++) {
-    const ok = await applyTemplate(weeks[w], period, CYCLE[(start + w) % 4], overwrite);
-    if (!ok) return;
+/* ---------- Génération automatique ---------- */
+const cycleLabel = () => {
+  const c = data.config;
+  if (!c || !c.anchor) return "Cycle non défini : réglez-le dans « Cycle et vacances ».";
+  return `Cycle calé sur la semaine du ${new Date(c.anchor + "T12:00:00").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})} : ${$("cycModel").querySelector(`option[value="${c.model}"]`).textContent.toLowerCase()}.`;
+};
+$("btnGen").onclick = () => { $("genErr").textContent = ""; $("genInfo").textContent = cycleLabel(); $("dlgGen").showModal(); };
+$("genCancel").onclick = () => $("dlgGen").close();
+$("genGo").onclick = async () => {
+  if (!data.config || !data.config.anchor) { $("genErr").textContent = "Réglez d'abord le cycle dans « Cycle et vacances »."; return; }
+  const count = Number($("genCount").value), overwrite = $("genOverwrite").checked;
+  const up = {};
+  for (let k = 0; k < count; k++) {
+    const first = new Date(cursor.getFullYear(), cursor.getMonth()+k, 1);
+    const y = first.getFullYear(), m = first.getMonth();
+    const last = new Date(y, m+1, 0);
+    for (let mon = mondayOf(first); mon <= last; mon = addDays(mon, 7))
+      buildWeek(up, mon, weekPeriod(mon), weekModel(mon), overwrite, y, m);
   }
-  $("dlgFill").close();
+  if (await write(() => update(ref(db, "planning"), up))) $("dlgGen").close();
+};
+
+$("btnCycle").onclick = () => {
+  const c = data.config || {};
+  $("cycDate").value = c.anchor || "";
+  $("cycModel").value = c.model || "Bi";
+  $("cycHolidays").innerHTML = HOLIDAYS.map(([a,b,n]) => `${n} : du ${new Date(a+"T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(b+"T12:00:00").toLocaleDateString("fr-FR")}`).join("<br>") + "<br>Été : semaines de juillet et août.";
+  $("cycErr").textContent = "";
+  $("dlgCycle").showModal();
+};
+$("cycCancel").onclick = () => $("dlgCycle").close();
+$("cycSave").onclick = async () => {
+  const v = $("cycDate").value;
+  if (!v) { $("cycErr").textContent = "Choisissez une date."; return; }
+  const anchor = iso(mondayOf(new Date(v + "T12:00:00")));
+  if (await write(() => set(ref(db, "planning/config"), { anchor, model: $("cycModel").value }))) $("dlgCycle").close();
 };
 
 render();
