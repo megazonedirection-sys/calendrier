@@ -437,7 +437,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 
 <dialog id="dlgHours" class="wide">
   <h3>Horaires des tâches</h3>
-  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée.</p>
+  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». « Répéter » crée un passage à cocher à chaque intervalle dans la plage (lavage des tables, vérification fumée…). Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée.</p>
   <div id="hrList"></div>
   <div class="err" id="hrErr"></div>
   <div class="actions">
@@ -1408,11 +1408,26 @@ function tasksFor(key){
   if (dayOpen(key)) {
     const i = dayIndex(key), dom = +key.slice(8);
     Object.entries(T.catalogue || {}).forEach(([id, t]) => {
-      if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) list.push({ id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa });
+      if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp });
     });
   }
-  Object.entries((T.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) list.push({ id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa }); });
-  return list.sort((a, b) => "osf".indexOf(a.m) - "osf".indexOf(b.m) || a.o - b.o);
+  Object.entries((T.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp }); });
+  return list.sort((a, b) => "osf".indexOf(a.m) - "osf".indexOf(b.m) || a.o - b.o || (a.win ? a.win.d : 0) - (b.win ? b.win.d : 0));
+}
+/* Tâche répétée (rp = intervalle en minutes) : un passage par intervalle dans la plage,
+   par défaut de l'ouverture à la fermeture du centre. Chaque passage est cochable
+   de son heure jusqu'au passage suivant (le dernier jusqu'à la fin de la plage). */
+function occurrences(key, task){
+  const R = dayRefs(key), rp = +task.rp;
+  if (!R || !(rp >= 15)) return [];
+  const d = boundMin(task.pd || "o:0", R), a = boundMin(task.pa || "f:0", R), out = [];
+  for (let t = d; t < a && out.length < 48; t += rp) out.push({ d:t, a:Math.min(t + rp, a) });
+  return out;
+}
+function pushTask(list, key, task){
+  if (!task.rp) { list.push(task); return; }
+  const occ = occurrences(key, task);
+  occ.forEach((w, k) => list.push({ ...task, id:`${task.id}~${k + 1}`, n:`${task.n} (${k + 1}/${occ.length})`, win:w }));
 }
 const minOf = d => d.getHours() * 60 + d.getMinutes();
 const hhmm = d => `${d.getHours()}h${pad(d.getMinutes())}`;
@@ -1439,6 +1454,7 @@ function boundMin(spec, R){
   return R[ref] ? toMin(R[ref]) + (+off || 0) : null;
 }
 function plage(key, task){
+  if (task.win) return { d: task.win.d, a: task.win.a };
   const R = dayRefs(key);
   return { d: boundMin(task.pd, R), a: boundMin(task.pa, R) };
 }
@@ -1518,7 +1534,11 @@ function renderTasks(){
   if (prev) {
     const pf = T.fait[prev] || {};
     const missed = tasksFor(prev).filter(t => !pf[t.id]);
-    if (missed.length) html += `<div class="tmissed">⚠ Non faites ${esc(dayLabel(prev))} : ${missed.map(t => esc(t.n)).join(", ")}</div>`;
+    if (missed.length) {
+      const cnt = {};
+      missed.forEach(t => { const b = t.win ? t.n.replace(/ \(\d+\/\d+\)$/, "") : t.n; cnt[b] = (cnt[b] || 0) + 1; });
+      html += `<div class="tmissed">⚠ Non faites ${esc(dayLabel(prev))} : ${Object.entries(cnt).map(([n, c]) => esc(n) + (c > 1 ? ` (×${c})` : "")).join(", ")}</div>`;
+    }
   }
   el.innerHTML = html + `</div>`;
 }
@@ -1672,6 +1692,7 @@ $("taSave").onclick = async () => {
     catalogue[r.dataset.id] = { n, m: r.querySelector(".tm").value, j, f: r.querySelector(".tf").value, o: o++ };
     if (old.pd) catalogue[r.dataset.id].pd = old.pd;
     if (old.pa) catalogue[r.dataset.id].pa = old.pa;
+    if (old.rp) catalogue[r.dataset.id].rp = old.rp;
   }
   // Les tâches ponctuelles passées sont conservées (historique)
   const today = iso(new Date());
@@ -1685,6 +1706,7 @@ $("taSave").onclick = async () => {
     const np = { n, m: r.querySelector(".tm").value };
     if (oldP.pd) np.pd = oldP.pd;
     if (oldP.pa) np.pa = oldP.pa;
+    if (oldP.rp) np.rp = oldP.rp;
     (ponctuelles[dt] = ponctuelles[dt] || {})[r.dataset.id] = np;
   }
   const up = { catalogue, ponctuelles };
@@ -1705,11 +1727,18 @@ function boundPicker(cls, spec){
   return `<select class="${cls}r" aria-label="Référence"><option value="">—</option>${Object.entries(REFS).map(([k, l]) => `<option value="${k}"${ref === k ? " selected" : ""}>${l}</option>`).join("")}</select>
     <select class="${cls}o" aria-label="Décalage">${OFFSETS.map(m => `<option value="${m}"${m === (+off || 0) ? " selected" : ""}>${offLabel(m)}</option>`).join("")}</select>`;
 }
+const REPEATS = [0, 30, 45, 60, 90, 120, 150, 180, 240];
 const readBound = (row, cls) => { const r = row.querySelector(`.${cls}r`).value; return r ? `${r}:${row.querySelector(`.${cls}o`).value}` : null; };
 function hoursPreview(row){
   const today = iso(new Date()), R = dayRefs(today);
-  const t = { pd: readBound(row, "hd"), pa: readBound(row, "ha") };
+  const t = { pd: readBound(row, "hd"), pa: readBound(row, "ha"), rp: +row.querySelector(".hrp").value };
   const prev = row.querySelector(".hprev");
+  if (t.rp) {
+    if (!R) { prev.textContent = "Aujourd'hui fermé : aperçu indisponible."; return; }
+    const occ = occurrences(today, t);
+    prev.textContent = occ.length ? `Aujourd'hui : ${occ.length} passage${occ.length > 1 ? "s" : ""} à ${occ.map(w => fmtMin(w.d)).join(", ")}${!t.pd || !t.pa ? " (plage par défaut : ouverture → fermeture du centre)" : ""}` : "Aujourd'hui : aucun passage (plage trop courte).";
+    return;
+  }
   if (!t.pd && !t.pa) { prev.textContent = "Sans plage : cochable toute la journée."; return; }
   if (!R) { prev.textContent = "Aujourd'hui fermé : aperçu indisponible."; return; }
   const p = plage(today, t);
@@ -1725,7 +1754,8 @@ $("btnTasksHours").onclick = () => {
   const refLine = R ? `<p class="period" style="margin:.6rem 0 0"><b>Aujourd'hui</b> · arrivée agents ${fmtT(R.a)} · ouverture ${fmtT(R.o)} · fermeture ${fmtT(R.f)} · départ agents ${fmtT(R.d)}</p>` : `<p class="period" style="margin:.6rem 0 0">Aujourd'hui fermé.</p>`;
   $("hrList").innerHTML = refLine + (rows.length ? rows.map(x => `<div class="hrow" data-path="${esc(x.path)}">
       <span class="hn">${esc(x.t.n)}<small>${esc(x.sub)}</small></span>
-      <span class="hsel">De ${boundPicker("hd", x.t.pd)} à ${boundPicker("ha", x.t.pa)}</span>
+      <span class="hsel">De ${boundPicker("hd", x.t.pd)} à ${boundPicker("ha", x.t.pa)}
+        · Répéter <select class="hrp" aria-label="Répéter">${REPEATS.map(m => `<option value="${m}"${m === (+x.t.rp || 0) ? " selected" : ""}>${m ? "toutes les " + offLabel(m).replace("+", "") : "non"}</option>`).join("")}</select></span>
       <span class="hprev"></span></div>`).join("")
     : `<p class="period">Aucune tâche : créez-les d'abord dans « Gérer les tâches ».</p>`);
   $("hrList").querySelectorAll(".hrow").forEach(row => { hoursPreview(row); row.addEventListener("change", () => hoursPreview(row)); });
@@ -1745,6 +1775,7 @@ $("hrSave").onclick = async () => {
     }
     up[`${row.dataset.path}/pd`] = pd;
     up[`${row.dataset.path}/pa`] = pa;
+    up[`${row.dataset.path}/rp`] = +row.querySelector(".hrp").value || null;
   }
   if (await write(() => update(ref(db, "taches"), up))) $("dlgHours").close();
 };
