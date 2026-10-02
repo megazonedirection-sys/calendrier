@@ -1292,6 +1292,10 @@ function initFirebaseSync(){
     PLANNING_FERMETURES = snap.val() || {};
     renderCalendar();
   }, e => console.warn('Fermetures planning :', e));
+  db.ref('planning/parametres').on('value', snap => {
+    appliquerParametres(snap.val());
+    renderCalendar();
+  }, e => console.warn('Paramètres d\'ouverture :', e));
   db.ref('planning/horaires').on('value', snap => {
     PLANNING_HORAIRES = snap.val() || {};
     renderCalendar();
@@ -2221,11 +2225,49 @@ function getCongeAnnuel(dateStr){
 // habituels : grisage des créneaux, avertissement à la création, bandeau.
 let PLANNING_FERMETURES = {};
 let PLANNING_HORAIRES = {};
+// ── Paramètres d'ouverture (planning/parametres) : horaires habituels,
+// vacances scolaires et congés annuels, saisis dans le planning équipe.
+// Sans paramètres valides, les valeurs écrites dans ce fichier restent
+// utilisées (valeurs de secours, comportement d'origine).
+let PARAM_HORAIRES = null;
+function appliquerParametres(p){
+  if(!p || !p.horaires) return;
+  PARAM_HORAIRES = p.horaires;
+  const vac = Object.values(p.vacances || {}).filter(v => v && v.debut && v.fin);
+  if(vac.length){
+    VACANCES_ZONE_C.length = 0;
+    vac.forEach(v => VACANCES_ZONE_C.push({ start: v.debut, end: v.fin, label: `${v.label || 'Vacances'} ${v.debut.slice(0,4)}` }));
+    // Été = juillet-août entiers (même règle que le planning)
+    const y0 = Number(vac[0].debut.slice(0,4)) - 1, y1 = Number(vac[vac.length-1].fin.slice(0,4)) + 1;
+    for(let y = y0; y <= y1; y++) VACANCES_ZONE_C.push({ start: `${y}-07-01`, end: `${y}-08-31`, label: `Été ${y}` });
+    VACANCES_ZONE_C.sort((a, b) => a.start < b.start ? -1 : 1);
+  }
+  CONGES_ANNUELS.length = 0;
+  Object.values(p.conges || {}).filter(c => c && c.debut && c.fin)
+    .forEach(c => CONGES_ANNUELS.push({ start: c.debut, end: c.fin, label: c.label || 'Congés annuels' }));
+}
+function getOpenHoursParametres(dateStr){
+  if(!PARAM_HORAIRES) return undefined; // pas de paramètres → comportement d'origine
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = d.getDay();
+  if(dow === 1) return { open: false }; // lundi
+  const mois = d.getMonth() + 1;
+  const per = (mois === 7 || mois === 8) ? 'ete' : (getVacance(dateStr) ? 'vacances' : 'normale');
+  const idx = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 0: 5 }[dow];
+  const list = PARAM_HORAIRES[per];
+  if(!list) return undefined;
+  const v = list[idx];
+  if(!Array.isArray(v) || !v[0] || !v[1]) return { open: false };
+  return { open: true, openMin: timeToMin(v[0]), closeMin: timeToMin(v[1]) };
+}
+
 function getOpenHours(dateStr){
   if(getCongeAnnuel(dateStr)) return { open: false, conge: true };
   if(PLANNING_FERMETURES[dateStr]) return { open: false, exceptionnel: true };
   const h = PLANNING_HORAIRES[dateStr];
   if(h && h.o && h.c) return { open: true, openMin: timeToMin(h.o), closeMin: timeToMin(h.c), modifie: true };
+  const hp = getOpenHoursParametres(dateStr);
+  if(hp !== undefined) return hp;
   return getOpenHoursHabituel(dateStr);
 }
 function getOpenHoursHabituel(dateStr){

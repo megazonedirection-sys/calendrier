@@ -140,6 +140,17 @@ dialog h3{font-family:"Chakra Petch",sans-serif;margin:0 0 .8rem}
 dialog label{display:block;font-size:.85rem;color:var(--muted);margin:.6rem 0 .2rem}
 dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:.5rem}
 .row{display:flex;gap:.6rem} .row>*{flex:1}
+dialog.wide{width:min(96vw,760px);max-height:92vh;overflow:auto}
+.ptab{min-width:520px;table-layout:auto}
+.ptab th,.ptab td{padding:.25rem .3rem;font-size:.8rem;vertical-align:middle}
+.ptab td.d{color:var(--muted);white-space:nowrap}
+.ptab input[type=time]{width:6.2rem;padding:.25rem;display:inline-block}
+.ptab .chk{display:inline-flex;font-weight:400;font-size:.75rem;margin:0 0 0 .3rem;color:var(--muted)}
+.prow{display:flex;gap:.4rem;align-items:center;margin:.3rem 0}
+.prow input[type=date]{flex:0 0 9.5rem}
+.prow input[type=text]{flex:1}
+.prow button{flex:0 0 auto;padding:.35rem .6rem}
+.addbtn{margin-top:.2rem}
 .actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem;justify-content:flex-end}
 .err{color:var(--bad);font-size:.85rem;min-height:1.2em;margin-top:.5rem}
 .check{display:flex;align-items:center;gap:.5rem;color:var(--text)!important}
@@ -171,6 +182,7 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
 <div id="adminBar" class="adminbar" hidden>
   <button id="btnGen" class="primary" type="button">Générer le planning</button>
   <button id="btnCycle" type="button">Cycle et vacances</button>
+  <button id="btnParams" type="button">Paramètres d'ouverture</button>
   <button id="btnToday" type="button">Revenir au mois en cours</button>
   <button id="btnClearMonth" class="danger" type="button">Vider le mois</button>
 </div>
@@ -306,6 +318,25 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
   </div>
 </dialog>
 
+<!-- Paramètres d'ouverture : horaires habituels, vacances, congés annuels -->
+<dialog id="dlgParams" class="wide">
+  <h3>Paramètres d'ouverture</h3>
+  <p class="period" style="margin:0">Utilisés par le planning, la réservation en ligne et CalendIT. Les horaires modifiés et journées fermées saisis sur une date restent prioritaires. L'été (juillet-août) est automatique.</p>
+  <label>Horaires habituels</label>
+  <div class="scroll"><table class="ptab" id="parHours"></table></div>
+  <label>Vacances scolaires zone C (du samedi de départ au dimanche avant la reprise)</label>
+  <div id="parVac"></div>
+  <button type="button" class="addbtn" id="parVacAdd">+ Ajouter une période</button>
+  <label>Congés annuels (établissement fermé)</label>
+  <div id="parCong"></div>
+  <button type="button" class="addbtn" id="parCongAdd">+ Ajouter une période</button>
+  <div class="err" id="parErr"></div>
+  <div class="actions">
+    <button id="parCancel" type="button">Annuler</button>
+    <button id="parSave" class="primary" type="button">Enregistrer</button>
+  </div>
+</dialog>
+
 <section id="printArea"></section>
 
 <script type="module">
@@ -400,7 +431,7 @@ const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getD
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 /* ---------- État ---------- */
-let data = { months:{}, weeks:{}, config:{}, boss:{} };
+let data = { months:{}, weeks:{}, config:{}, boss:{}, parametres:null };
 const denied = {};
 let unsubs = [];
 let user = null;
@@ -459,7 +490,8 @@ function subscribe(){
   subscribed = true;
   listen("planning/weeks", v => { data.weeks = v || {}; saveCache(); render(); });
   listen("planning/config", v => { data.config = v || {}; saveCache(); render(); });
-  effLoaded.months = effLoaded.boss = effLoaded.eff = false;
+  effLoaded.months = effLoaded.boss = effLoaded.eff = effLoaded.params = false;
+  listen("planning/parametres", v => { data.parametres = v || null; saveCache(); render(); effLoaded.params = true; scheduleEffectif(); });
   if (isAdmin()) {
     listen("planning/months", v => { data.months = v || {}; saveCache(); render(); effLoaded.months = true; scheduleEffectif(); });
     listen("planning/boss", v => { data.boss = v || {}; render(); effLoaded.boss = true; scheduleEffectif(); });
@@ -477,7 +509,7 @@ function subscribe(){
    réécrites. Comptage : Boss « Présent » (ou au travail) = 1 sur toute la
    journée, « Admin » = 0 ; agents = 1 pendant leur créneau de travail.
    Pas de valeur = date non planifiée (ou fermée). */
-const effLoaded = { months:false, boss:false, eff:false };
+const effLoaded = { months:false, boss:false, eff:false, params:false };
 let effTimer = null;
 function scheduleEffectif(){ clearTimeout(effTimer); effTimer = setTimeout(syncEffectif, 1500); }
 const enService = e => !!e && !e.off && !e.cp && !e.abs && !e.adm;
@@ -489,7 +521,9 @@ function computeEffectif(key){
   if (i > 5) return null; // lundi
   const period = weekPeriod(mondayOf(new Date(key + "T12:00:00")));
   const steps = new Set();
-  const [o, c] = dayHours(key, i, period).map(toMin);
+  const dh = dayHours(key, i, period);
+  if (!dh) return null; // fermé (habituellement ou congés)
+  const [o, c] = dh.map(toMin);
   for (let t = o; t < c; t += 15) steps.add(t);
   const info = d._info;
   if (info && info.o && info.c) for (let t = toMin(info.o); t < toMin(info.c); t += 15) steps.add(t);
@@ -507,7 +541,7 @@ function computeEffectif(key){
   return segs.length ? segs : null;
 }
 async function syncEffectif(){
-  if (!isAdmin() || !effLoaded.months || !effLoaded.boss || !effLoaded.eff) return;
+  if (!isAdmin() || !effLoaded.months || !effLoaded.boss || !effLoaded.eff || !effLoaded.params) return;
   const today = iso(new Date());
   const old = data.effectif || {};
   const up = {}, seen = new Set();
@@ -650,7 +684,25 @@ const ferie = key => feries(Number(key.slice(0,4)))[key] || null;
 // Attributs à ajouter à la cellule du jour : classe rouge + nom du férié au survol
 const ferieCls = key => ferie(key) ? " ferie" : "";
 const ferieTitle = key => ferie(key) ? ` title="Férié : ${ferie(key)}"` : "";
-function inHoliday(key){ return HOLIDAYS.some(([a,b]) => key >= a && key <= b); }
+/* ---------- Paramètres d'ouverture (planning/parametres) ----------
+   Valeurs de secours : celles écrites dans ce fichier (OPEN, HOLIDAYS). */
+const DEFAULT_CONGES = [{ debut:"2026-08-24", fin:"2026-09-08", label:"Congés annuels" }];
+const params = () => (data.parametres && data.parametres.horaires) ? data.parametres : null;
+function openFor(period){
+  const p = params(), h = p && p.horaires[period];
+  if (!h) return OPEN[period];
+  return [0,1,2,3,4,5].map(i => Array.isArray(h[i]) && h[i][0] && h[i][1] ? h[i] : null); // null = fermé
+}
+function holidays(){
+  const p = params();
+  return p && p.vacances ? Object.values(p.vacances).filter(v => v && v.debut && v.fin).map(v => [v.debut, v.fin, v.label || "Vacances"]) : HOLIDAYS;
+}
+function conges(){
+  const p = params();
+  return p ? Object.values(p.conges || {}).filter(v => v && v.debut && v.fin) : DEFAULT_CONGES;
+}
+const inConge = key => conges().some(c => key >= c.debut && key <= c.fin);
+function inHoliday(key){ return holidays().some(([a,b]) => key >= a && key <= b); }
 function autoPeriod(monday){
   let ete = 0, vac = 0;
   for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === 6 || d.getMonth() === 7) ete++; if (inHoliday(iso(d))) vac++; }
@@ -670,7 +722,9 @@ function minutes(e){ return e && e.s && e.e ? Math.max(0, toMin(e.e) - toMin(e.s
 
 const ABS = { maladie:"Maladie", conge:"Congé", autre:"Absent" };
 function coverage(key, i, period){
-  const [o,c] = dayHours(key, i, period).map(toMin);
+  const dh = dayHours(key, i, period);
+  if (!dh) return null;
+  const [o,c] = dh.map(toMin);
   const info = entry(key, "_info");
   const steps = new Set();
   for (let t = o; t < c; t += 15) steps.add(t);
@@ -731,9 +785,11 @@ function renderWeek(monday, today){
     const d = addDays(monday, i+1), key = iso(d);
     const out = d.getMonth() !== cursor.getMonth();
     const dayInfo = entry(key, "_info");
-    if (dayInfo && dayInfo.f) {
+    const fermeHabit = !(dayInfo && dayInfo.f) && !dayHours(key, i, period);
+    if ((dayInfo && dayInfo.f) || fermeHabit) {
+      const motif = dayInfo && dayInfo.f ? dayInfo.n : (inConge(key) ? "Congés annuels" : "");
       // Journée fermée : barre « Fermé » comme le lundi, hors totaux et alertes
-      rows += `<tr class="closed${out ? " out" : ""}${key === today ? " today" : ""}"><td class="day${isAdmin() ? " editable" : ""}${ferieCls(key)}" data-day="${key}" ${isAdmin() ? `tabindex="0" role="button" title="${ferie(key) ? `Férié : ${ferie(key)} · ` : ""}Modifier la journée"` : ferieTitle(key)}><b>${d.getDate()}</b>${DAYS[i]}</td><td colspan="3"><span class="fer">Fermé${dayInfo.n ? ` <span class="motif">· ${esc(dayInfo.n)}</span>` : ""}</span></td></tr>`;
+      rows += `<tr class="closed${out ? " out" : ""}${key === today ? " today" : ""}"><td class="day${isAdmin() ? " editable" : ""}${ferieCls(key)}" data-day="${key}" ${isAdmin() ? `tabindex="0" role="button" title="${ferie(key) ? `Férié : ${ferie(key)} · ` : ""}Modifier la journée"` : ferieTitle(key)}><b>${d.getDate()}</b>${DAYS[i]}</td><td colspan="3"><span class="fer">Fermé${motif ? ` <span class="motif">· ${esc(motif)}</span>` : ""}</span></td></tr>`;
       continue;
     }
     const cov = isAdmin() && dayData(key) ? coverage(key, i, period) : null;
@@ -841,6 +897,7 @@ function buildWeek(up, monday, period, model, overwrite, y, m){
     if (day.getFullYear() !== y || day.getMonth() !== m) continue;
     const info = entry(key, "_info");
     if (info && info.f) continue; // journée fermée : aucun créneau
+    if (!dayHours(key, i, period)) continue; // fermé habituellement ou congés annuels
     bounds(up, key);
     PEOPLE.forEach(p => {
       if (!overwrite && entry(key, p.id)) return;
@@ -924,7 +981,9 @@ let editingDay = null;
 // sinon horaires habituels de la période. i = index du jour (0 = mardi).
 function dayHours(key, i, period){
   const info = entry(key, "_info");
-  return info && info.h && info.h.o && info.h.c ? [info.h.o, info.h.c] : OPEN[period][i];
+  if (info && info.h && info.h.o && info.h.c) return [info.h.o, info.h.c];
+  if (inConge(key)) return null;
+  return openFor(period)[i]; // null = fermé habituellement
 }
 function dayIndex(key){ return (new Date(key + "T12:00:00").getDay() + 5) % 7; } // mar=0 … dim=5
 function syncClosed(){
@@ -940,8 +999,8 @@ function openDay(key){
   $("dayClosed").checked = !!info.f;
   $("dayNote").value = info.n || ""; $("dayO").value = info.o || ""; $("dayC").value = info.c || "";
   $("dayHO").value = (info.h && info.h.o) || ""; $("dayHC").value = (info.h && info.h.c) || "";
-  const habit = OPEN[weekPeriod(mondayOf(new Date(key + "T12:00:00")))][dayIndex(key)];
-  $("dayHHint").textContent = `Habituellement : ${fmtT(habit[0])}–${fmtT(habit[1])}. La réservation en ligne suivra ces horaires.`;
+  const habit = inConge(key) ? null : openFor(weekPeriod(mondayOf(new Date(key + "T12:00:00"))))[dayIndex(key)];
+  $("dayHHint").textContent = habit ? `Habituellement : ${fmtT(habit[0])}–${fmtT(habit[1])}. La réservation en ligne suivra ces horaires.` : "Habituellement : fermé. Des horaires saisis ici ouvriront exceptionnellement la journée.";
   $("dayErr").textContent = "";
   syncClosed();
   $("dlgDay").showModal();
@@ -997,6 +1056,78 @@ $("daySave").onclick = async () => {
   }
   if (!f && was.f && !confirm("Rouvrir cette journée ? La réservation en ligne sera de nouveau possible ; pensez à remplir les créneaux de l'équipe.")) return;
   if (await saveDay(v, extra)) $("dlgDay").close();
+};
+
+/* ---------- Dialogue « Paramètres d'ouverture » ---------- */
+const PER_LABELS = { normale:"Période scolaire", vacances:"Vacances", ete:"Été" };
+const DAY_LABELS = ["Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
+function parPeriodRow(container, v){
+  const row = document.createElement("div");
+  row.className = "prow";
+  row.innerHTML = `<input type="date" data-k="debut" aria-label="Début"><input type="date" data-k="fin" aria-label="Fin"><input type="text" data-k="label" maxlength="40" placeholder="Nom"><button type="button" class="danger" title="Supprimer">✕</button>`;
+  row.querySelector('[data-k="debut"]').value = v.debut || "";
+  row.querySelector('[data-k="fin"]').value = v.fin || "";
+  row.querySelector('[data-k="label"]').value = v.label || "";
+  row.querySelector("button").onclick = () => row.remove();
+  container.appendChild(row);
+}
+$("btnParams").onclick = () => {
+  const vac = holidays(), cg = conges();
+  let html = `<thead><tr><th></th>${Object.values(PER_LABELS).map(l => `<th>${l}</th>`).join("")}</tr></thead><tbody>`;
+  DAY_LABELS.forEach((dl, i) => {
+    html += `<tr><td class="d">${dl}</td>`;
+    Object.keys(PER_LABELS).forEach(per => {
+      const h = openFor(per)[i];
+      html += `<td><input type="time" step="300" data-p="${per}" data-i="${i}" data-k="o" value="${h ? h[0] : ""}" aria-label="${dl} ${PER_LABELS[per]} ouverture">
+        <input type="time" step="300" data-p="${per}" data-i="${i}" data-k="c" value="${h ? h[1] : ""}" aria-label="${dl} ${PER_LABELS[per]} fermeture">
+        <label class="chk"><input type="checkbox" data-p="${per}" data-i="${i}" data-k="x" ${h ? "" : "checked"}> fermé</label></td>`;
+    });
+    html += `</tr>`;
+  });
+  $("parHours").innerHTML = html + "</tbody>";
+  $("parVac").innerHTML = ""; vac.forEach(([debut, fin, label]) => parPeriodRow($("parVac"), { debut, fin, label }));
+  $("parCong").innerHTML = ""; cg.forEach(c => parPeriodRow($("parCong"), c));
+  $("parErr").textContent = "";
+  $("dlgParams").showModal();
+};
+$("parVacAdd").onclick = () => parPeriodRow($("parVac"), {});
+$("parCongAdd").onclick = () => parPeriodRow($("parCong"), {});
+$("parCancel").onclick = () => $("dlgParams").close();
+function readPeriods(container, nom){
+  const list = [];
+  for (const row of container.querySelectorAll(".prow")) {
+    const g = k => row.querySelector(`[data-k="${k}"]`).value.trim();
+    const debut = g("debut"), fin = g("fin"), label = g("label");
+    if (!debut && !fin && !label) continue; // ligne vide ignorée
+    if (!debut || !fin) throw `${nom} : indiquez la date de début et la date de fin de chaque période.`;
+    if (fin < debut) throw `${nom} : la fin doit être après le début (${label || debut}).`;
+    list.push({ debut, fin, label: label || nom });
+  }
+  list.sort((a,b) => a.debut < b.debut ? -1 : 1);
+  for (let k = 1; k < list.length; k++) if (list[k].debut <= list[k-1].fin) throw `${nom} : deux périodes se chevauchent (${list[k-1].label} et ${list[k].label}).`;
+  return list;
+}
+$("parSave").onclick = async () => {
+  $("parErr").textContent = "";
+  try {
+    const horaires = {};
+    Object.keys(PER_LABELS).forEach(per => {
+      horaires[per] = DAY_LABELS.map((dl, i) => {
+        const q = k => $("parHours").querySelector(`[data-p="${per}"][data-i="${i}"][data-k="${k}"]`);
+        if (q("x").checked) return false; // fermé
+        const o = q("o").value, c = q("c").value;
+        if (!o || !c) throw `${PER_LABELS[per]}, ${dl} : indiquez l'ouverture et la fermeture, ou cochez « fermé ».`;
+        if (toMin(c) <= toMin(o)) throw `${PER_LABELS[per]}, ${dl} : la fermeture doit être après l'ouverture.`;
+        return [o, c];
+      });
+    });
+    const vacances = readPeriods($("parVac"), "Vacances");
+    const congesList = readPeriods($("parCong"), "Congés annuels");
+    if (!confirm("Enregistrer ces paramètres ? Ils s'appliqueront tout de suite au planning, à la réservation en ligne et à CalendIT.")) return;
+    if (await write(() => update(ref(db, "planning"), { parametres: { horaires, vacances, conges: congesList, maj: Date.now() } }))) $("dlgParams").close();
+  } catch(e) {
+    $("parErr").textContent = typeof e === "string" ? e : (e.message || String(e));
+  }
 };
 
 /* ---------- Impression mensuelle ---------- */
@@ -1098,7 +1229,7 @@ $("btnCycle").onclick = () => {
   const c = data.config || {};
   $("cycDate").value = c.anchor || "";
   $("cycModel").value = c.model || "Bi";
-  $("cycHolidays").innerHTML = HOLIDAYS.map(([a,b,n]) => `${n} : du ${new Date(a+"T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(b+"T12:00:00").toLocaleDateString("fr-FR")}`).join("<br>") + "<br>Été : semaines de juillet et août.";
+  $("cycHolidays").innerHTML = holidays().map(([a,b,n]) => `${n} : du ${new Date(a+"T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(b+"T12:00:00").toLocaleDateString("fr-FR")}`).join("<br>") + "<br>Été : semaines de juillet et août.<br><i>Modifiables dans « Paramètres d'ouverture ».</i>";
   $("cycErr").textContent = "";
   $("dlgCycle").showModal();
 };
