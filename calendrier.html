@@ -1104,6 +1104,9 @@ const LS_OFFLINE_BOOKINGS_TS    = 'gz_offlineBookingsCacheTs';
 const LS_OFFLINE_PENDING_QUEUE  = 'gz_offlinePendingQueue'; // { [bookingKey]: bookingValue }
 
 let isFirebaseConnected = null; // null = pas encore su
+// Dernier état des réservations reçu du serveur (null tant qu'aucune
+// synchronisation n'a eu lieu). Sert de base de comparaison à saveBookings().
+let serverBookings = null;
 
 function loadOfflineBookingsCache(){
   try {
@@ -1229,11 +1232,16 @@ function initFirebaseSync(){
       // Reconnexion après une coupure : tenter d'envoyer les réservations
       // prises hors ligne.
       flushOfflinePendingQueue();
+      traiterDemandesAuto(); // demandes en ligne arrivées pendant la coupure
     }
   });
 
   window._fbListener = db.ref('bookings').on('value', snap => {
     bookings = snap.val() || {};
+    // Copie indépendante de l'état serveur : référence utilisée par
+    // saveBookings() pour n'envoyer QUE les réservations modifiées.
+    const premiereSynchro = serverBookings === null;
+    serverBookings = snap.val() || {};
     // Les réservations prises hors ligne, pas encore synchronisées, restent
     // affichées (fusionnées par-dessus l'état serveur) tant qu'elles n'ont
     // pas été confirmées envoyées par flushOfflinePendingQueue — sans quoi
@@ -1252,6 +1260,7 @@ function initFirebaseSync(){
     // bout (ex: test resté sans suite, réservation refusée après coup, etc.).
     db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
     db.ref('dispo_profil').set(computeProfilFlagsFromBookings(bookings)).catch(()=>{});
+    if(premiereSynchro) traiterDemandesAuto();
     if(!_initialScrollDone){
       _initialScrollDone = true;
       requestAnimationFrame(()=>{ setTimeout(doAutoScroll, 120); });
@@ -1286,25 +1295,66 @@ function initFirebaseSync(){
     // pour n'envoyer qu'un seul email — sinon une course entre écritures
     // successives peut déclencher le traitement d'une session avant l'arrivée
     // des suivantes, et donc un email par session au lieu d'un seul.
-    const parGroupe = {};
-    const seules = [];
-    Object.entries(demandes).forEach(([ref, d]) => {
-      if(d.groupId){
-        (parGroupe[d.groupId] = parGroupe[d.groupId] || []).push({ref, d});
-      } else if(d.direct && d.status === 'auto-confirmed'){
-        seules.push({ref, d});
-      }
-    });
-    seules.forEach(({ref, d}) => enqueueTraitement(() => autoValiderDemande(ref, d)));
-    Object.entries(parGroupe).forEach(([groupId, membres]) => {
-      const total = membres[0].d.groupTotal || membres.length;
-      if(membres.length < total) return; // groupe incomplet — on attend les sessions restantes
-      const aConfirmer = membres.filter(m => m.d.direct && m.d.status === 'auto-confirmed');
-      if(aConfirmer.length > 0) enqueueTraitement(() => autoValiderGroupe(groupId, aConfirmer));
-    });
+    traiterDemandesAuto();
     updateDemandesBadge();
     renderCalendar();
   });
+}
+
+// Lance l'auto-validation des demandes en ligne confirmées automatiquement.
+// N'agit qu'une fois le planning réellement synchronisé avec le serveur
+// (serverBookings connu) : sinon la recherche de colonne libre se ferait sur
+// une copie locale incomplète et pourrait écraser une réservation existante.
+// Appelée à chaque changement des demandes ET à la première synchronisation
+// des réservations.
+function traiterDemandesAuto(){
+  if(serverBookings === null || isFirebaseConnected === false) return;
+  const parGroupe = {};
+  const seules = [];
+  Object.entries(demandes).forEach(([ref, d]) => {
+    if(d.groupId){
+      (parGroupe[d.groupId] = parGroupe[d.groupId] || []).push({ref, d});
+    } else if(d.direct && demandeATraiter(d)){
+      seules.push({ref, d});
+    }
+  });
+  seules.forEach(({ref, d}) => enqueueTraitement(() => autoValiderDemande(ref, d)));
+  Object.entries(parGroupe).forEach(([groupId, membres]) => {
+    const total = membres[0].d.groupTotal || membres.length;
+    if(membres.length < total) return; // groupe incomplet — on attend les sessions restantes
+    const aConfirmer = membres.filter(m => m.d.direct && demandeATraiter(m.d));
+    if(aConfirmer.length > 0) enqueueTraitement(() => autoValiderGroupe(groupId, aConfirmer));
+  });
+}
+
+// ── VERROU MULTI-POSTES ──────────────────────────────────────────────────────
+// Quand CalendIT est ouvert sur plusieurs appareils, chacun reçoit la même
+// demande en ligne. Le premier poste qui la "réserve" (transaction Firebase :
+// statut auto-confirmed → processing) est le seul à la traiter ; les autres
+// l'ignorent. Si ce poste plante en cours de route, le verrou expire au bout
+// de 2 minutes et un autre poste reprend la demande.
+const VERROU_EXPIRATION_MS = 2 * 60 * 1000;
+function demandeATraiter(d){
+  if(d.status === 'auto-confirmed') return true;
+  return d.status === 'processing' && (Date.now() - (d.processingAt || 0)) > VERROU_EXPIRATION_MS;
+}
+async function reserverDemande(ref){
+  try {
+    const res = await db.ref(`demandes/${ref}`).transaction(cur => {
+      if(cur === null) return cur; // valeur pas encore connue : Firebase relance avec la vraie
+      if(!demandeATraiter(cur)) return; // déjà prise par un autre poste → abandon
+      cur.status = 'processing';
+      cur.processingAt = Date.now();
+      return cur;
+    }, undefined, false);
+    const v = res.snapshot && res.snapshot.val();
+    return !!(res.committed && v && v.status === 'processing');
+  } catch(e) {
+    // Verrou impossible (ex: règle Firebase plus stricte) : on revient au
+    // comportement d'origine plutôt que de bloquer les réservations en ligne.
+    console.warn('Verrou de demande indisponible, traitement classique :', e);
+    return true;
+  }
 }
 
 // ── AUTO-VALIDATION RÉSERVATIONS DIRECTES ─────────────────────────────────────
@@ -1426,6 +1476,24 @@ async function sendClientConfirmationEmail(d, ref, notify){
 // Crée la réservation dans bookings à partir d'une demande auto-confirmée.
 // Retourne true si la réservation a pu être créée, false si le créneau est
 // complet (bascule alors la demande en validation manuelle).
+// Enregistre IMMÉDIATEMENT un lot de réservations (ajout local + écriture
+// ciblée dans Firebase), sans attendre un saveBookings() ultérieur. Évite
+// qu'une réservation n'existe que dans la mémoire du poste pendant l'envoi
+// d'un email (plusieurs secondes) et ne soit effacée par une mise à jour
+// temps réel arrivée entre-temps.
+async function commitBookingEntries(entries){
+  if(!entries || !Object.keys(entries).length) return;
+  // Retire les éventuels champs "undefined", que Firebase refuse
+  entries = JSON.parse(JSON.stringify(entries));
+  Object.assign(bookings, entries);
+  if(isFirebaseConnected === false){
+    // Hors ligne : mise en file d'attente par le mécanisme existant
+    await saveBookings();
+    return;
+  }
+  await db.ref('bookings').update(entries);
+}
+
 async function createBookingFromDemande(ref, d, forcedSlot){
   const activite = d.activite || 'laser';
   const date     = d.date || '';
@@ -1461,13 +1529,14 @@ async function createBookingFromDemande(ref, d, forcedSlot){
       await db.ref(`demandes/${ref}/direct`).set(false);
       return false;
     }
+    const newEntries = {};
     for(let col = startCol; col < startCol + nbCols; col++){
       times.forEach((t, i) => {
         const parts = [];
         if(nbCols > 1) parts.push(`Casque ${col - startCol + 1}/${nbCols}`);
         if(span > 1) parts.push(`Partie ${i + 1}/${span}`);
         const suffix = parts.length ? ` [${parts.join(', ')}]` : '';
-        bookings[`vr|${date}|${t}|${col}`] = {
+        newEntries[`vr|${date}|${t}|${col}`] = {
           nom:       d.nom||'',
           tel:       d.tel||'',
           mail:      d.mail||'',
@@ -1482,6 +1551,7 @@ async function createBookingFromDemande(ref, d, forcedSlot){
         };
       });
     }
+    await commitBookingEntries(newEntries); // enregistré AVANT statut et email
     await db.ref(`demandes/${ref}/status`).set('processed');
     return true;
   }
@@ -1501,8 +1571,9 @@ async function createBookingFromDemande(ref, d, forcedSlot){
     return false;
   }
   // Créer la (ou les) réservation(s)
+  const newEntries = {};
   times.forEach((t, i) => {
-    bookings[`${activite}|${date}|${t}|${slot}`] = {
+    newEntries[`${activite}|${date}|${t}|${slot}`] = {
       nom:       d.nom||'',
       tel:       d.tel||'',
       mail:      d.mail||'',
@@ -1524,6 +1595,7 @@ async function createBookingFromDemande(ref, d, forcedSlot){
       ...(d.groupId ? {groupId: d.groupId} : {})
     };
   });
+  await commitBookingEntries(newEntries); // enregistré AVANT statut et email
   await db.ref(`demandes/${ref}/status`).set('processed');
   return true;
 }
@@ -1538,12 +1610,16 @@ const enCoursTraitement = new Set();
 async function autoValiderDemande(ref, d){
   if(enCoursTraitement.has(ref)) return;
   enCoursTraitement.add(ref);
-  const ok = await createBookingFromDemande(ref, d);
+  if(!(await reserverDemande(ref))) return; // déjà traitée par un autre poste
+  let ok;
+  try {
+    ok = await createBookingFromDemande(ref, d); // réservation enregistrée ici
+  } catch(e) {
+    enCoursTraitement.delete(ref); // pourra être retentée (verrou expiré)
+    throw e;
+  }
   if(!ok) return;
   await sendClientConfirmationEmail(d, ref, false);
-  const _w = document.querySelector('.cal-wrap');
-  if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
-  saveBookings();
 }
 
 // Traite un groupe de demandes issues d'une même réservation multi-session :
@@ -1582,17 +1658,22 @@ function computeGroupSlot(membres){
 async function autoValiderGroupe(groupId, membres){
   if(enCoursTraitement.has(groupId)) return;
   enCoursTraitement.add(groupId);
-  const slotCommun = computeGroupSlot(membres);
+  // Réserver chaque session ; dès que la première est déjà prise par un
+  // autre poste, on abandonne le groupe (c'est cet autre poste qui le traite).
+  const reservees = [];
+  for(const m of membres){
+    if(await reserverDemande(m.ref)) reservees.push(m);
+    else if(!reservees.length) return;
+  }
+  if(!reservees.length) return;
+  const slotCommun = computeGroupSlot(reservees);
   const confirmees = [];
-  for(const {ref, d} of membres){
-    const ok = await createBookingFromDemande(ref, d, slotCommun);
+  for(const {ref, d} of reservees){
+    const ok = await createBookingFromDemande(ref, d, slotCommun); // enregistrée ici
     if(ok) confirmees.push({ref, d});
   }
   if(confirmees.length){
     await sendGroupConfirmationEmail(confirmees);
-    const _w = document.querySelector('.cal-wrap');
-    if(_w){ _savedScrollTop=_w.scrollTop; _savedScrollLeft=_w.scrollLeft; }
-    saveBookings();
   }
 }
 
@@ -1865,43 +1946,65 @@ async function saveBookings(){
     return;
   }
 
+  // ── Mode connecté : écriture CIBLÉE ──
+  // On compare l'état local à la dernière version reçue du serveur et on
+  // n'envoie QUE les réservations ajoutées, modifiées ou supprimées.
+  // Ce calcul est fait immédiatement, AVANT toute attente réseau : une mise
+  // à jour arrivant d'un autre poste pendant l'enregistrement ne peut donc
+  // plus effacer la modification en cours, et une réservation faite sur un
+  // autre poste ne peut plus être écrasée par une copie locale périmée.
+  if(serverBookings === null){
+    // Aucune synchronisation reçue : on ne connaît pas l'état du serveur,
+    // donc on n'écrit rien plutôt que de risquer d'écraser des données.
+    setSyncDot('error');
+    alert('⚠️ Planning pas encore synchronisé avec le serveur : modification non enregistrée. Patientez quelques secondes puis recommencez.');
+    return;
+  }
+  const base = serverBookings;
+  const offlineQueue = loadOfflinePendingQueue(); // gérées par flushOfflinePendingQueue
+  const updates = {};
+  let deletions = 0;
+  Object.entries(bookings).forEach(([key, val]) => {
+    if(offlineQueue[key]) return;
+    if(!base[key] || JSON.stringify(base[key]) !== JSON.stringify(val)) updates[key] = val;
+  });
+  Object.keys(base).forEach(key => {
+    if(!(key in bookings) && !offlineQueue[key]){ updates[key] = null; deletions++; }
+  });
+  if(!Object.keys(updates).length){ setSyncDot('ok'); return; }
+
+  // Garde-fou anti-suppression massive
+  const oldCount = Object.keys(base).length;
+  if(oldCount >= 5 && deletions > oldCount * 0.7){
+    const ok = confirm(
+      `⚠️ ATTENTION : cette action supprimerait ${deletions} réservations sur ${oldCount} d'un coup.\n\n` +
+      `Ça ressemble à une perte de données accidentelle plutôt qu'à une action volontaire.\n\n` +
+      `Confirmer quand même ?`
+    );
+    if(!ok){
+      bookings = JSON.parse(JSON.stringify(base));
+      renderCalendar();
+      setSyncDot('error');
+      return;
+    }
+  }
+
   setSyncDot('syncing');
+  // Sauvegarde de sécurité de l'état précédent (inchangé par rapport à avant)
+  if(oldCount > 0){
+    db.ref(`backups_bookings/${Date.now()}`).set(base).catch(()=>{});
+    purgeOldBackups();
+  }
   try {
-    const snap = await db.ref('bookings').once('value');
-    const serverBookings = snap.val() || {};
-    const oldCount = Object.keys(serverBookings).length;
-    const newCount = Object.keys(bookings).length;
-
-    // Garde-fou anti-écrasement massif
-    if (oldCount >= 5 && newCount < oldCount * 0.3) {
-      const ok = confirm(
-        `⚠️ ATTENTION : cette action ferait passer le nombre de réservations de ${oldCount} à ${newCount} d'un coup.\n\n` +
-        `Ça ressemble à une perte de données accidentelle plutôt qu'à une action volontaire.\n\n` +
-        `Confirmer quand même cette sauvegarde ?`
-      );
-      if (!ok) {
-        // On annule l'écriture et on recharge l'état réel du serveur, pour ne
-        // pas rester avec un état local potentiellement erroné.
-        bookings = serverBookings;
-        renderCalendar();
-        setSyncDot('error');
-        return;
-      }
-    }
-
-    // Sauvegarde de sécurité de l'état précédent avant écrasement
-    if (oldCount > 0) {
-      db.ref(`backups_bookings/${Date.now()}`).set(serverBookings).catch(()=>{});
-      purgeOldBackups();
-    }
-
-    await db.ref('bookings').set(bookings);
+    await db.ref('bookings').update(updates);
     setSyncDot('ok');
   } catch(e) {
+    console.error('Erreur enregistrement réservations:', e);
     setSyncDot('error');
+    alert('⚠️ La modification n\'a pas pu être enregistrée (' + (e.code || e.message) + '). Rechargez la page et vérifiez le planning.');
   }
-  db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
-  db.ref('dispo_profil').set(computeProfilFlagsFromBookings(bookings)).catch(()=>{});
+  // dispo / dispo_profil sont recalculés automatiquement par l'écouteur
+  // temps réel dès que le serveur confirme le changement.
 }
 
 // Purge les sauvegardes horodatées de plus de 7 jours (fire-and-forget,
@@ -3509,7 +3612,7 @@ function demandeCard(membres){
   const isRefused = d.status === 'refused';
   const isSuccess = d.status === 'accepted' || d.status === 'processed';
   const borderColor = isPending ? '#f97316' : isSuccess ? '#16a34a' : isRefused ? '#ef4444' : '#94a3b8';
-  const statusLabel = isPending ? '⏳ En attente' : isSuccess ? '✅ Confirmée' : isRefused ? '❌ Refusée' : `❓ ${d.status || 'Statut inconnu'}`;
+  const statusLabel = isPending ? '⏳ En attente' : isSuccess ? '✅ Confirmée' : isRefused ? '❌ Refusée' : d.status === 'processing' ? '⏳ Traitement en cours…' : `❓ ${d.status || 'Statut inconnu'}`;
   // Plusieurs sessions liées → une seule ligne "📅 date à h1, h2, h3" au lieu
   // d'une carte par session.
   const heures = membres.map(m => m.d.time).join(', ');
@@ -3817,6 +3920,9 @@ async function confirmModifierParStaff(){
   )) return;
 
   try {
+    // Réservations préparées à part : rien n'est ajouté au planning si une
+    // session s'avère complète en cours de route (pas de création partielle).
+    const staged = {};
     for(let i = 0; i < membres.length; i++){
       const { d } = membres[i];
       const time = times[i];
@@ -3825,14 +3931,14 @@ async function confirmModifierParStaff(){
 
       const MAX = activite === 'vr' ? VR_COLS : (activite === 'laser' ? LASER_COLS : 1);
       let slot = 1;
-      while(slot <= MAX && occupiedTimes.some(t => bookings[`${activite}|${dateVal}|${t}|${slot}`])) slot++;
+      while(slot <= MAX && occupiedTimes.some(t => bookings[`${activite}|${dateVal}|${t}|${slot}`] || staged[`${activite}|${dateVal}|${t}|${slot}`])) slot++;
       if(slot > MAX){
         alert(`⚠️ Le créneau ${time} est déjà complet — modification annulée, aucune réservation n'a été créée.`);
         return;
       }
 
       occupiedTimes.forEach(t => {
-        bookings[`${activite}|${dateVal}|${t}|${slot}`] = {
+        staged[`${activite}|${dateVal}|${t}|${slot}`] = {
           nom: d.nom||'', tel: d.tel||'', mail: d.mail||'',
           pers: d.pers||1, type: d.forceType || d.type || 't-particulier',
           comment: d.comment ? `[En ligne — modifié par le staff] ${d.comment}` : '[Réservation en ligne — modifiée par le staff]',
@@ -3848,7 +3954,7 @@ async function confirmModifierParStaff(){
       });
     }
 
-    saveBookings();
+    await commitBookingEntries(staged); // enregistré AVANT statuts et email
 
     const ancienneDate = premier.date, ancienneHeure = premier.time;
     for(let i = 0; i < membres.length; i++){
@@ -4027,8 +4133,9 @@ async function accepterDemandeInner(ref){
       } else {
         while(times.some(t => bookings[`${dd.activite}|${dd.date}|${t}|${slot}`])) slot++;
       }
+      const forcedEntries = {};
       times.forEach(t => {
-        bookings[`${dd.activite}|${dd.date}|${t}|${slot}`] = {
+        forcedEntries[`${dd.activite}|${dd.date}|${t}|${slot}`] = {
           nom: dd.nom, tel: dd.tel, mail: dd.mail||'',
           pers: dd.pers, type: dd.forceType || dd.type,
           comment: dd.comment ? `[En ligne] ${dd.comment}` : '[Réservation en ligne]',
@@ -4037,6 +4144,7 @@ async function accepterDemandeInner(ref){
           ...(dd.groupId ? {groupId: dd.groupId} : {})
         };
       });
+      await commitBookingEntries(forcedEntries); // enregistré AVANT statut et email
       ok = true;
     }
     await db.ref(`demandes/${r}/status`).set('accepted');
