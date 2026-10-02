@@ -459,14 +459,71 @@ function subscribe(){
   subscribed = true;
   listen("planning/weeks", v => { data.weeks = v || {}; saveCache(); render(); });
   listen("planning/config", v => { data.config = v || {}; saveCache(); render(); });
+  effLoaded.months = effLoaded.boss = effLoaded.eff = false;
   if (isAdmin()) {
-    listen("planning/months", v => { data.months = v || {}; saveCache(); render(); });
-    listen("planning/boss", v => { data.boss = v || {}; render(); });
+    listen("planning/months", v => { data.months = v || {}; saveCache(); render(); effLoaded.months = true; scheduleEffectif(); });
+    listen("planning/boss", v => { data.boss = v || {}; render(); effLoaded.boss = true; scheduleEffectif(); });
+    listen("planning/effectif", v => { data.effectif = v || {}; effLoaded.eff = true; scheduleEffectif(); });
   } else {
     data.months = {};
     ensureMonths();
   }
 }
+/* ---------- Effectif publié pour la réservation en ligne (VR) ----------
+   planning/effectif/{AAAA-MM-JJ} = [[début, fin, nombre], …] en minutes depuis
+   minuit, sur les horaires d'ouverture du jour. Aucun nom, aucun horaire
+   individuel. Recalculé automatiquement (vue Boss) après chaque modification
+   du planning, quelle qu'en soit l'origine : seules les dates modifiées sont
+   réécrites. Comptage : Boss « Présent » (ou au travail) = 1 sur toute la
+   journée, « Admin » = 0 ; agents = 1 pendant leur créneau de travail.
+   Pas de valeur = date non planifiée (ou fermée). */
+const effLoaded = { months:false, boss:false, eff:false };
+let effTimer = null;
+function scheduleEffectif(){ clearTimeout(effTimer); effTimer = setTimeout(syncEffectif, 1500); }
+const enService = e => !!e && !e.off && !e.cp && !e.abs && !e.adm;
+function computeEffectif(key){
+  const d = dayData(key);
+  if (!d || (d._info && d._info.f)) return null;
+  if (!PEOPLE.some(p => entry(key, p.id))) return null; // rien de planifié ce jour
+  const i = dayIndex(key);
+  if (i > 5) return null; // lundi
+  const period = weekPeriod(mondayOf(new Date(key + "T12:00:00")));
+  const steps = new Set();
+  const [o, c] = dayHours(key, i, period).map(toMin);
+  for (let t = o; t < c; t += 15) steps.add(t);
+  const info = d._info;
+  if (info && info.o && info.c) for (let t = toMin(info.o); t < toMin(info.c); t += 15) steps.add(t);
+  const boss = enService(entry(key, "boss")) ? 1 : 0;
+  const segs = [];
+  for (const t of [...steps].sort((a,b) => a-b)) {
+    const n = boss + PEOPLE.filter(p => p.id !== "boss").filter(p => {
+      const e = entry(key, p.id);
+      return enService(e) && e.s && e.e && toMin(e.s) <= t && toMin(e.e) >= t + 15;
+    }).length;
+    const last = segs[segs.length - 1];
+    if (last && last[1] === t && last[2] === n) last[1] = t + 15;
+    else segs.push([t, t + 15, n]);
+  }
+  return segs.length ? segs : null;
+}
+async function syncEffectif(){
+  if (!isAdmin() || !effLoaded.months || !effLoaded.boss || !effLoaded.eff) return;
+  const today = iso(new Date());
+  const old = data.effectif || {};
+  const up = {}, seen = new Set();
+  Object.values(data.months || {}).forEach(m => Object.keys((m && m.days) || {}).forEach(k => {
+    if (k < today) return;
+    seen.add(k);
+    const v = computeEffectif(k);
+    if (JSON.stringify(v) !== JSON.stringify(old[k] === undefined ? null : old[k])) up[`effectif/${k}`] = v;
+  }));
+  // Dates passées ou qui n'existent plus dans le planning : on retire
+  Object.keys(old).forEach(k => { if (k < today || !seen.has(k)) up[`effectif/${k}`] = null; });
+  if (!Object.keys(up).length) return;
+  try { await update(ref(db, "planning"), up); }
+  catch(e) { console.warn("Publication de l'effectif impossible :", e); }
+}
+
 const subscribedMonths = new Set();
 function ensureMonths(){
   if (!subscribed || isAdmin()) return;
