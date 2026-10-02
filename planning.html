@@ -83,6 +83,9 @@ td.cell.editable:hover{background:var(--panel2)}
 .s.mal{background:#d4d4dc;color:#1e1e26}
 .s.adm{background:#60a5fa;color:#061a33}
 td.cell{text-align:center} thead th:not(.day){text-align:center} tfoot td:not(.day){text-align:center}
+.chk{display:flex;align-items:center;gap:.5rem;cursor:pointer;font-weight:600}
+.chk input{width:auto;margin:0}
+.fer .motif{font-weight:400;opacity:.9}
 .fer{display:block;text-align:center;border-radius:7px;padding:.35rem;font-weight:700;background:#ff2d2d;color:#fff;letter-spacing:.03em}
 .empty{color:var(--line)}
 .note{display:block;font-size:.75rem;color:var(--muted);white-space:normal}
@@ -206,14 +209,18 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
 <!-- Infos de la journée -->
 <dialog id="dlgDay">
   <h3 id="dayTitle"></h3>
+  <label class="chk" for="dayClosed"><input id="dayClosed" type="checkbox"> Journée fermée</label>
+  <p class="period" id="dayClosedHint" style="margin:.25rem 0 0" hidden>Les créneaux de l'équipe ce jour-là seront supprimés et la réservation en ligne sera bloquée. Les réservations déjà prises dans CalendIT ne sont pas annulées. L'information ci-dessous sert de motif (facultatif).</p>
   <label for="dayNote">Information pour l'équipe</label>
   <input id="dayNote" type="text" maxlength="80" placeholder="ex. groupe anniversaire 10h–12h">
+  <div id="dayOpenBlock">
   <label>Ouverture exceptionnelle (facultatif)</label>
   <div class="row">
     <div><input id="dayO" type="time" step="300" aria-label="Début"></div>
     <div><input id="dayC" type="time" step="300" aria-label="Fin"></div>
   </div>
   <p class="period" style="margin:.5rem 0 0">Le contrôle « 2 personnes minimum » s'appliquera aussi sur ce créneau.</p>
+  </div>
   <div class="err" id="dayErr"></div>
   <div class="actions">
     <button id="dayClear" class="danger" type="button">Effacer</button>
@@ -297,7 +304,7 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { initializeAuth, browserSessionPersistence, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getDatabase, ref, onValue, update, set, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, onValue, update, set, remove, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 /* Configuration Firebase (identique à CalendIT) */
 const firebaseConfig = {
@@ -363,15 +370,15 @@ const TPL = {
 
 /* Vacances scolaires zone C (académie de Toulouse) : du samedi de départ au dimanche avant la reprise */
 const HOLIDAYS = [
-     ["2026-10-17","2026-11-01","Toussaint"],
-     ["2026-12-19","2027-01-03","Noël"],
-     ["2027-02-06","2027-02-21","Hiver"],
-     ["2027-04-03","2027-04-18","Printemps"],
-     ["2027-10-23","2027-11-07","Toussaint"],
-     ["2027-12-18","2028-01-02","Noël"],
-     ["2028-02-12","2028-02-27","Hiver"],
-     ["2028-04-15","2028-04-30","Printemps"]
-   ];
+  ["2026-10-17","2026-11-01","Toussaint"],
+  ["2026-12-19","2027-01-03","Noël"],
+  ["2027-02-06","2027-02-21","Hiver"],
+  ["2027-04-03","2027-04-18","Printemps"],
+  ["2027-10-23","2027-11-07","Toussaint"],
+  ["2027-12-18","2028-01-02","Noël"],
+  ["2028-02-12","2028-02-27","Hiver"],
+  ["2028-04-15","2028-04-30","Printemps"]
+];
 const PREVIEW_DAYS = 7; // doit correspondre à la règle Firebase (consultation anticipée)
 
 /* ---------- Utilitaires ---------- */
@@ -637,6 +644,12 @@ function renderWeek(monday, today){
   for (let i = 0; i < 6; i++) {
     const d = addDays(monday, i+1), key = iso(d);
     const out = d.getMonth() !== cursor.getMonth();
+    const dayInfo = entry(key, "_info");
+    if (dayInfo && dayInfo.f) {
+      // Journée fermée : barre « Fermé » comme le lundi, hors totaux et alertes
+      rows += `<tr class="closed${out ? " out" : ""}${key === today ? " today" : ""}"><td class="day${isAdmin() ? " editable" : ""}" data-day="${key}" ${isAdmin() ? 'tabindex="0" role="button" title="Modifier la journée"' : ""}><b>${d.getDate()}</b>${DAYS[i]}</td><td colspan="3"><span class="fer">Fermé${dayInfo.n ? ` <span class="motif">· ${esc(dayInfo.n)}</span>` : ""}</span></td></tr>`;
+      continue;
+    }
     const cov = isAdmin() && dayData(key) ? coverage(key, i, period) : null;
     const cls = [out ? "out" : "", key === today ? "today" : "", cov ? "short" : ""].join(" ").trim();
     let cells = "";
@@ -705,7 +718,8 @@ function renderWeek(monday, today){
     art.querySelector('[data-a="clear"]').onclick = async () => {
       if (!confirm("Vider les créneaux de cette semaine (jours du mois affiché) ?")) return;
       const up = {};
-      for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === cursor.getMonth()) { up[dayPath(iso(d))] = null; up[`boss/${iso(d)}`] = null; } }
+      // Seuls les créneaux sont effacés : infos de journée et fermetures sont conservées
+      for (let i = 1; i <= 6; i++) { const d = addDays(monday,i); if (d.getMonth() === cursor.getMonth()) PEOPLE.forEach(p => putCell(up, iso(d), p.id, null)); }
       await write(() => update(ref(db, "planning"), up));
     };
   }
@@ -729,6 +743,8 @@ function buildWeek(up, monday, period, model, overwrite, y, m){
   for (let i = 0; i < 6; i++) {
     const day = addDays(monday, i+1), key = iso(day);
     if (day.getFullYear() !== y || day.getMonth() !== m) continue;
+    const info = entry(key, "_info");
+    if (info && info.f) continue; // journée fermée : aucun créneau
     bounds(up, key);
     PEOPLE.forEach(p => {
       if (!overwrite && entry(key, p.id)) return;
@@ -808,24 +824,64 @@ $("btnClear").onclick = async () => { if (await saveCell(null)) $("dlgEdit").clo
 
 /* ---------- Infos de la journée ---------- */
 let editingDay = null;
+function syncClosed(){
+  const f = $("dayClosed").checked;
+  $("dayClosedHint").hidden = !f;
+  $("dayOpenBlock").hidden = f;
+}
+$("dayClosed").onchange = syncClosed;
 function openDay(key){
   editingDay = key;
   const info = entry(key, "_info") || {};
   $("dayTitle").textContent = new Date(key + "T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
+  $("dayClosed").checked = !!info.f;
   $("dayNote").value = info.n || ""; $("dayO").value = info.o || ""; $("dayC").value = info.c || "";
   $("dayErr").textContent = "";
+  syncClosed();
   $("dlgDay").showModal();
 }
-const saveDay = v => write(() => update(ref(db, "planning"), bounds({ [`${dayPath(editingDay)}/_info`]: v }, editingDay)));
+// Les fermetures sont aussi publiées dans planning/fermetures/{date} (true,
+// sans motif), lisible par le formulaire de réservation en ligne.
+const saveDay = (v, extra) => write(() => update(ref(db, "planning"), bounds({
+  [`${dayPath(editingDay)}/_info`]: v,
+  [`fermetures/${editingDay}`]: v && v.f ? true : null,
+  ...(extra || {})
+}, editingDay)));
+// Nombre de créneaux déjà réservés ce jour-là dans CalendIT (nœud public dispo)
+async function bookedSlots(key){
+  try {
+    const snap = await get(ref(db, "dispo"));
+    return Object.keys(snap.val() || {}).filter(k => k.split("|")[1] === key).length;
+  } catch(e) { return null; }
+}
 $("dayCancel").onclick = () => $("dlgDay").close();
-$("dayClear").onclick = async () => { if (await saveDay(null)) $("dlgDay").close(); };
+$("dayClear").onclick = async () => {
+  const was = entry(editingDay, "_info");
+  if (was && was.f && !confirm("Rouvrir cette journée ? La réservation en ligne sera de nouveau possible ; pensez à remplir les créneaux de l'équipe.")) return;
+  if (await saveDay(null)) $("dlgDay").close();
+};
 $("daySave").onclick = async () => {
-  const n = $("dayNote").value.trim(), o = $("dayO").value, c = $("dayC").value;
+  const f = $("dayClosed").checked;
+  const n = $("dayNote").value.trim(), o = f ? "" : $("dayO").value, c = f ? "" : $("dayC").value;
+  const was = entry(editingDay, "_info") || {};
   if ((o && !c) || (!o && c)) { $("dayErr").textContent = "Indiquez le début et la fin de l'ouverture exceptionnelle."; return; }
   if (o && toMin(c) <= toMin(o)) { $("dayErr").textContent = "La fin doit être après le début."; return; }
-  if (!n && !o) { $("dayErr").textContent = "Ajoutez une information ou une ouverture exceptionnelle."; return; }
-  const v = {}; if (n) v.n = n; if (o) { v.o = o; v.c = c; }
-  if (await saveDay(v)) $("dlgDay").close();
+  if (!f && !n && !o) { $("dayErr").textContent = "Cochez « Journée fermée », ou ajoutez une information ou une ouverture exceptionnelle."; return; }
+  const v = {}; if (f) v.f = true; if (n) v.n = n; if (o) { v.o = o; v.c = c; }
+  const extra = {};
+  if (f && !was.f) {
+    const nb = await bookedSlots(editingDay);
+    const hasStaff = PEOPLE.some(p => entry(editingDay, p.id));
+    let msg = "Fermer cette journée ?\n\n";
+    if (hasStaff) msg += "• Les créneaux de l'équipe ce jour-là seront supprimés.\n";
+    msg += "• La réservation en ligne sera bloquée pour cette date.\n";
+    if (nb) msg += `\n⚠ ${nb} créneau${nb > 1 ? "x sont" : " est"} déjà réservé${nb > 1 ? "s" : ""} dans CalendIT ce jour-là. Ces réservations ne seront PAS annulées : prévenez les clients.\n`;
+    if (nb === null) msg += "\n(Impossible de vérifier les réservations existantes : regardez CalendIT.)\n";
+    if (!confirm(msg)) return;
+    PEOPLE.forEach(p => putCell(extra, editingDay, p.id, null));
+  }
+  if (!f && was.f && !confirm("Rouvrir cette journée ? La réservation en ligne sera de nouveau possible ; pensez à remplir les créneaux de l'équipe.")) return;
+  if (await saveDay(v, extra)) $("dlgDay").close();
 };
 
 /* ---------- Impression mensuelle ---------- */
@@ -854,8 +910,9 @@ function buildSheet(pid){
     const date = new Date(y, mo, d), key = iso(date), wd = date.getDay();
     if (weekStart === null) weekStart = d;
     const label = `${DAYNAMES[wd]}`;
-    if (wd === 1) {
-      rows += `<tr class="mon"><td>${pad(d)}/${pad(mo+1)}</td><td>${label}</td><td>Fermé</td><td class="r"></td><td></td></tr>`;
+    const dInfo = entry(key, "_info");
+    if (wd === 1 || (dInfo && dInfo.f)) {
+      rows += `<tr class="mon"><td>${pad(d)}/${pad(mo+1)}</td><td>${label}</td><td>Fermé</td><td class="r"></td><td>${wd !== 1 && dInfo.n ? esc(dInfo.n) : ""}</td></tr>`;
     } else {
       const e = entry(key, pid), info = entry(key, "_info");
       const { h, m } = describe(e);
@@ -893,10 +950,10 @@ $("printGo").onclick = () => {
 /* ---------- Vider le mois ---------- */
 $("btnClearMonth").onclick = async () => {
   const label = cursor.toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
-  if (!confirm(`Effacer tout le planning de ${label} ? Cette action est définitive.`)) return;
-  const up = { [`months/${cursor.getFullYear()}-${pad(cursor.getMonth()+1)}/days`]: null };
+  if (!confirm(`Effacer tous les créneaux de ${label} ? Les infos de journée et les journées fermées sont conservées. Cette action est définitive.`)) return;
+  const up = {};
   const last = new Date(cursor.getFullYear(), cursor.getMonth()+1, 0).getDate();
-  for (let d = 1; d <= last; d++) up[`boss/${iso(new Date(cursor.getFullYear(), cursor.getMonth(), d))}`] = null;
+  for (let d = 1; d <= last; d++) { const k = iso(new Date(cursor.getFullYear(), cursor.getMonth(), d)); PEOPLE.forEach(p => putCell(up, k, p.id, null)); }
   await write(() => update(ref(db, "planning"), up));
 };
 
