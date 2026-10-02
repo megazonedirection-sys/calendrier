@@ -214,7 +214,13 @@ dialog input,dialog select{width:100%;background:var(--bg);border:1px solid var(
   <label for="dayNote">Information pour l'équipe</label>
   <input id="dayNote" type="text" maxlength="80" placeholder="ex. groupe anniversaire 10h–12h">
   <div id="dayOpenBlock">
-  <label>Ouverture exceptionnelle (facultatif)</label>
+  <label>Horaires modifiés ce jour (remplacent les horaires habituels)</label>
+  <div class="row">
+    <div><input id="dayHO" type="time" step="300" aria-label="Ouverture"></div>
+    <div><input id="dayHC" type="time" step="300" aria-label="Fermeture"></div>
+  </div>
+  <p class="period" id="dayHHint" style="margin:.25rem 0 0"></p>
+  <label>Ouverture exceptionnelle en plus (facultatif)</label>
   <div class="row">
     <div><input id="dayO" type="time" step="300" aria-label="Début"></div>
     <div><input id="dayC" type="time" step="300" aria-label="Fin"></div>
@@ -584,7 +590,7 @@ function minutes(e){ return e && e.s && e.e ? Math.max(0, toMin(e.e) - toMin(e.s
 
 const ABS = { maladie:"Maladie", conge:"Congé", autre:"Absent" };
 function coverage(key, i, period){
-  const [o,c] = OPEN[period][i].map(toMin);
+  const [o,c] = dayHours(key, i, period).map(toMin);
   const info = entry(key, "_info");
   const steps = new Set();
   for (let t = o; t < c; t += 15) steps.add(t);
@@ -667,13 +673,23 @@ function renderWeek(monday, today){
         inner = `<span class="h">${fmtT(e.s)}–${fmtT(e.e)}</span>`;
         if (p.id !== "boss" && minutes(e) < MIN_SHIFT) inner += `<span class="note" style="color:var(--warn)">⚠ moins de 4h</span>`;
       }
+      if (isAdmin() && e && e.s && e.e && !e.cp && !e.adm) {
+        const dh = entry(key, "_info");
+        if (dh && dh.h && (toMin(e.s) < toMin(dh.h.o) || toMin(e.e) > toMin(dh.h.c))) inner += `<span class="note" style="color:var(--warn)">⚠ hors horaires du jour</span>`;
+      }
       if (e && e.n) inner += `<span class="note">${esc(e.n)}</span>`;
       if (e && e.mod) inner += `<br><span class="mod" title="Modifié le ${new Date(e.mod).toLocaleString("fr-FR")}">modifié le ${new Date(e.mod).toLocaleDateString("fr-FR",{day:"numeric",month:"numeric"})}</span>`;
       cells += `<td class="cell c-${p.id}${isAdmin() ? " editable" : ""}" data-key="${key}" data-p="${p.id}" ${isAdmin() ? 'tabindex="0" role="button"' : ""}>${inner}</td>`;
     });
     const info = entry(key, "_info");
     rows += `<tr class="${cls}"><td class="day${isAdmin() ? " editable" : ""}" data-day="${key}" ${isAdmin() ? 'tabindex="0" role="button" title="Ajouter une information pour la journée"' : ""}><b>${d.getDate()}${info ? '<i class="star">★</i>' : ""}</b>${DAYS[i]}</td>${cells}</tr>`;
-    if (info && (info.n || info.o)) rows += `<tr class="daynote${out ? " out" : ""}"><td></td><td colspan="3">★ ${info.n ? esc(info.n) : ""}${info.o ? `${info.n ? " · " : ""}ouverture exceptionnelle ${fmtT(info.o)}–${fmtT(info.c)}` : ""}</td></tr>`;
+    if (info && (info.n || info.o || info.h)) {
+      const parts = [];
+      if (info.h) parts.push(`horaires du jour ${fmtT(info.h.o)}–${fmtT(info.h.c)}`);
+      if (info.n) parts.push(esc(info.n));
+      if (info.o) parts.push(`ouverture exceptionnelle ${fmtT(info.o)}–${fmtT(info.c)}`);
+      rows += `<tr class="daynote${out ? " out" : ""}"><td></td><td colspan="3">★ ${parts.join(" · ")}</td></tr>`;
+    }
     if (cov) rows += `<tr class="shortmsg${out ? " out" : ""}"><td></td><td colspan="3">${cov.text}</td></tr>`;
   }
 
@@ -824,6 +840,13 @@ $("btnClear").onclick = async () => { if (await saveCell(null)) $("dlgEdit").clo
 
 /* ---------- Infos de la journée ---------- */
 let editingDay = null;
+// Horaires d'ouverture effectifs d'un jour : horaires modifiés s'il y en a,
+// sinon horaires habituels de la période. i = index du jour (0 = mardi).
+function dayHours(key, i, period){
+  const info = entry(key, "_info");
+  return info && info.h && info.h.o && info.h.c ? [info.h.o, info.h.c] : OPEN[period][i];
+}
+function dayIndex(key){ return (new Date(key + "T12:00:00").getDay() + 5) % 7; } // mar=0 … dim=5
 function syncClosed(){
   const f = $("dayClosed").checked;
   $("dayClosedHint").hidden = !f;
@@ -836,6 +859,9 @@ function openDay(key){
   $("dayTitle").textContent = new Date(key + "T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
   $("dayClosed").checked = !!info.f;
   $("dayNote").value = info.n || ""; $("dayO").value = info.o || ""; $("dayC").value = info.c || "";
+  $("dayHO").value = (info.h && info.h.o) || ""; $("dayHC").value = (info.h && info.h.c) || "";
+  const habit = OPEN[weekPeriod(mondayOf(new Date(key + "T12:00:00")))][dayIndex(key)];
+  $("dayHHint").textContent = `Habituellement : ${fmtT(habit[0])}–${fmtT(habit[1])}. La réservation en ligne suivra ces horaires.`;
   $("dayErr").textContent = "";
   syncClosed();
   $("dlgDay").showModal();
@@ -845,6 +871,7 @@ function openDay(key){
 const saveDay = (v, extra) => write(() => update(ref(db, "planning"), bounds({
   [`${dayPath(editingDay)}/_info`]: v,
   [`fermetures/${editingDay}`]: v && v.f ? true : null,
+  [`horaires/${editingDay}`]: v && !v.f && v.h ? v.h : null,
   ...(extra || {})
 }, editingDay)));
 // Nombre de créneaux déjà réservés ce jour-là dans CalendIT (nœud public dispo)
@@ -863,11 +890,19 @@ $("dayClear").onclick = async () => {
 $("daySave").onclick = async () => {
   const f = $("dayClosed").checked;
   const n = $("dayNote").value.trim(), o = f ? "" : $("dayO").value, c = f ? "" : $("dayC").value;
+  const ho = f ? "" : $("dayHO").value, hc = f ? "" : $("dayHC").value;
   const was = entry(editingDay, "_info") || {};
+  if ((ho && !hc) || (!ho && hc)) { $("dayErr").textContent = "Indiquez l'heure d'ouverture et l'heure de fermeture du jour."; return; }
+  if (ho && toMin(hc) <= toMin(ho)) { $("dayErr").textContent = "La fermeture doit être après l'ouverture."; return; }
   if ((o && !c) || (!o && c)) { $("dayErr").textContent = "Indiquez le début et la fin de l'ouverture exceptionnelle."; return; }
   if (o && toMin(c) <= toMin(o)) { $("dayErr").textContent = "La fin doit être après le début."; return; }
-  if (!f && !n && !o) { $("dayErr").textContent = "Cochez « Journée fermée », ou ajoutez une information ou une ouverture exceptionnelle."; return; }
-  const v = {}; if (f) v.f = true; if (n) v.n = n; if (o) { v.o = o; v.c = c; }
+  if (!f && !n && !o && !ho) { $("dayErr").textContent = "Cochez « Journée fermée », ou renseignez des horaires, une information ou une ouverture exceptionnelle."; return; }
+  const v = {}; if (f) v.f = true; if (n) v.n = n; if (o) { v.o = o; v.c = c; } if (ho) v.h = { o: ho, c: hc };
+  if (ho) {
+    // Créneaux de l'équipe qui débordent des nouveaux horaires
+    const hors = PEOPLE.filter(p => { const e = entry(editingDay, p.id); return e && e.s && e.e && (toMin(e.s) < toMin(ho) || toMin(e.e) > toMin(hc)); }).map(p => p.name);
+    if (hors.length && !confirm(`Horaires du jour : ${fmtT(ho)}–${fmtT(hc)}.\n\nLes créneaux de ${hors.join(", ")} dépassent ces horaires : pensez à les ajuster ensuite.\n\nEnregistrer ?`)) return;
+  }
   const extra = {};
   if (f && !was.f) {
     const nb = await bookedSlots(editingDay);
@@ -917,7 +952,7 @@ function buildSheet(pid){
       const e = entry(key, pid), info = entry(key, "_info");
       const { h, m } = describe(e);
       week += m; monthTot += m;
-      const obs = [e && e.n, info && info.n].filter(Boolean).map(esc).join(" · ");
+      const obs = [e && e.n, info && info.h ? `ouvert ${fmtT(info.h.o)}–${fmtT(info.h.c)}` : null, info && info.n].filter(Boolean).map(esc).join(" · ");
       rows += `<tr><td>${pad(d)}/${pad(mo+1)}</td><td>${label}</td><td>${h}</td><td class="r">${m ? fmtDur(m) : ""}</td><td>${obs}</td></tr>`;
     }
     if (wd === 0) flush(d);
