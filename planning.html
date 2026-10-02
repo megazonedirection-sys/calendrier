@@ -191,6 +191,16 @@ dialog.wide{width:min(96vw,760px);max-height:92vh;overflow:auto}
 .hrow .hsel{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center;font-size:.85rem}
 .hrow select{width:auto;padding:.3rem .35rem}
 .hrow .hprev{grid-column:1/-1;font-size:.78rem;color:var(--muted)}
+.tfoot{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.55rem .9rem;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted)}
+.tfoot button{font-size:.8rem;padding:.3rem .7rem}
+.trecap{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.6rem .9rem;background:rgba(239,68,68,.12);border-bottom:1px solid var(--line);color:var(--bad);font-weight:600;font-size:.9rem}
+.trecap button{font-size:.8rem;padding:.3rem .7rem}
+.rcday h4{margin:1rem 0 .2rem}
+.rcrow{display:flex;flex-wrap:wrap;gap:.4rem .6rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--line)}
+.rcrow .rn{flex:1 1 200px;font-size:.9rem}
+.rcrow .rn small{display:block;color:var(--muted);font-size:.76rem}
+.rcrow input{flex:1 1 160px;width:auto}
+.rcrow button{flex:0 0 auto;font-size:.8rem;padding:.3rem .7rem}
 .tmissed{padding:.6rem .9rem;border-top:1px solid var(--line);color:var(--bad);font-size:.85rem}
 .tempty{padding:.8rem .9rem;color:var(--muted);font-size:.9rem}
 .trow{display:flex;flex-wrap:wrap;gap:.35rem .5rem;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--line)}
@@ -437,12 +447,22 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 
 <dialog id="dlgHours" class="wide">
   <h3>Horaires des tâches</h3>
-  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». « Répéter » crée un passage à cocher à chaque intervalle dans la plage (lavage des tables, vérification fumée…). Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée.</p>
+  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». « Seulement pendant les parties laser » : la tâche n'apparaît que pendant les réservations laser (De / À ignorés). « Répéter » crée un passage à cocher à chaque intervalle dans la plage (lavage des tables, vérification fumée…). Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée.</p>
   <div id="hrList"></div>
   <div class="err" id="hrErr"></div>
   <div class="actions">
     <button id="hrCancel" type="button">Annuler</button>
     <button id="hrSave" class="primary" type="button">Enregistrer</button>
+  </div>
+</dialog>
+
+<dialog id="dlgRecap" class="wide">
+  <h3>Récap des tâches non faites</h3>
+  <p class="period" style="margin:0">Tous les oublis pas encore traités (35 derniers jours). « Traité » les retire du récap ; ils restent visibles dans le suivi avec votre note.</p>
+  <div id="rcList"></div>
+  <div class="err" id="rcErr"></div>
+  <div class="actions">
+    <button id="rcClose" type="button">Fermer</button>
   </div>
 </dialog>
 
@@ -1380,7 +1400,8 @@ $("cycSave").onclick = async () => {
 const MOMENTS = { o:"Ouverture", s:"Pendant le service", f:"Fermeture" };
 const AGENTS = PEOPLE.filter(p => p.id !== "boss");
 const pname = id => (PEOPLE.find(p => p.id === id) || { name:id }).name;
-let T = { catalogue:{}, pins:{}, ponct:{}, fait:{}, err:false };
+let T = { catalogue:{}, pins:{}, ponct:{}, fait:{}, err:false, occ:null, occLoaded:false, laserHist:{}, faitAll:null, traite:{} };
+let tFull = (() => { try { return localStorage.getItem("gz-taches-full") === "1"; } catch(e) { return false; } })();
 let tUnsubs = [], tDay = null, tPinFails = 0, tPinLock = 0, ticking = null;
 
 function tasksSubscribe(){
@@ -1392,6 +1413,26 @@ function tasksSubscribe(){
   L("taches/pins", v => T.pins = v || {});
   L("taches/ponctuelles", v => T.ponct = v || {});
   for (let d = 0; d <= 7; d++) { const k = iso(addDays(new Date(), -d)); L(`taches/fait/${k}`, v => T.fait[k] = v || {}); }
+  // Parties laser : blocs calculés en direct par CalendIT (occupation_laser) + copie conservée pour l'historique
+  T.occLoaded = false;
+  L(`occupation_laser/${tDay}`, v => { T.occ = v; T.occLoaded = true; saveLaserHist(); });
+  L("taches/laser", v => { T.laserHist = v || {}; });
+  if (isAdmin()) {
+    const from = iso(addDays(new Date(), -35));
+    tUnsubs.push(onValue(query(ref(db, "taches/fait"), orderByKey(), startAt(from)), snap => { T.faitAll = snap.val() || {}; renderTasks(); }, err => console.warn(err)));
+    L("taches/traite", v => T.traite = v || {});
+  } else { T.faitAll = null; T.traite = {}; }
+}
+function saveLaserHist(){
+  const today = iso(new Date());
+  const live = T.occ && T.occ.l ? asArr(T.occ.l).map(asArr) : null, saved = (T.laserHist || {})[today] ? asArr(T.laserHist[today]).map(asArr) : null;
+  if (JSON.stringify(live) === JSON.stringify(saved)) return;
+  set(ref(db, `taches/laser/${today}`), live).catch(e => console.warn("Historique laser :", e.code || e));
+}
+const asArr = v => Array.isArray(v) ? v : (v && typeof v === "object") ? Object.values(v) : [];
+function laserBlocks(key){
+  const raw = key === iso(new Date()) && T.occLoaded ? (T.occ && T.occ.l) : (T.laserHist || {})[key];
+  return asArr(raw).map(b => asArr(b).map(Number)).filter(b => b.length === 2 && b[1] > b[0]);
 }
 // Changement de jour (page restée ouverte) et mise à jour des tâches « non faites »
 setInterval(() => { if (!user) return; if (iso(new Date()) !== tDay) tasksSubscribe(); else renderTasks(); }, 60000);
@@ -1408,10 +1449,10 @@ function tasksFor(key){
   if (dayOpen(key)) {
     const i = dayIndex(key), dom = +key.slice(8);
     Object.entries(T.catalogue || {}).forEach(([id, t]) => {
-      if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp });
+      if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz });
     });
   }
-  Object.entries((T.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp }); });
+  Object.entries((T.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz }); });
   return list.sort((a, b) => "osf".indexOf(a.m) - "osf".indexOf(b.m) || a.o - b.o || (a.win ? a.win.d : 0) - (b.win ? b.win.d : 0));
 }
 /* Tâche répétée (rp = intervalle en minutes) : un passage par intervalle dans la plage,
@@ -1419,15 +1460,27 @@ function tasksFor(key){
    de son heure jusqu'au passage suivant (le dernier jusqu'à la fin de la plage). */
 function occurrences(key, task){
   const R = dayRefs(key), rp = +task.rp;
+  if (task.lz) {
+    // Seulement pendant les parties laser : passages toutes les rp minutes dans chaque bloc,
+    // ou un seul passage par bloc (jusqu'à 15 min après la fin) sans répétition
+    const out = [];
+    laserBlocks(key).forEach(([s0, e0]) => {
+      if (rp >= 15) for (let t = s0; t < e0 && out.length < 96; t += rp) out.push({ d:t, a:Math.min(t + rp, e0) });
+      else out.push({ d:s0, a:e0 + 15 });
+    });
+    return out;
+  }
   if (!R || !(rp >= 15)) return [];
   const d = boundMin(task.pd || "o:0", R), a = boundMin(task.pa || "f:0", R), out = [];
   for (let t = d; t < a && out.length < 48; t += rp) out.push({ d:t, a:Math.min(t + rp, a) });
   return out;
 }
 function pushTask(list, key, task){
-  if (!task.rp) { list.push(task); return; }
+  if (!task.rp && !task.lz) { list.push(task); return; }
   const occ = occurrences(key, task);
-  occ.forEach((w, k) => list.push({ ...task, id:`${task.id}~${k + 1}`, n:`${task.n} (${k + 1}/${occ.length})`, win:w }));
+  // Laser : identifiant basé sur l'heure du passage (stable si une résa est ajoutée plus tôt dans la journée)
+  occ.forEach((w, k) => list.push({ ...task, id: task.lz ? `${task.id}~m${w.d}` : `${task.id}~${k + 1}`,
+    n: task.lz ? `${task.n} (partie ${fmtMin(w.d)})` : `${task.n} (${k + 1}/${occ.length})`, win:w }));
 }
 const minOf = d => d.getHours() * 60 + d.getMinutes();
 const hhmm = d => `${d.getHours()}h${pad(d.getMinutes())}`;
@@ -1487,6 +1540,23 @@ function prevOpenDay(today){
 }
 const dayLabel = key => new Date(key + "T12:00:00").toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"long" });
 
+/* Oublis à traiter (Boss) : depuis le premier jour d'utilisation, 35 jours max */
+function missedToTreat(){
+  if (!isAdmin() || !T.faitAll) return [];
+  const today = iso(new Date()), keys = Object.keys(T.faitAll).sort();
+  if (!keys.length) return [];
+  const out = [];
+  for (let k = keys[0]; k <= today; k = iso(addDays(new Date(k + "T12:00:00"), 1))) {
+    const f = T.faitAll[k] || {}, tr = (T.traite || {})[k] || {};
+    tasksFor(k).forEach(t => {
+      if (f[t.id] || tr[t.id]) return;
+      if (k === today && tStatus(k, t) !== "late") return;
+      out.push({ key:k, t });
+    });
+  }
+  return out;
+}
+
 function renderTasks(){
   const el = $("tasks");
   if (!el) return;
@@ -1509,26 +1579,47 @@ function renderTasks(){
     <h2>Tâches du jour<small>${esc(dayLabel(today))}</small></h2>
     ${list.length ? `<span class="tcount">${done}/${list.length}</span><span class="tprog"><i style="width:${Math.round(done / list.length * 100)}%"></i></span>` : ""}
   </header>`;
+  const toTreat = missedToTreat();
+  if (toTreat.length) html += `<div class="trecap"><span>⚠ ${toTreat.length} tâche${toTreat.length > 1 ? "s" : ""} non faite${toTreat.length > 1 ? "s" : ""} à traiter</span><button type="button" class="trecapbtn">Voir le récap</button></div>`;
+  const itemHtml = t => {
+    const r = fait[t.id];
+    const fl = flags(today, t, r);
+    const st = r ? "done" : tStatus(today, t);
+    const p = plage(today, t), pl = plageLabel(p);
+    const cls = st === "done" ? "done" : st === "late" ? "missed" : st === "early" ? "early" : "";
+    const right = r
+      ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "…"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}</span>`
+      : st === "late" ? `<span class="who" style="color:var(--bad)">Non faite</span>`
+      : st === "early" ? `<span class="who" style="color:var(--muted)">dispo à ${fmtMin(p.d)}</span>`
+      : p.a != null ? `<span class="who" style="color:var(--warn)">avant ${fmtMin(p.a)}</span>` : "";
+    return `<button type="button" class="titem ${cls}" data-tid="${esc(t.id)}" ${r && !isAdmin() ? "disabled" : ""}>
+      <span class="box">${r ? "✓" : ""}</span>
+      <span class="tn">${esc(t.n)}${r && r.c ? `<span class="tc">« ${esc(r.c)} »</span>` : ""}${!r && pl ? `<span class="tp">${esc(pl)}</span>` : ""}</span>${right}</button>`;
+  };
   if (!list.length) html += `<p class="tempty">${h ? "Aucune tâche prévue aujourd'hui." : "Fermé aujourd'hui : pas de tâche."}</p>`;
-  for (const m of ["o", "s", "f"]) {
-    const g = list.filter(t => t.m === m);
-    if (!g.length) continue;
-    html += `<div class="tgrp"><h4>${MOMENTS[m]}</h4>`;
-    g.forEach(t => {
-      const r = fait[t.id];
-      const fl = flags(today, t, r);
-      const st = r ? "done" : tStatus(today, t);
-      const p = plage(today, t), pl = plageLabel(p);
-      const cls = st === "done" ? "done" : st === "late" ? "missed" : st === "early" ? "early" : "";
-      const right = r
-        ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "…"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}</span>`
-        : st === "late" ? `<span class="who" style="color:var(--bad)">Non faite</span>`
-        : st === "early" ? `<span class="who" style="color:var(--muted)">dispo à ${fmtMin(p.d)}</span>` : "";
-      html += `<button type="button" class="titem ${cls}" data-tid="${esc(t.id)}" ${r && !isAdmin() ? "disabled" : ""}>
-        <span class="box">${r ? "✓" : ""}</span>
-        <span class="tn">${esc(t.n)}${r && r.c ? `<span class="tc">« ${esc(r.c)} »</span>` : ""}${!r && pl ? `<span class="tp">${esc(pl)}</span>` : ""}</span>${right}</button>`;
-    });
-    html += `</div>`;
+  else if (!tFull) {
+    // Vue réduite : uniquement ce qui est à faire maintenant et dans les 30 prochaines minutes
+    const info = list.map(t => ({ t, r: fait[t.id], st: fait[t.id] ? "done" : tStatus(today, t), p: plage(today, t) }));
+    const nowL = info.filter(x => x.st === "open").sort((a, b) => (a.p.a ?? 9999) - (b.p.a ?? 9999));
+    const soon = info.filter(x => x.st === "early" && x.p.d <= now + 30).sort((a, b) => a.p.d - b.p.d);
+    const later = info.filter(x => x.st === "early" && x.p.d > now + 30).sort((a, b) => a.p.d - b.p.d);
+    const nDone = info.filter(x => x.st === "done").length, nLate = info.filter(x => x.st === "late").length;
+    if (nowL.length) html += `<div class="tgrp"><h4>À faire maintenant</h4>${nowL.map(x => itemHtml(x.t)).join("")}</div>`;
+    if (soon.length) html += `<div class="tgrp"><h4>Dans les 30 prochaines minutes</h4>${soon.map(x => itemHtml(x.t)).join("")}</div>`;
+    if (!nowL.length && !soon.length) html += `<p class="tempty">✓ Rien à faire pour le moment${later.length ? ` · prochaine tâche à ${fmtMin(later[0].p.d)}` : ""}.</p>`;
+    const lateL = info.filter(x => x.st === "late");
+    if (lateL.length) html += `<div class="tgrp"><h4 style="color:var(--bad)">Non faites aujourd'hui</h4>${lateL.map(x => itemHtml(x.t)).join("")}</div>`;
+    const bits = [];
+    if (nDone) bits.push(`<span style="color:var(--ok)">✓ ${nDone} faite${nDone > 1 ? "s" : ""}</span>`);
+    if (later.length) bits.push(`${later.length} plus tard`);
+    html += `<div class="tfoot"><span>${bits.join(" · ")}</span><button type="button" class="ttoggle">Toute la journée (${list.length})</button></div>`;
+  } else {
+    for (const m of ["o", "s", "f"]) {
+      const g = list.filter(t => t.m === m);
+      if (!g.length) continue;
+      html += `<div class="tgrp"><h4>${MOMENTS[m]}</h4>${g.map(itemHtml).join("")}</div>`;
+    }
+    html += `<div class="tfoot"><span></span><button type="button" class="ttoggle">Vue réduite (maintenant)</button></div>`;
   }
   const prev = prevOpenDay(today);
   if (prev) {
@@ -1536,7 +1627,7 @@ function renderTasks(){
     const missed = tasksFor(prev).filter(t => !pf[t.id]);
     if (missed.length) {
       const cnt = {};
-      missed.forEach(t => { const b = t.win ? t.n.replace(/ \(\d+\/\d+\)$/, "") : t.n; cnt[b] = (cnt[b] || 0) + 1; });
+      missed.forEach(t => { const b = t.win ? t.n.replace(/ \((\d+\/\d+|partie [^)]+)\)$/, "") : t.n; cnt[b] = (cnt[b] || 0) + 1; });
       html += `<div class="tmissed">⚠ Non faites ${esc(dayLabel(prev))} : ${Object.entries(cnt).map(([n, c]) => esc(n) + (c > 1 ? ` (×${c})` : "")).join(", ")}</div>`;
     }
   }
@@ -1544,6 +1635,12 @@ function renderTasks(){
 }
 
 $("tasks").addEventListener("click", e => {
+  if (e.target.closest(".trecapbtn")) { openRecap(); return; }
+  if (e.target.closest(".ttoggle")) {
+    tFull = !tFull;
+    try { localStorage.setItem("gz-taches-full", tFull ? "1" : ""); } catch(err) {}
+    renderTasks(); return;
+  }
   const b = e.target.closest(".titem");
   if (b && !b.disabled) openTick(b.dataset.tid);
 });
@@ -1693,6 +1790,7 @@ $("taSave").onclick = async () => {
     if (old.pd) catalogue[r.dataset.id].pd = old.pd;
     if (old.pa) catalogue[r.dataset.id].pa = old.pa;
     if (old.rp) catalogue[r.dataset.id].rp = old.rp;
+    if (old.lz) catalogue[r.dataset.id].lz = old.lz;
   }
   // Les tâches ponctuelles passées sont conservées (historique)
   const today = iso(new Date());
@@ -1707,6 +1805,7 @@ $("taSave").onclick = async () => {
     if (oldP.pd) np.pd = oldP.pd;
     if (oldP.pa) np.pa = oldP.pa;
     if (oldP.rp) np.rp = oldP.rp;
+    if (oldP.lz) np.lz = oldP.lz;
     (ponctuelles[dt] = ponctuelles[dt] || {})[r.dataset.id] = np;
   }
   const up = { catalogue, ponctuelles };
@@ -1719,6 +1818,40 @@ $("taSave").onclick = async () => {
   if (await write(() => update(ref(db, "taches"), up))) $("dlgTasks").close();
 };
 
+/* ---------- Récap des oublis (Boss) ---------- */
+function openRecap(){
+  const items = missedToTreat();
+  const byDay = {};
+  items.forEach(x => (byDay[x.key] = byDay[x.key] || []).push(x.t));
+  $("rcList").innerHTML = items.length ? Object.keys(byDay).sort().reverse().map(k => `<div class="rcday" data-k="${k}">
+      <h4>${esc(dayLabel(k))} <button type="button" class="rcall" style="font-size:.75rem;padding:.15rem .5rem;margin-left:.4rem">Tout traiter</button></h4>
+      ${byDay[k].map(t => { const pl = plageLabel(plage(k, t)); return `<div class="rcrow" data-id="${esc(t.id)}">
+        <span class="rn">${esc(t.n)}${pl ? `<small>${esc(pl)}</small>` : ""}</span>
+        <input type="text" maxlength="120" placeholder="Note (facultatif)">
+        <button type="button" class="primary rcok">Traité</button></div>`; }).join("")}</div>`).join("")
+    : `<p class="period">✓ Aucun oubli à traiter.</p>`;
+  $("rcErr").textContent = "";
+  $("dlgRecap").showModal();
+}
+async function treat(rows){
+  const up = {};
+  rows.forEach(row => {
+    const k = row.closest(".rcday").dataset.k, c = row.querySelector("input").value.trim().slice(0, 120);
+    up[`traite/${k}/${row.dataset.id}`] = c ? { t: serverTimestamp(), c } : { t: serverTimestamp() };
+  });
+  if (await write(() => update(ref(db, "taches"), up))) {
+    rows.forEach(row => { const day = row.closest(".rcday"); row.remove(); if (!day.querySelector(".rcrow")) day.remove(); });
+    if (!$("rcList").querySelector(".rcrow")) $("rcList").innerHTML = `<p class="period">✓ Aucun oubli à traiter.</p>`;
+  }
+}
+$("rcList").addEventListener("click", e => {
+  const ok = e.target.closest(".rcok");
+  if (ok) { treat([ok.closest(".rcrow")]); return; }
+  const all = e.target.closest(".rcall");
+  if (all) treat([...all.closest(".rcday").querySelectorAll(".rcrow")]);
+});
+$("rcClose").onclick = () => $("dlgRecap").close();
+
 /* ---------- Horaires des tâches (Boss) ---------- */
 const OFFSETS = []; for (let m = -240; m <= 240; m += 15) OFFSETS.push(m);
 const offLabel = m => m === 0 ? "pile" : `${m < 0 ? "−" : "+"}${Math.abs(m) >= 60 ? Math.floor(Math.abs(m) / 60) + "h" + (Math.abs(m) % 60 ? pad(Math.abs(m) % 60) : "") : Math.abs(m) + " min"}`;
@@ -1727,12 +1860,19 @@ function boundPicker(cls, spec){
   return `<select class="${cls}r" aria-label="Référence"><option value="">—</option>${Object.entries(REFS).map(([k, l]) => `<option value="${k}"${ref === k ? " selected" : ""}>${l}</option>`).join("")}</select>
     <select class="${cls}o" aria-label="Décalage">${OFFSETS.map(m => `<option value="${m}"${m === (+off || 0) ? " selected" : ""}>${offLabel(m)}</option>`).join("")}</select>`;
 }
-const REPEATS = [0, 30, 45, 60, 90, 120, 150, 180, 240];
+const REPEATS = [0, 15, 30, 45, 60, 90, 120, 150, 180, 240];
 const readBound = (row, cls) => { const r = row.querySelector(`.${cls}r`).value; return r ? `${r}:${row.querySelector(`.${cls}o`).value}` : null; };
 function hoursPreview(row){
   const today = iso(new Date()), R = dayRefs(today);
-  const t = { pd: readBound(row, "hd"), pa: readBound(row, "ha"), rp: +row.querySelector(".hrp").value };
+  const t = { pd: readBound(row, "hd"), pa: readBound(row, "ha"), rp: +row.querySelector(".hrp").value, lz: row.querySelector(".hlz").checked };
   const prev = row.querySelector(".hprev");
+  row.querySelectorAll(".hdr,.hdo,.har,.hao").forEach(x => x.disabled = t.lz);
+  if (t.lz) {
+    const occ = occurrences(today, t), nb = laserBlocks(today).length;
+    prev.textContent = !nb ? "Aujourd'hui : aucune partie laser réservée → pas de passage."
+      : `Aujourd'hui : ${nb} bloc${nb > 1 ? "s" : ""} de parties laser → ${occ.length} passage${occ.length > 1 ? "s" : ""} à ${occ.map(w => fmtMin(w.d)).join(", ")}`;
+    return;
+  }
   if (t.rp) {
     if (!R) { prev.textContent = "Aujourd'hui fermé : aperçu indisponible."; return; }
     const occ = occurrences(today, t);
@@ -1755,6 +1895,7 @@ $("btnTasksHours").onclick = () => {
   $("hrList").innerHTML = refLine + (rows.length ? rows.map(x => `<div class="hrow" data-path="${esc(x.path)}">
       <span class="hn">${esc(x.t.n)}<small>${esc(x.sub)}</small></span>
       <span class="hsel">De ${boundPicker("hd", x.t.pd)} à ${boundPicker("ha", x.t.pa)}
+        · <label style="display:inline-flex;align-items:center;gap:.25rem;margin:0;font-size:.85rem;color:inherit"><input type="checkbox" class="hlz" style="width:auto;margin:0"${x.t.lz ? " checked" : ""}>Seulement pendant les parties laser</label>
         · Répéter <select class="hrp" aria-label="Répéter">${REPEATS.map(m => `<option value="${m}"${m === (+x.t.rp || 0) ? " selected" : ""}>${m ? "toutes les " + offLabel(m).replace("+", "") : "non"}</option>`).join("")}</select></span>
       <span class="hprev"></span></div>`).join("")
     : `<p class="period">Aucune tâche : créez-les d'abord dans « Gérer les tâches ».</p>`);
@@ -1767,7 +1908,7 @@ $("hrSave").onclick = async () => {
   const up = {};
   for (const row of $("hrList").querySelectorAll(".hrow")) {
     const pd = readBound(row, "hd"), pa = readBound(row, "ha");
-    if (pd && pa) {
+    if (pd && pa && !row.querySelector(".hlz").checked) {
       const fake = { a:"13:30", o:"14:00", f:"19:00", d:"20:00" }, d = boundMin(pd, fake), a = boundMin(pa, fake);
       if (a <= d) {
         $("hrErr").textContent = `« ${row.querySelector(".hn").firstChild.textContent} » : la fin doit être après le début.`; return;
@@ -1776,6 +1917,7 @@ $("hrSave").onclick = async () => {
     up[`${row.dataset.path}/pd`] = pd;
     up[`${row.dataset.path}/pa`] = pa;
     up[`${row.dataset.path}/rp`] = +row.querySelector(".hrp").value || null;
+    up[`${row.dataset.path}/lz`] = row.querySelector(".hlz").checked || null;
   }
   if (await write(() => update(ref(db, "taches"), up))) $("dlgHours").close();
 };
@@ -1787,7 +1929,7 @@ async function loadSuivi(key){
   $("svDay").innerHTML = `<p class="period">Chargement…</p>`;
   let fait = {};
   try { fait = (await get(ref(db, `taches/fait/${key}`))).val() || {}; } catch(e) { $("svDay").innerHTML = `<p class="err">Lecture impossible.</p>`; return; }
-  const list = tasksFor(key);
+  const list = tasksFor(key), tr = (T.traite || {})[key] || {};
   const ids = new Set(list.map(t => t.id));
   // Validations dont la tâche a été supprimée depuis : affichées avec leur intitulé d'origine
   Object.entries(fait).forEach(([id, r]) => { if (!ids.has(id)) list.push({ id, n:(r.n || "?") + " (tâche retirée)", m:"s" }); });
@@ -1796,7 +1938,7 @@ async function loadSuivi(key){
     const r = fait[t.id], fl = flags(key, t, r);
     return `<div class="svday"><span>${esc(t.n)}${r && r.c ? `<span class="tc" style="display:block;font-size:.78rem;color:var(--muted)">« ${esc(r.c)} »</span>` : ""}</span>
       ${r ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "?"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}</span>`
-          : `<span class="ko">${key <= iso(new Date()) ? "Non faite" : "À venir"}</span>`}</div>`;
+          : `<span class="ko">${key <= iso(new Date()) ? "Non faite" : "À venir"}${tr[t.id] ? `<span style="display:block;font-size:.76rem;color:var(--muted)">traité${tr[t.id].c ? ` : « ${esc(tr[t.id].c)} »` : ""}</span>` : ""}</span>`}</div>`;
   }).join("");
   loadSuiviMonth(key.slice(0, 7));
 }
