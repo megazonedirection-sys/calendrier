@@ -65,6 +65,7 @@ th.day,td.day{width:64px;color:var(--muted);font-size:.85rem}
 td.day b{display:block;color:var(--text);font-size:1rem;font-family:"Chakra Petch",sans-serif}
 tr.out td{opacity:.35}
 tr.today td.day b{color:var(--warn)}
+td.day.ferie, tr td.day.ferie b{color:#ff2d2d}
 tr.closed td{background:repeating-linear-gradient(135deg,transparent 0 6px,rgba(255,255,255,.025) 6px 12px);color:var(--muted);font-size:.85rem}
 td.cell{font-size:.9rem;white-space:nowrap}
 td.cell.editable{cursor:pointer}
@@ -570,6 +571,28 @@ function bounds(up, key){
   up[`months/${mk(key)}/end`] = new Date(y, m, 1).getTime();
   return up;
 }
+// Jours fériés français (fixes + Pâques, Ascension, Pentecôte), mis en cache par année
+const feriesCache = {};
+function feries(y){
+  if (feriesCache[y]) return feriesCache[y];
+  // Date de Pâques (algorithme de Meeus/Jones/Butcher)
+  const a = y % 19, b = Math.floor(y/100), c = y % 100, d = Math.floor(b/4), e = b % 4;
+  const f = Math.floor((b+8)/25), g = Math.floor((b-f+1)/3), h = (19*a+b-d-g+15) % 30;
+  const i = Math.floor(c/4), k = c % 4, l = (32+2*e+2*i-h-k) % 7, m = Math.floor((a+11*h+22*l)/451);
+  const paques = new Date(y, Math.floor((h+l-7*m+114)/31)-1, ((h+l-7*m+114) % 31)+1);
+  const list = {
+    [`${y}-01-01`]: "Jour de l'an", [`${y}-05-01`]: "Fête du Travail", [`${y}-05-08`]: "Victoire 1945",
+    [`${y}-07-14`]: "Fête nationale", [`${y}-08-15`]: "Assomption", [`${y}-11-01`]: "Toussaint",
+    [`${y}-11-11`]: "Armistice 1918", [`${y}-12-25`]: "Noël",
+    [iso(addDays(paques, 1))]: "Lundi de Pâques", [iso(addDays(paques, 39))]: "Ascension",
+    [iso(addDays(paques, 50))]: "Lundi de Pentecôte"
+  };
+  return feriesCache[y] = list;
+}
+const ferie = key => feries(Number(key.slice(0,4)))[key] || null;
+// Attributs à ajouter à la cellule du jour : classe rouge + nom du férié au survol
+const ferieCls = key => ferie(key) ? " ferie" : "";
+const ferieTitle = key => ferie(key) ? ` title="Férié : ${ferie(key)}"` : "";
 function inHoliday(key){ return HOLIDAYS.some(([a,b]) => key >= a && key <= b); }
 function autoPeriod(monday){
   let ete = 0, vac = 0;
@@ -646,14 +669,14 @@ function renderWeek(monday, today){
   let rows = "";
   const totals = { boss:0, melodie:0, kelian:0 };
   const absent = {};
-  rows += `<tr class="closed"><td class="day"><b>${monday.getDate()}</b>lun.</td><td colspan="3"><span class="fer">Fermé</span></td></tr>`;
+  rows += `<tr class="closed"><td class="day${ferieCls(wkKey)}"${ferieTitle(wkKey)}><b>${monday.getDate()}</b>lun.</td><td colspan="3"><span class="fer">Fermé</span></td></tr>`;
   for (let i = 0; i < 6; i++) {
     const d = addDays(monday, i+1), key = iso(d);
     const out = d.getMonth() !== cursor.getMonth();
     const dayInfo = entry(key, "_info");
     if (dayInfo && dayInfo.f) {
       // Journée fermée : barre « Fermé » comme le lundi, hors totaux et alertes
-      rows += `<tr class="closed${out ? " out" : ""}${key === today ? " today" : ""}"><td class="day${isAdmin() ? " editable" : ""}" data-day="${key}" ${isAdmin() ? 'tabindex="0" role="button" title="Modifier la journée"' : ""}><b>${d.getDate()}</b>${DAYS[i]}</td><td colspan="3"><span class="fer">Fermé${dayInfo.n ? ` <span class="motif">· ${esc(dayInfo.n)}</span>` : ""}</span></td></tr>`;
+      rows += `<tr class="closed${out ? " out" : ""}${key === today ? " today" : ""}"><td class="day${isAdmin() ? " editable" : ""}${ferieCls(key)}" data-day="${key}" ${isAdmin() ? `tabindex="0" role="button" title="${ferie(key) ? `Férié : ${ferie(key)} · ` : ""}Modifier la journée"` : ferieTitle(key)}><b>${d.getDate()}</b>${DAYS[i]}</td><td colspan="3"><span class="fer">Fermé${dayInfo.n ? ` <span class="motif">· ${esc(dayInfo.n)}</span>` : ""}</span></td></tr>`;
       continue;
     }
     const cov = isAdmin() && dayData(key) ? coverage(key, i, period) : null;
@@ -682,7 +705,7 @@ function renderWeek(monday, today){
       cells += `<td class="cell c-${p.id}${isAdmin() ? " editable" : ""}" data-key="${key}" data-p="${p.id}" ${isAdmin() ? 'tabindex="0" role="button"' : ""}>${inner}</td>`;
     });
     const info = entry(key, "_info");
-    rows += `<tr class="${cls}"><td class="day${isAdmin() ? " editable" : ""}" data-day="${key}" ${isAdmin() ? 'tabindex="0" role="button" title="Ajouter une information pour la journée"' : ""}><b>${d.getDate()}${info ? '<i class="star">★</i>' : ""}</b>${DAYS[i]}</td>${cells}</tr>`;
+    rows += `<tr class="${cls}"><td class="day${isAdmin() ? " editable" : ""}${ferieCls(key)}" data-day="${key}" ${isAdmin() ? `tabindex="0" role="button" title="${ferie(key) ? `Férié : ${ferie(key)} · ` : ""}Ajouter une information pour la journée"` : ferieTitle(key)}><b>${d.getDate()}${info ? '<i class="star">★</i>' : ""}</b>${DAYS[i]}</td>${cells}</tr>`;
     if (info && (info.n || info.o || info.h)) {
       const parts = [];
       if (info.h) parts.push(`horaires du jour ${fmtT(info.h.o)}–${fmtT(info.h.c)}`);
