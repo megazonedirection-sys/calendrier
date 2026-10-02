@@ -415,8 +415,8 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
   <p class="period" style="margin:0">Pour un jour précis (livraison, réparation…). Elles s'affichent même si ce jour est fermé.</p>
   <div id="taPonct"></div>
   <button type="button" class="addbtn" id="taPonctAdd">+ Ajouter une tâche ponctuelle</button>
-  <h4>Codes personnels des agents</h4>
-  <p class="period" style="margin:0">4 chiffres, demandés à chaque validation pour savoir qui a fait la tâche. Laissez vide pour ne pas changer le code.</p>
+  <h4>Codes personnels</h4>
+  <p class="period" style="margin:0">4 chiffres, demandés à chaque validation pour savoir qui a fait la tâche. Laissez vide pour ne pas changer le code. Avec un code Boss, vous pouvez cocher depuis la tablette de l'accueil sans vous connecter.</p>
   <div class="row" id="taPins"></div>
   <div class="err" id="taErr"></div>
   <div class="actions">
@@ -1491,6 +1491,7 @@ function openTick(tid){
       // Agents en service aujourd'hui (sinon les deux)
       let opts = AGENTS.filter(p => enService(entry(today, p.id)));
       if (!opts.length) opts = AGENTS;
+      if (T.pins.boss) opts = [...opts, PEOPLE.find(p => p.id === "boss")]; // Boss : toujours proposé (aucun horaire révélé)
       $("tkWho").innerHTML = opts.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
       const pref = (() => { try { return localStorage.getItem("gz-tache-qui"); } catch(e) { return null; } })() || focus;
       if (opts.some(p => p.id === pref)) $("tkWho").value = pref;
@@ -1581,7 +1582,7 @@ $("btnTasksAdmin").onclick = () => {
   const today = iso(new Date());
   Object.keys(T.ponct || {}).filter(k => k >= today).sort().forEach(k =>
     Object.entries(T.ponct[k] || {}).forEach(([id, t]) => pl.appendChild(ponctRow(k, id, t))));
-  $("taPins").innerHTML = AGENTS.map(p => `<div><label for="pin-${p.id}">${esc(p.name)}</label>
+  $("taPins").innerHTML = PEOPLE.map(p => `<div><label for="pin-${p.id}">${esc(p.name)}</label>
     <input id="pin-${p.id}" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="${T.pins[p.id] ? "•••• (inchangé)" : "non défini"}"></div>`).join("");
   $("taErr").textContent = "";
   $("dlgTasks").showModal();
@@ -1611,7 +1612,7 @@ $("taSave").onclick = async () => {
     (ponctuelles[dt] = ponctuelles[dt] || {})[r.dataset.id] = { n, m: r.querySelector(".tm").value };
   }
   const up = { catalogue, ponctuelles };
-  for (const p of AGENTS) {
+  for (const p of PEOPLE) {
     const v = $(`pin-${p.id}`).value.trim();
     if (!v) continue;
     if (!/^\d{4}$/.test(v)) { $("taErr").textContent = `Le code de ${p.name} doit faire 4 chiffres.`; return; }
