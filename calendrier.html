@@ -67,6 +67,14 @@ nav{
   border-radius:6px;padding:2px 6px;display:inline-block;margin-top:4px;
 }
 
+/* ── BANDEAU : journée fermée / horaires modifiés (saisis dans le planning) ── */
+#planningBanner{
+  display:none;align-items:center;gap:8px;flex-shrink:0;
+  padding:7px 16px;font-size:13px;font-weight:800;
+}
+#planningBanner.ferme{ display:flex;background:#b91c1c;color:#fff;border-bottom:1.5px solid #7f1d1d; }
+#planningBanner.horaires{ display:flex;background:#f97316;color:#fff;border-bottom:1.5px solid #c2410c; }
+
 /* ── BANNIÈRE PERMANENTE : demandes en attente ── */
 #pendingBanner{
   display:none;align-items:center;gap:8px;cursor:pointer;
@@ -700,6 +708,9 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
   <span id="pendingBannerText"></span>
 </div>
 
+<!-- BANDEAU JOURNÉE FERMÉE / HORAIRES MODIFIÉS (planning équipe) -->
+<div id="planningBanner"><span id="planningBannerText"></span></div>
+
 <!-- CALENDAR -->
 <div class="cal-wrap">
   <table id="calTbl">
@@ -1275,6 +1286,16 @@ function initFirebaseSync(){
   db.ref('onlineToastQueue').on('value', snap => {
     renderOnlineToastQueue(snap.val() || {});
   });
+
+  // Journées fermées / horaires modifiés saisis dans le planning équipe
+  db.ref('planning/fermetures').on('value', snap => {
+    PLANNING_FERMETURES = snap.val() || {};
+    renderCalendar();
+  }, e => console.warn('Fermetures planning :', e));
+  db.ref('planning/horaires').on('value', snap => {
+    PLANNING_HORAIRES = snap.val() || {};
+    renderCalendar();
+  }, e => console.warn('Horaires planning :', e));
 
   // Nombre de gilets laser disponibles : partagé entre tous les postes du
   // staff (modifié via le badge 🦺), et lu séparément par le formulaire en
@@ -2195,7 +2216,19 @@ function getCongeAnnuel(dateStr){
 // Retourne {open:false} si journée fermée,
 // {open:true, openMin, closeMin} si jour ouvert avec plage restreinte,
 // null si pas de restriction (période scolaire normale).
+// Journées fermées et horaires modifiés saisis dans le planning équipe
+// (planning/fermetures et planning/horaires) — prioritaires sur les horaires
+// habituels : grisage des créneaux, avertissement à la création, bandeau.
+let PLANNING_FERMETURES = {};
+let PLANNING_HORAIRES = {};
 function getOpenHours(dateStr){
+  if(getCongeAnnuel(dateStr)) return { open: false, conge: true };
+  if(PLANNING_FERMETURES[dateStr]) return { open: false, exceptionnel: true };
+  const h = PLANNING_HORAIRES[dateStr];
+  if(h && h.o && h.c) return { open: true, openMin: timeToMin(h.o), closeMin: timeToMin(h.c), modifie: true };
+  return getOpenHoursHabituel(dateStr);
+}
+function getOpenHoursHabituel(dateStr){
   if(getCongeAnnuel(dateStr)) return { open: false, conge: true };
   const vacance = getVacance(dateStr);
   if(!vacance){
@@ -2609,6 +2642,25 @@ function renderCalendar(){
     vacBadge.style.display = 'none';
   }
 
+  // ── Bandeau journée fermée / horaires modifiés (planning équipe) ──
+  {
+    const pb = document.getElementById('planningBanner');
+    const pbt = document.getElementById('planningBannerText');
+    if(pb && pbt){
+      const hj = PLANNING_HORAIRES[dateKey];
+      if(PLANNING_FERMETURES[dateKey]){
+        pb.className = 'ferme';
+        pbt.textContent = '⛔ Journée fermée (planning équipe) — aucune réservation en ligne possible ce jour.';
+      } else if(hj && hj.o && hj.c){
+        pb.className = 'horaires';
+        pbt.textContent = `🕐 Horaires modifiés ce jour : ${hj.o.replace(':','h')}–${hj.c.replace(':','h')} — la réservation en ligne est limitée à ces horaires.`;
+      } else {
+        pb.className = '';
+        pbt.textContent = '';
+      }
+    }
+  }
+
   const isBT = currentView === 'bt';
   const isVR = currentView === 'vr';
   const MAX_COLS = isBT ? BT_COLS : (isVR ? VR_COLS : LASER_COLS);
@@ -2798,8 +2850,11 @@ function openNew(date,time,slot){
     const slotMin = sh*60+sm;
     const isClosed = !oh.open || slotMin < oh.openMin || slotMin >= oh.closeMin;
     if(isClosed){
-      const label = !oh.open ? 'journée fermée' : `hors horaires (ouverture ${String(Math.floor(oh.openMin/60)).padStart(2,'0')}h–${String(Math.floor(oh.closeMin/60)).padStart(2,'0')}h)`;
-      if(!confirm(`⚠️ Ce créneau (${time}) est ${label} pendant les vacances scolaires.\n\nConfirmer quand même la réservation ?`)) return;
+      const hm = m => `${String(Math.floor(m/60)).padStart(2,'0')}h${String(m%60).padStart(2,'0')}`;
+      const label = !oh.open
+        ? (oh.exceptionnel ? 'sur une journée fermée (planning équipe)' : 'sur une journée fermée')
+        : `hors horaires (ouverture ${hm(oh.openMin)}–${hm(oh.closeMin)}${oh.modifie ? ', horaires modifiés ce jour' : ''})`;
+      if(!confirm(`⚠️ Ce créneau (${time}) est ${label}.\n\nConfirmer quand même la réservation ?`)) return;
     }
   }
   pendingSlot={date,time,slot,isEdit:false,key:null};
