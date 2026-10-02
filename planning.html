@@ -435,6 +435,9 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
   <p class="period" style="margin:0">Pour un jour précis (livraison, réparation…). Elles s'affichent même si ce jour est fermé.</p>
   <div id="taPonct"></div>
   <button type="button" class="addbtn" id="taPonctAdd">+ Ajouter une tâche ponctuelle</button>
+  <h4>Remise à zéro des oublis</h4>
+  <p class="period" style="margin:0">Le suivi des tâches non faites commence le <b id="taDebut">…</b>. Les jours précédents ne sont jamais comptés comme oubliés (l'historique reste consultable).</p>
+  <button type="button" id="taReset" style="margin-top:.4rem">Repartir à zéro à partir d'aujourd'hui</button>
   <h4>Codes personnels</h4>
   <p class="period" style="margin:0">4 chiffres, demandés à chaque validation pour savoir qui a fait la tâche. Laissez vide pour ne pas changer le code. Avec un code Boss, vous pouvez cocher depuis la tablette de l'accueil sans vous connecter.</p>
   <div class="row" id="taPins"></div>
@@ -1412,6 +1415,11 @@ function tasksSubscribe(){
   L("taches/catalogue", v => T.catalogue = v || {});
   L("taches/pins", v => T.pins = v || {});
   L("taches/ponctuelles", v => T.ponct = v || {});
+  // Date de début du suivi : les jours précédents ne comptent jamais comme « non faits »
+  L("taches/debut", v => {
+    T.debut = v || null; T.debutLoaded = true;
+    if (!v && isAdmin()) set(ref(db, "taches/debut"), iso(new Date())).catch(e => console.warn(e));
+  });
   for (let d = 0; d <= 7; d++) { const k = iso(addDays(new Date(), -d)); L(`taches/fait/${k}`, v => T.fait[k] = v || {}); }
   // Parties laser : blocs calculés en direct par CalendIT (occupation_laser) + copie conservée pour l'historique
   T.occLoaded = false;
@@ -1534,8 +1542,13 @@ function flags(key, task, rec){
   const p = plage(key, task), m = minOf(d);
   return (p.d != null && m < p.d) || (p.a != null && m > p.a) ? ["hors plage"] : [];
 }
+const suiviStart = () => T.debut || iso(new Date());
 function prevOpenDay(today){
-  for (let d = 1; d <= 7; d++) { const k = iso(addDays(new Date(today + "T12:00:00"), -d)); if (tasksFor(k).length) return k; }
+  for (let d = 1; d <= 7; d++) {
+    const k = iso(addDays(new Date(today + "T12:00:00"), -d));
+    if (k < suiviStart()) return null;
+    if (tasksFor(k).length) return k;
+  }
   return null;
 }
 const dayLabel = key => new Date(key + "T12:00:00").toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"long" });
@@ -1546,7 +1559,8 @@ function missedToTreat(){
   const today = iso(new Date()), keys = Object.keys(T.faitAll).sort();
   if (!keys.length) return [];
   const out = [];
-  for (let k = keys[0]; k <= today; k = iso(addDays(new Date(k + "T12:00:00"), 1))) {
+  const first = keys[0] > suiviStart() ? keys[0] : suiviStart();
+  for (let k = first; k <= today; k = iso(addDays(new Date(k + "T12:00:00"), 1))) {
     const f = T.faitAll[k] || {}, tr = (T.traite || {})[k] || {};
     tasksFor(k).forEach(t => {
       if (f[t.id] || tr[t.id]) return;
@@ -1771,11 +1785,16 @@ $("btnTasksAdmin").onclick = () => {
   $("taPins").innerHTML = PEOPLE.map(p => `<div><label for="pin-${p.id}">${esc(p.name)}</label>
     <input id="pin-${p.id}" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="${T.pins[p.id] ? "•••• (inchangé)" : "non défini"}"></div>`).join("");
   $("taErr").textContent = "";
+  $("taDebut").textContent = new Date(suiviStart() + "T12:00:00").toLocaleDateString("fr-FR", { day:"numeric", month:"long", year:"numeric" });
   $("dlgTasks").showModal();
 };
 $("taAdd").onclick = () => { const r = taskRow(newId(), null); $("taList").appendChild(r); r.querySelector(".tn").focus(); };
 $("taPonctAdd").onclick = () => { const r = ponctRow(null, newId(), null); $("taPonct").appendChild(r); r.querySelector(".tn").focus(); };
 $("taCancel").onclick = () => $("dlgTasks").close();
+$("taReset").onclick = async () => {
+  if (!confirm("Ne plus compter les oublis des jours précédents ? Le suivi des tâches non faites repartira d'aujourd'hui.")) return;
+  if (await write(() => set(ref(db, "taches/debut"), iso(new Date())))) $("taDebut").textContent = new Date().toLocaleDateString("fr-FR", { day:"numeric", month:"long", year:"numeric" });
+};
 $("taSave").onclick = async () => {
   $("taErr").textContent = "";
   const catalogue = {};
@@ -1958,6 +1977,7 @@ async function loadSuiviMonth(m){
   for (let d = 1; d <= new Date(y, mo, 0).getDate(); d++) {
     const k = `${m}-${pad(d)}`;
     if (k > today) break;
+    if (k < suiviStart()) continue;
     const f = all[k] || {}, list = tasksFor(k);
     Object.values(f).forEach(r => { per[r.qui] = (per[r.qui] || 0) + 1; });
     list.forEach(t => { if (flags(k, t, f[t.id]).length) flagged[f[t.id].qui] = (flagged[f[t.id].qui] || 0) + 1; });
