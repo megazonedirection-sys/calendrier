@@ -437,7 +437,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 
 <dialog id="dlgHours" class="wide">
   <h3>Horaires des tâches</h3>
-  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée à partir des horaires d'ouverture du jour. Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée.</p>
+  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée.</p>
   <div id="hrList"></div>
   <div class="err" id="hrErr"></div>
   <div class="actions">
@@ -1416,15 +1416,31 @@ function tasksFor(key){
 }
 const minOf = d => d.getHours() * 60 + d.getMinutes();
 const hhmm = d => `${d.getHours()}h${pad(d.getMinutes())}`;
-/* Plages horaires : pd / pa = "o:-15" (15 min avant l'ouverture) ou "f:30" (30 min après la fermeture) */
-function boundMin(spec, h){
-  if (!spec || !h) return null;
+/* Plages horaires : pd / pa = "<réf>:<décalage en minutes>", ex. "f:-15" = 15 min avant la fermeture du centre.
+   Références : a = arrivée agents, o = ouverture centre, f = fermeture centre, d = départ agents.
+   Arrivée / départ agents = première prise de service et dernier départ du jour dans le planning
+   (à défaut, horaires du centre). */
+const REFS = { a:"Arrivée agents", o:"Ouverture centre", f:"Fermeture centre", d:"Départ agents" };
+function refHours(key){
+  const es = AGENTS.map(p => entry(key, p.id)).filter(e => enService(e) && e.s && e.e);
+  if (es.length) return [es.map(e => e.s).sort()[0], es.map(e => e.e).sort().pop()];
+  return dayOpen(key);
+}
+// Les 4 heures de référence d'une journée (null si fermé et personne de planifié)
+function dayRefs(key){
+  const c = dayOpen(key), ag = refHours(key);
+  if (!ag) return null;
+  const centre = c || ag;
+  return { a: ag[0], o: centre[0], f: centre[1], d: ag[1] };
+}
+function boundMin(spec, R){
+  if (!spec || !R) return null;
   const [ref, off] = String(spec).split(":");
-  return toMin(ref === "o" ? h[0] : h[1]) + (+off || 0);
+  return R[ref] ? toMin(R[ref]) + (+off || 0) : null;
 }
 function plage(key, task){
-  const h = dayOpen(key);
-  return { d: boundMin(task.pd, h), a: boundMin(task.pa, h) };
+  const R = dayRefs(key);
+  return { d: boundMin(task.pd, R), a: boundMin(task.pa, R) };
 }
 const fmtMin = m => `${Math.floor(m / 60)}h${pad(((m % 60) + 60) % 60)}`;
 function plageLabel(p){
@@ -1437,7 +1453,7 @@ function tStatus(key, task){
   const p = plage(key, task), now = minOf(new Date());
   if (p.d != null && now < p.d) return "early";
   if (p.a != null && now > p.a) return "late";
-  if (p.a == null) { const h = dayOpen(key); if (h && now > toMin(h[1])) return "late"; }
+  if (p.a == null) { const h = refHours(key); if (h && now > toMin(h[1])) return "late"; }
   return "open";
 }
 // Contrôle a posteriori : validation d'un agent un autre jour ou hors plage
@@ -1686,18 +1702,18 @@ const OFFSETS = []; for (let m = -240; m <= 240; m += 15) OFFSETS.push(m);
 const offLabel = m => m === 0 ? "pile" : `${m < 0 ? "−" : "+"}${Math.abs(m) >= 60 ? Math.floor(Math.abs(m) / 60) + "h" + (Math.abs(m) % 60 ? pad(Math.abs(m) % 60) : "") : Math.abs(m) + " min"}`;
 function boundPicker(cls, spec){
   const [ref, off] = spec ? String(spec).split(":") : ["", "0"];
-  return `<select class="${cls}r" aria-label="Référence"><option value="">—</option><option value="o"${ref === "o" ? " selected" : ""}>Ouverture</option><option value="f"${ref === "f" ? " selected" : ""}>Fermeture</option></select>
+  return `<select class="${cls}r" aria-label="Référence"><option value="">—</option>${Object.entries(REFS).map(([k, l]) => `<option value="${k}"${ref === k ? " selected" : ""}>${l}</option>`).join("")}</select>
     <select class="${cls}o" aria-label="Décalage">${OFFSETS.map(m => `<option value="${m}"${m === (+off || 0) ? " selected" : ""}>${offLabel(m)}</option>`).join("")}</select>`;
 }
 const readBound = (row, cls) => { const r = row.querySelector(`.${cls}r`).value; return r ? `${r}:${row.querySelector(`.${cls}o`).value}` : null; };
 function hoursPreview(row){
-  const today = iso(new Date()), h = dayOpen(today);
+  const today = iso(new Date()), R = dayRefs(today);
   const t = { pd: readBound(row, "hd"), pa: readBound(row, "ha") };
   const prev = row.querySelector(".hprev");
   if (!t.pd && !t.pa) { prev.textContent = "Sans plage : cochable toute la journée."; return; }
-  if (!h) { prev.textContent = "Aujourd'hui fermé : aperçu indisponible."; return; }
+  if (!R) { prev.textContent = "Aujourd'hui fermé : aperçu indisponible."; return; }
   const p = plage(today, t);
-  prev.textContent = `Aujourd'hui (${h[0]} – ${h[1]}) : ${plageLabel(p)}` + (p.d != null && p.a != null && p.a <= p.d ? " ⚠ la fin est avant le début" : "");
+  prev.textContent = `Aujourd'hui : ${plageLabel(p)}` + (p.d != null && p.a != null && p.a <= p.d ? " ⚠ la fin est avant le début" : "");
 }
 $("btnTasksHours").onclick = () => {
   const today = iso(new Date());
@@ -1705,11 +1721,13 @@ $("btnTasksHours").onclick = () => {
     .map(([id, t]) => ({ path:`catalogue/${id}`, t, sub: MOMENTS[t.m || "s"] }));
   Object.keys(T.ponct || {}).filter(k => k >= today).sort().forEach(k =>
     Object.entries(T.ponct[k] || {}).forEach(([id, t]) => rows.push({ path:`ponctuelles/${k}/${id}`, t, sub:`Ponctuelle · ${shortDay(k)}` })));
-  $("hrList").innerHTML = rows.length ? rows.map(x => `<div class="hrow" data-path="${esc(x.path)}">
+  const R = dayRefs(today);
+  const refLine = R ? `<p class="period" style="margin:.6rem 0 0"><b>Aujourd'hui</b> · arrivée agents ${fmtT(R.a)} · ouverture ${fmtT(R.o)} · fermeture ${fmtT(R.f)} · départ agents ${fmtT(R.d)}</p>` : `<p class="period" style="margin:.6rem 0 0">Aujourd'hui fermé.</p>`;
+  $("hrList").innerHTML = refLine + (rows.length ? rows.map(x => `<div class="hrow" data-path="${esc(x.path)}">
       <span class="hn">${esc(x.t.n)}<small>${esc(x.sub)}</small></span>
       <span class="hsel">De ${boundPicker("hd", x.t.pd)} à ${boundPicker("ha", x.t.pa)}</span>
       <span class="hprev"></span></div>`).join("")
-    : `<p class="period">Aucune tâche : créez-les d'abord dans « Gérer les tâches ».</p>`;
+    : `<p class="period">Aucune tâche : créez-les d'abord dans « Gérer les tâches ».</p>`);
   $("hrList").querySelectorAll(".hrow").forEach(row => { hoursPreview(row); row.addEventListener("change", () => hoursPreview(row)); });
   $("hrErr").textContent = "";
   $("dlgHours").showModal();
@@ -1720,8 +1738,8 @@ $("hrSave").onclick = async () => {
   for (const row of $("hrList").querySelectorAll(".hrow")) {
     const pd = readBound(row, "hd"), pa = readBound(row, "ha");
     if (pd && pa) {
-      const fake = ["14:00", "20:00"], d = boundMin(pd, fake), a = boundMin(pa, fake);
-      if (pd.split(":")[0] === pa.split(":")[0] && a <= d) {
+      const fake = { a:"13:30", o:"14:00", f:"19:00", d:"20:00" }, d = boundMin(pd, fake), a = boundMin(pa, fake);
+      if (a <= d) {
         $("hrErr").textContent = `« ${row.querySelector(".hn").firstChild.textContent} » : la fin doit être après le début.`; return;
       }
     }
