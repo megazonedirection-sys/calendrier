@@ -1260,6 +1260,7 @@ function initFirebaseSync(){
     // bout (ex: test resté sans suite, réservation refusée après coup, etc.).
     db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
     db.ref('dispo_profil').set(computeProfilFlagsFromBookings(bookings)).catch(()=>{});
+    db.ref('occupation_laser').set(computeOccupationLaser(bookings)).catch(()=>{});
     if(premiereSynchro) traiterDemandesAuto();
     if(!_initialScrollDone){
       _initialScrollDone = true;
@@ -1909,6 +1910,44 @@ function computeProfilFlagsFromBookings(bk){
     flags[slotKeyStr][sig] = true;
   });
   return flags;
+}
+
+// Occupation du Laser par jour, pour la règle VR du formulaire en ligne —
+// sans AUCUNE donnée personnelle : uniquement des plages horaires (minutes
+// depuis minuit). l = plages où au moins un groupe laser joue (les entrées
+// « Message » et « Congé » ne comptent pas) ; a = plages d'anniversaires,
+// deux parties séparées de 30 min ou moins formant un seul bloc (la pause
+// entre les parties d'un anniversaire n'est donc jamais « libre »).
+// Seules les dates à venir sont publiées.
+function computeOccupationLaser(bk){
+  const n = new Date();
+  const today = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+  const parDate = {};
+  Object.entries(bk || {}).forEach(([key, b]) => {
+    const parts = key.split('|');
+    if(parts.length < 4 || parts[0] !== 'laser' || parts[1] < today) return;
+    if(!b || b.type === 't-message' || b.type === 't-conge') return;
+    const t = timeToMin(parts[2]);
+    const j = parDate[parts[1]] = parDate[parts[1]] || { l: [], a: [] };
+    j.l.push([t, t + 20]);
+    if(b.type === 't-anniv' || b.type === 't-anniv3') j.a.push([t, t + 20]);
+  });
+  const fusion = (list, ecart) => {
+    list.sort((x, y) => x[0] - y[0]);
+    const out = [];
+    list.forEach(([s0, e0]) => {
+      const last = out[out.length - 1];
+      if(last && s0 <= last[1] + ecart) last[1] = Math.max(last[1], e0);
+      else out.push([s0, e0]);
+    });
+    return out;
+  };
+  const res = {};
+  Object.entries(parDate).forEach(([d, j]) => {
+    res[d] = { l: fusion(j.l, 0) };
+    if(j.a.length) res[d].a = fusion(j.a, 30);
+  });
+  return res;
 }
 
 // Sauvegarde toutes les réservations, avec deux protections :
