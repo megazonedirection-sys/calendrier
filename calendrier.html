@@ -2496,7 +2496,7 @@ function renderOnlineToastQueue(queue){
   if(!stack){
     stack = document.createElement('div');
     stack.id = 'online-toast-stack';
-    document.body.appendChild(stack);
+    (document.getElementById('side-col') || document.body).appendChild(stack);
   }
   stack.innerHTML = entries.map(([groupKey, g]) => {
     const actLabel = ACTIVITE_LABEL[g.activite] || g.activite;
@@ -4556,5 +4556,288 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+<!-- ════════════════════════════════════════════════════════════════════════
+     TÂCHES DU JOUR (bandeau à droite, au-dessus des alertes « nouvelle réservation »)
+     Mêmes données que le planning équipe (taches/…) : catalogue, plages horaires,
+     répétitions, parties laser, codes personnels. Pas de croix : le bandeau se
+     déroule seul quand une tâche arrive et se réenroule quand tout est fait.
+     Une tâche dont la plage est dépassée reste en rouge jusqu'à la saisie d'un motif.
+     ════════════════════════════════════════════════════════════════════════ -->
+<style>
+#side-col{position:fixed;top:70px;right:16px;width:340px;max-width:calc(100vw - 32px);z-index:990;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 86px);pointer-events:none}
+#side-col>*{pointer-events:auto}
+#side-col #online-toast-stack{position:static;top:auto;right:auto;max-width:none;max-height:none;min-height:0;overflow-y:auto;flex:0 1 auto}
+#tk{font-size:12.5px;filter:drop-shadow(0 8px 20px rgba(0,0,0,.28));flex-shrink:0;display:none}
+#tk.on{display:block}
+#tk .tk-head{display:flex;align-items:center;gap:8px;background:#0f172a;color:#e2e8f0;border-radius:10px;padding:9px 12px;cursor:pointer;border-left:4px solid #22c55e;user-select:none}
+#tk.open .tk-head{border-radius:10px 10px 0 0}
+#tk.due .tk-head{border-left-color:#f97316}
+#tk.late .tk-head{border-left-color:#ef4444;animation:tk-pulse 1.6s ease-in-out infinite}
+@keyframes tk-pulse{0%,100%{background:#0f172a}50%{background:#450a0a}}
+#tk .tk-head .t{font-weight:700;flex:1}
+#tk .tk-head .n{background:#f97316;color:#fff;border-radius:99px;padding:1px 8px;font-weight:800;font-size:11.5px}
+#tk.late .tk-head .n{background:#ef4444}
+#tk .chev{color:#94a3b8;transition:transform .25s}
+#tk.open .chev{transform:rotate(180deg)}
+#tk .tk-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s ease}
+#tk.open .tk-body{grid-template-rows:1fr}
+#tk .tk-body>div{overflow:hidden;background:#1e293b;color:#e2e8f0;border-radius:0 0 10px 10px}
+#tk.open .tk-body>div{overflow-y:auto;max-height:45vh}
+#tk .sec{padding:6px 12px 2px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;font-weight:700}
+#tk .sec.r{color:#fca5a5}
+#tk .it{display:flex;align-items:center;gap:9px;padding:8px 12px;border-top:1px solid #334155}
+#tk .it .bx{flex:0 0 20px;height:20px;border:2px solid #94a3b8;border-radius:5px;cursor:pointer;background:none}
+#tk .it .bx:hover{border-color:#22c55e}
+#tk .it .nm{flex:1;line-height:1.3}
+#tk .it .nm small{display:block;color:#94a3b8;font-size:11px}
+#tk .it.lt{background:rgba(239,68,68,.14)}
+#tk .it.lt .nm{color:#fecaca}
+#tk .it.lt .nm small{color:#fca5a5}
+#tk .it .mot{font:inherit;font-size:11.5px;font-weight:700;background:#ef4444;color:#fff;border:0;border-radius:6px;padding:4px 8px;cursor:pointer;white-space:nowrap}
+#tk .form{padding:8px 12px 10px;border-top:1px solid #334155;background:#0f172a;display:grid;gap:6px}
+#tk .form .row{display:flex;gap:6px}
+#tk .form select,#tk .form input,#tk .form textarea{font:inherit;font-size:12.5px;border:1px solid #475569;background:#1e293b;color:#fff;border-radius:6px;padding:6px 8px;width:100%}
+#tk .form textarea{resize:vertical;min-height:52px}
+#tk .form input.pin{width:90px;text-align:center;letter-spacing:.3em}
+#tk .form .acts{display:flex;justify-content:flex-end;gap:6px}
+#tk .form button{font:inherit;font-size:12px;font-weight:700;border-radius:6px;padding:5px 11px;cursor:pointer;border:1px solid #475569;background:none;color:#cbd5e1}
+#tk .form button.ok{background:#22c55e;border-color:#22c55e;color:#052e16}
+#tk .form button.ko{background:#ef4444;border-color:#ef4444;color:#fff}
+#tk .form .err{color:#fca5a5;font-size:11.5px}
+#tk .foot{padding:7px 12px;border-top:1px solid #334155;color:#94a3b8;font-size:11.5px;display:flex;justify-content:space-between;gap:8px}
+#tk .done-msg{padding:10px 12px;color:#86efac;border-top:1px solid #334155}
+</style>
+<div id="side-col"><div id="tk"></div></div>
+<script>
+(function(){
+  const NAMES = { melodie:"Mélodie", kelian:"Kélian", boss:"Boss" };
+  const AGENTS = ["melodie", "kelian"];
+  const pad2 = n => String(n).padStart(2, "0");
+  const isoT = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const minT = s => { const [h, m] = String(s).split(":").map(Number); return h * 60 + m; };
+  const fmtM = m => `${Math.floor(m / 60)}h${pad2(((m % 60) + 60) % 60)}`;
+  const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  const asArr = v => Array.isArray(v) ? v : (v && typeof v === "object") ? Object.values(v) : [];
+  const enService = e => !!e && !e.off && !e.cp && !e.abs && !e.adm;
+
+  let S = { catalogue:{}, ponct:{}, pins:{}, fait:{}, motif:{}, day:{}, occ:null, occLoaded:false, laserHist:null };
+  let refs = [], day = null, open = null, sig = "", collapsedAt = 0, form = null, started = false;
+
+  // ── Horaires du jour (mêmes règles que le planning) ──────────────────────
+  function centreHours(key){
+    const dow = new Date(key + "T12:00:00").getDay();
+    if (dow === 1) return null;
+    let h = null;
+    try { h = getOpenHours(key); } catch(e) {}
+    if (h && h.open === false) return null;
+    if (h && h.open) return [h.openMin, h.closeMin];
+    return [14 * 60, 22 * 60]; // aucune restriction connue
+  }
+  function agentHours(key){
+    const es = AGENTS.map(p => S.day[p]).filter(e => enService(e) && e.s && e.e);
+    if (es.length) return [minT(es.map(e => e.s).sort()[0]), minT(es.map(e => e.e).sort().pop())];
+    return centreHours(key);
+  }
+  function dayRefs(key){
+    const c = centreHours(key), ag = agentHours(key);
+    if (!ag) return null;
+    const ce = c || ag;
+    return { a:ag[0], o:ce[0], f:ce[1], d:ag[1] };
+  }
+  function boundMin(spec, R){
+    if (!spec || !R) return null;
+    const [r, off] = String(spec).split(":");
+    return R[r] != null ? R[r] + (+off || 0) : null;
+  }
+  function laserBlocks(){
+    const raw = S.occLoaded ? (S.occ && S.occ.l) : S.laserHist;
+    return asArr(raw).map(b => asArr(b).map(Number)).filter(b => b.length === 2 && b[1] > b[0]);
+  }
+  function occurrences(key, t){
+    const R = dayRefs(key), rp = +t.rp;
+    if (t.lz) {
+      const out = [];
+      laserBlocks().forEach(([s0, e0]) => {
+        if (rp >= 15) for (let x = s0; x < e0 && out.length < 96; x += rp) out.push({ d:x, a:Math.min(x + rp, e0) });
+        else out.push({ d:s0, a:e0 + 15 });
+      });
+      return out;
+    }
+    if (!R || !(rp >= 15)) return [];
+    const d = boundMin(t.pd || "o:0", R), a = boundMin(t.pa || "f:0", R), out = [];
+    for (let x = d; x < a && out.length < 48; x += rp) out.push({ d:x, a:Math.min(x + rp, a) });
+    return out;
+  }
+  function pushTask(list, key, t){
+    if (!t.rp && !t.lz) { list.push(t); return; }
+    const occ = occurrences(key, t);
+    occ.forEach((w, k) => list.push({ ...t, id: t.lz ? `${t.id}~m${w.d}` : `${t.id}~${k + 1}`,
+      n: t.lz ? `${t.n} (partie ${fmtM(w.d)})` : `${t.n} (${k + 1}/${occ.length})`, win:w }));
+  }
+  function tasksToday(){
+    const key = day, list = [];
+    if (centreHours(key)) {
+      const i = (new Date(key + "T12:00:00").getDay() + 5) % 7, dom = +key.slice(8);
+      Object.entries(S.catalogue || {}).forEach(([id, t]) => {
+        if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz });
+      });
+    }
+    Object.entries((S.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz }); });
+    return list;
+  }
+  function plage(t){
+    if (t.win) return { d:t.win.d, a:t.win.a };
+    const R = dayRefs(day);
+    return { d:boundMin(t.pd, R), a:boundMin(t.pa, R) };
+  }
+  function status(t){
+    const p = plage(t), now = nowMin();
+    if (p.d != null && now < p.d) return "early";
+    if (p.a != null && now > p.a) return "late";
+    if (p.a == null) { const h = agentHours(day); if (h && now > h[1]) return "late"; }
+    return "open";
+  }
+
+  // ── Abonnements Firebase ──────────────────────────────────────────────────
+  function stop(){ refs.forEach(([r, fn]) => r.off("value", fn)); refs = []; }
+  function on(path, fn){
+    const r = db.ref(path), cb = snap => { fn(snap.val()); render(); };
+    r.on("value", cb, e => console.warn("Tâches :", path, e && e.code));
+    refs.push([r, cb]);
+  }
+  function start(){
+    stop();
+    day = isoT(new Date()); form = null; open = null; sig = "";
+    S = { catalogue:{}, ponct:{}, pins:{}, fait:{}, motif:{}, day:{}, occ:null, occLoaded:false, laserHist:null };
+    on("taches/catalogue", v => S.catalogue = v || {});
+    on("taches/ponctuelles", v => S.ponct = v || {});
+    on("taches/pins", v => S.pins = v || {});
+    on(`taches/fait/${day}`, v => S.fait = v || {});
+    on(`taches/motif/${day}`, v => S.motif = v || {});
+    on(`taches/laser/${day}`, v => S.laserHist = v);
+    on(`occupation_laser/${day}`, v => { S.occ = v; S.occLoaded = true; });
+    on(`planning/months/${day.slice(0, 7)}/days/${day}`, v => S.day = v || {});
+    started = true;
+    const st = document.getElementById("online-toast-stack"), col = document.getElementById("side-col");
+    if (st && col && st.parentNode !== col) col.appendChild(st);
+  }
+  auth.onAuthStateChanged(u => {
+    if (u && !u.isAnonymous) start();
+    else { stop(); started = false; const el = document.getElementById("tk"); if (el) el.className = ""; }
+  });
+  setInterval(() => {
+    if (!started) return;
+    if (isoT(new Date()) !== day) { start(); return; }
+    // Replié à la main depuis 10 min alors qu'il reste quelque chose : on le redéroule
+    if (open === false && collapsedAt && Date.now() - collapsedAt >= 10 * 60000) { open = null; collapsedAt = 0; }
+    if (!form) render();
+  }, 30000);
+
+  // ── Affichage ─────────────────────────────────────────────────────────────
+  function render(){
+    const el = document.getElementById("tk");
+    if (!el || !started) return;
+    const all = tasksToday();
+    const due = [], late = [], next = [];
+    let nDone = 0;
+    all.forEach(t => {
+      if (S.fait[t.id]) { nDone++; return; }
+      if (S.motif[t.id]) return;
+      const st = status(t);
+      (st === "late" ? late : st === "open" ? due : next).push(t);
+    });
+    if (!all.length) { el.className = ""; el.innerHTML = ""; return; }
+    next.sort((x, y) => (plage(x).d ?? 0) - (plage(y).d ?? 0));
+    due.sort((x, y) => (plage(x).a ?? 9999) - (plage(y).a ?? 9999));
+    const n = due.length + late.length;
+    const s = [...late, ...due].map(t => t.id).join();
+    if (s !== sig) { sig = s; if (!form) { open = null; collapsedAt = 0; } }
+    const isOpen = form ? true : (open === null ? n > 0 : open);
+    el.className = "on" + (isOpen ? " open" : "") + (late.length ? " late" : due.length ? " due" : "");
+    const nextT = next.find(t => plage(t).d != null);
+    const head = n
+      ? `<span class="t">${late.length ? "⚠ Tâche non faite" : "🧹 Tâches à faire"}</span><span class="n">${n}</span>`
+      : `<span class="t">✓ Rien à faire${nextT ? ` · prochaine à ${fmtM(plage(nextT).d)}` : ""}</span>`;
+    let body = "";
+    if (late.length) body += `<div class="sec r">Plage dépassée — motif obligatoire</div>` + late.map(t => item(t, true)).join("");
+    if (due.length) body += `<div class="sec">À faire maintenant</div>` + due.map(t => item(t, false)).join("");
+    if (!n) body += `<div class="done-msg">Tout est fait pour le moment 👍</div>`;
+    body += `<div class="foot"><span>${nDone} faite${nDone > 1 ? "s" : ""} aujourd'hui</span><span>${next.length} plus tard</span></div>`;
+    // ne pas effacer un formulaire en cours de saisie
+    const keep = form && el.querySelector(".form") ? { txt: (el.querySelector(".form .txt") || {}).value, who: el.querySelector(".form .who").value, pin: el.querySelector(".form .pin").value } : null;
+    el.innerHTML = `<div class="tk-head">${head}<span class="chev">▾</span></div><div class="tk-body"><div>${body}</div></div>`;
+    el.querySelector(".tk-head").onclick = () => {
+      if (form) return;
+      open = !isOpen; collapsedAt = open ? 0 : Date.now(); render();
+    };
+    el.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => { form = { id:b.dataset.ok, late:false }; render(); });
+    el.querySelectorAll("[data-mot]").forEach(b => b.onclick = () => { form = { id:b.dataset.mot, late:true }; render(); });
+    const f = el.querySelector(".form");
+    if (f) {
+      if (keep) { if (f.querySelector(".txt") && keep.txt != null) f.querySelector(".txt").value = keep.txt; f.querySelector(".who").value = keep.who; f.querySelector(".pin").value = keep.pin; }
+      const who = f.querySelector(".who"), go = f.querySelector(".go");
+      const label = () => { if (form.late) go.textContent = who.value === "boss" ? "Valider (motif facultatif)" : "Envoyer le motif"; };
+      who.onchange = label; label();
+      f.querySelector(".cancel").onclick = () => { form = null; render(); };
+      go.onclick = () => submit(f, [...due, ...late].find(t => t.id === form.id));
+      f.querySelector(".pin").onkeydown = e => { if (e.key === "Enter") go.click(); };
+      if (!keep) (f.querySelector(".txt") || f.querySelector(".pin")).focus();
+    }
+    if (form && !f) form = null; // la tâche a été traitée ailleurs
+  }
+  function item(t, isLate){
+    const p = plage(t);
+    const html = `<div class="it${isLate ? " lt" : ""}">
+      ${isLate ? "" : `<button type="button" class="bx" data-ok="${esc(t.id)}" aria-label="Cocher"></button>`}
+      <span class="nm">${esc(t.n)}<small>${isLate ? (p.a != null ? `à faire avant ${fmtM(p.a)}` : "à faire avant le départ") : (p.d != null && p.a != null ? `${fmtM(p.d)} → ${fmtM(p.a)}` : p.a != null ? `avant ${fmtM(p.a)}` : "dans la journée")}</small></span>
+      ${isLate ? `<button type="button" class="mot" data-mot="${esc(t.id)}">Motif</button>` : ""}
+    </div>`;
+    if (!form || form.id !== t.id) return html;
+    const opts = Object.entries(NAMES).filter(([id]) => S.pins[id]).map(([id, nm]) => `<option value="${id}">${nm}</option>`).join("");
+    return html + `<div class="form">
+      ${form.late ? `<textarea class="txt" maxlength="200" placeholder="Pourquoi la tâche n'a pas été faite ? (ex. rush anniversaire, plus de produit…)"></textarea>` : ""}
+      ${opts ? `<div class="row"><select class="who">${opts}</select><input class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="code"></div>`
+             : `<div class="err">Aucun code personnel n'est configuré : le Boss doit les créer dans le planning.</div>`}
+      <div class="err" data-e></div>
+      <div class="acts"><button type="button" class="cancel">Annuler</button>${opts ? `<button type="button" class="go ${form.late ? "ko" : "ok"}">${form.late ? "Envoyer le motif" : "C'est fait ✓"}</button>` : ""}</div>
+    </div>`;
+  }
+  async function sha(txt){
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+  let fails = 0, lockUntil = 0;
+  async function submit(f, t){
+    const err = f.querySelector("[data-e]");
+    if (!t) { form = null; render(); return; }
+    if (Date.now() < lockUntil) { err.textContent = "Trop d'essais. Patientez 30 secondes."; return; }
+    const who = f.querySelector(".who").value, pin = f.querySelector(".pin").value.trim();
+    const txt = f.querySelector(".txt") ? f.querySelector(".txt").value.trim().slice(0, 200) : "";
+    if (form.late && who !== "boss" && !txt) { err.textContent = "Le motif est obligatoire."; return; }
+    if (!/^\d{4}$/.test(pin) || await sha(`gz-taches:${who}:${pin}`) !== S.pins[who]) {
+      f.querySelector(".pin").value = "";
+      if (++fails >= 5) { fails = 0; lockUntil = Date.now() + 30000; }
+      err.textContent = "Code incorrect."; return;
+    }
+    fails = 0;
+    if (!form.late && who !== "boss" && status(t) !== "open") { err.textContent = "Hors plage horaire : seul le Boss peut valider."; return; }
+    const ts = firebase.database.ServerValue.TIMESTAMP;
+    try {
+      if (form.late && !(who === "boss" && !txt)) {
+        await db.ref(`taches/motif/${day}/${t.id}`).set({ qui:who, t:ts, n:t.n.slice(0, 80), c:txt });
+      } else {
+        const rec = { qui:who, t:ts, n:t.n.slice(0, 80) };
+        await db.ref(`taches/fait/${day}/${t.id}`).set(rec);
+      }
+      form = null; render();
+    } catch(e) {
+      console.error(e);
+      err.textContent = e && e.code === "PERMISSION_DENIED" ? "Enregistrement refusé (déjà fait, ou règle Firebase manquante)." : "Erreur : " + (e.message || e);
+    }
+  }
+})();
+</script>
+
 </body>
 </html>

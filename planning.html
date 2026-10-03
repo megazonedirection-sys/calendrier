@@ -1415,6 +1415,7 @@ function tasksSubscribe(){
   L("taches/catalogue", v => T.catalogue = v || {});
   L("taches/pins", v => T.pins = v || {});
   L("taches/ponctuelles", v => T.ponct = v || {});
+  L("taches/motif", v => T.motif = v || {}); // motifs saisis dans CalendIT pour les tâches non faites
   // Date de début du suivi : les jours précédents ne comptent jamais comme « non faits »
   L("taches/debut", v => {
     T.debut = v || null; T.debutLoaded = true;
@@ -1553,6 +1554,7 @@ function prevOpenDay(today){
 }
 const dayLabel = key => new Date(key + "T12:00:00").toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"long" });
 
+const motifOf = (key, id) => ((T.motif || {})[key] || {})[id] || null;
 /* Oublis à traiter (Boss) : depuis le premier jour d'utilisation, 35 jours max */
 function missedToTreat(){
   if (!isAdmin() || !T.faitAll) return [];
@@ -1603,7 +1605,7 @@ function renderTasks(){
     const cls = st === "done" ? "done" : st === "late" ? "missed" : st === "early" ? "early" : "";
     const right = r
       ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "…"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}</span>`
-      : st === "late" ? `<span class="who" style="color:var(--bad)">Non faite</span>`
+      : st === "late" ? `<span class="who" style="color:var(--bad)">Non faite${motifOf(today, t.id) ? `<span class="tc" style="color:var(--bad)">motif (${esc(pname(motifOf(today, t.id).qui))}) : « ${esc(motifOf(today, t.id).c || "—")} »</span>` : ""}</span>`
       : st === "early" ? `<span class="who" style="color:var(--muted)">dispo à ${fmtMin(p.d)}</span>`
       : p.a != null ? `<span class="who" style="color:var(--warn)">avant ${fmtMin(p.a)}</span>` : "";
     return `<button type="button" class="titem ${cls}" data-tid="${esc(t.id)}" ${r && !isAdmin() ? "disabled" : ""}>
@@ -1845,7 +1847,7 @@ function openRecap(){
   $("rcList").innerHTML = items.length ? Object.keys(byDay).sort().reverse().map(k => `<div class="rcday" data-k="${k}">
       <h4>${esc(dayLabel(k))} <button type="button" class="rcall" style="font-size:.75rem;padding:.15rem .5rem;margin-left:.4rem">Tout traiter</button></h4>
       ${byDay[k].map(t => { const pl = plageLabel(plage(k, t)); return `<div class="rcrow" data-id="${esc(t.id)}">
-        <span class="rn">${esc(t.n)}${pl ? `<small>${esc(pl)}</small>` : ""}</span>
+        <span class="rn">${esc(t.n)}${pl ? `<small>${esc(pl)}</small>` : ""}${motifOf(k, t.id) ? `<small style="color:var(--bad)">Motif (${esc(pname(motifOf(k, t.id).qui))}) : « ${esc(motifOf(k, t.id).c || "—")} »</small>` : ""}</span>
         <input type="text" maxlength="120" placeholder="Note (facultatif)">
         <button type="button" class="primary rcok">Traité</button></div>`; }).join("")}</div>`).join("")
     : `<p class="period">✓ Aucun oubli à traiter.</p>`;
@@ -1957,7 +1959,7 @@ async function loadSuivi(key){
     const r = fait[t.id], fl = flags(key, t, r);
     return `<div class="svday"><span>${esc(t.n)}${r && r.c ? `<span class="tc" style="display:block;font-size:.78rem;color:var(--muted)">« ${esc(r.c)} »</span>` : ""}</span>
       ${r ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "?"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}</span>`
-          : `<span class="ko">${key <= iso(new Date()) ? "Non faite" : "À venir"}${tr[t.id] ? `<span style="display:block;font-size:.76rem;color:var(--muted)">traité${tr[t.id].c ? ` : « ${esc(tr[t.id].c)} »` : ""}</span>` : ""}</span>`}</div>`;
+          : `<span class="ko">${key <= iso(new Date()) ? "Non faite" : "À venir"}${motifOf(key, t.id) ? `<span style="display:block;font-size:.76rem">motif (${esc(pname(motifOf(key, t.id).qui))}) : « ${esc(motifOf(key, t.id).c || "—")} »</span>` : ""}${tr[t.id] ? `<span style="display:block;font-size:.76rem;color:var(--muted)">traité${tr[t.id].c ? ` : « ${esc(tr[t.id].c)} »` : ""}</span>` : ""}</span>`}</div>`;
   }).join("");
   loadSuiviMonth(key.slice(0, 7));
 }
