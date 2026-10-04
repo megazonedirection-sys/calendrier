@@ -750,7 +750,7 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
           <div class="ac-wrap">
             <input type="tel" id="fTel" placeholder="06 12 34 56 78" maxlength="10"
               autocomplete="off"
-              oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);if(this.value.length===10)acSearch(this.value);else acClose()"
+              oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);if(this.value.length===10)acSearch(this.value);else acClose();refreshOfferTypeOptions()"
               onkeydown="acKey(event)"
               onblur="setTimeout(acClose,180)">
             <div class="ac-list" id="acList"></div>
@@ -821,6 +821,7 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
             <option value="t-bloque">Bloqué</option>
             <option value="t-message">Message</option>
           </select>
+          <div id="fTypeOfferHint" style="display:none;font-size:11px;color:#b45309;margin-top:4px"></div>
         </div>
         <div class="fg">
           <label>💳 Paiement</label>
@@ -2206,6 +2207,69 @@ const MIN_PERS_BY_TYPE = {'t-anniv':6,'t-anniv3':6,'t-evc':6,'t-groupe':12};
 // (congé, créneau bloqué, message libre) — ce ne sont pas de vraies
 // réservations, donc pas de nombre de joueurs à renseigner.
 const NO_PERS_TYPES = ['t-message', 't-conge', 't-bloque'];
+
+// ── OFFRES DU MARDI / JEUDI / VENDREDI (All Play, Just Play, Afterwork) ───────
+// Valables uniquement avec une 1ère session à partir de 17h (1er créneau de la
+// grille actuelle ≥ 17h = 17h20). Avant, ce sont des sessions normales.
+const OFFER_TYPES = ['t-team', 't-jeu3', 't-vendredi'];
+const OFFER_START_MIN = 17 * 60;
+// Quand le staff choisit l'offre le bon jour, toutes les sessions sont
+// réservées d'un coup, avec 1 créneau de pause entre chaque (comme en ligne).
+const OFFER_AUTO_SESSIONS = {
+  't-jeu3':     { dow: 4, count: 3, label: 'Just Play' },
+  't-vendredi': { dow: 5, count: 2, label: 'Afterwork' },
+};
+
+// Raison pour laquelle une offre ne peut PAS être choisie sur ce créneau
+// (null = autorisée) :
+// - le créneau est avant 17h (l'offre commence avec la 1ère session à 17h20) ;
+// - le même client (même téléphone) a déjà une réservation qui débute avant
+//   17h ce jour-là : l'offre ne peut pas s'appliquer à ses créneaux ≥ 17h.
+function offerBlockedReason(date, time, tel, ignoreKey){
+  if(timeToMin(time) < OFFER_START_MIN){
+    return "Les offres (All Play, Just Play, Afterwork) sont disponibles à partir de 17h20, avec la 1ère session.";
+  }
+  if(tel){
+    for(const [k, b] of Object.entries(bookings)){
+      if(k === ignoreKey) continue;
+      const p = k.split('|'); // vue|date|heure|slot
+      if(p[0] !== 'laser' || p[1] !== date) continue;
+      if((b.tel || '').trim() !== tel || NO_PERS_TYPES.includes(b.type)) continue;
+      if(timeToMin(p[2]) < OFFER_START_MIN){
+        return `Ce client a déjà une réservation à ${p[2]} : l'offre ne peut pas être appliquée quand la réservation débute avant 17h.`;
+      }
+    }
+  }
+  return null;
+}
+
+// Grise les offres du menu "Type de réservation" quand elles ne sont pas
+// utilisables sur ce créneau (évite les fausses manipulations).
+function refreshOfferTypeOptions(){
+  if(currentView !== 'laser' || !pendingSlot) return;
+  const sel  = document.getElementById('fType');
+  const hint = document.getElementById('fTypeOfferHint');
+  if(!sel) return;
+  const tel = (document.getElementById('fTel').value || '').trim();
+  const { date, time, isEdit, key } = pendingSlot;
+  // En modification, on ne grise pas l'offre déjà portée par la réservation
+  const currentType = (isEdit && key && bookings[key]) ? bookings[key].type : null;
+  const reason = offerBlockedReason(date, time, tel, key);
+  OFFER_TYPES.forEach(v => {
+    const opt = sel.querySelector(`option[value="${v}"]`);
+    if(!opt) return;
+    const block = !!reason && v !== currentType;
+    opt.disabled = block;
+    opt.title = block ? reason : '';
+  });
+  if(hint){
+    hint.textContent = reason || '';
+    hint.style.display = reason ? '' : 'none';
+  }
+  // L'offre choisie vient d'être grisée (ex : numéro saisi après coup) → retour à "Particulier"
+  const chosen = sel.selectedOptions[0];
+  if(chosen && chosen.disabled){ sel.value = 't-particulier'; onTypeChange(); }
+}
 // Durée VR en nombre de créneaux ALL_SLOTS (20 min chacun)
 const VR_DURATION = {'t-vrzone':1,'t-escapevr':3}; // 20 min (opérateur valide la suite) / 60 min
 
@@ -2983,6 +3047,7 @@ function adaptModalForView(){
   // Répartition d'âge : uniquement pertinente en vue Laser Game
   document.getElementById('fAgeGroup').style.display = (currentView==='laser') ? '' : 'none';
   updateAgeGroupVisibility();
+  refreshOfferTypeOptions(); // grise les offres si le créneau est avant 17h20
 }
 
 // Affiche le bloc "répartition par âge" pour Laser Game, Blind Test, VR Zone
@@ -3078,6 +3143,7 @@ function editBooking(key){
   document.getElementById('fAdo1618').value = b.ados1618    || 0;
   document.getElementById('fAdultes').value = b.adultes     || 0;
   updateAgeGroupVisibility(); // recalcule après avoir défini le vrai type (VR Zone vs Escape)
+  refreshOfferTypeOptions();  // tel et type connus : recalcule le grisage des offres
   document.getElementById('btnCopy').style.display='';
   document.getElementById('copyInfo').textContent='Vous pouvez copier cette réservation vers un autre créneau.';
   document.getElementById('bkOverlay').classList.add('open');
@@ -3150,6 +3216,7 @@ function acSelect(i){
   document.getElementById('fNom').value = c.nom;
   document.getElementById('fMail').value = c.mail||'';
   acClose();
+  refreshOfferTypeOptions(); // le client choisi peut déjà avoir une réservation avant 17h
 }
 
 function acClose(){
@@ -3244,6 +3311,57 @@ function confirmBooking(){
     }
   }
 
+  // ── Offres : garde-fou + réservation automatique de toutes les sessions ──────
+  let offerPlan = null;
+  if(currentView==='laser' && OFFER_TYPES.includes(type)){
+    const prevType = (isEdit && key && bookings[key]) ? bookings[key].type : null;
+    if(type !== prevType){
+      const why = offerBlockedReason(date, time, tel, key);
+      if(why){ showAlert('Offre indisponible', why); return; }
+    }
+    const cfg = OFFER_AUTO_SESSIONS[type];
+    const dow = new Date(date + 'T12:00:00').getDay();
+    if(cfg && !isEdit && dow === cfg.dow){
+      // Grille correspondant à la DATE réservée (avant/après le 01/09/2026)
+      const grid = date >= NEW_SCHEDULE_DATE ? ALL_SLOTS_NEW : ALL_SLOTS;
+      const idx  = grid.findIndex(s => s.time === time);
+      const times = [time];
+      for(let i = 1; i < cfg.count; i++){
+        const j = idx + 2 * i; // +2 = 1 créneau de pause entre chaque session
+        if(idx < 0 || j >= grid.length){ times.length = 0; break; }
+        times.push(grid[j].time);
+      }
+      if(times.length !== cfg.count){
+        showAlert(`${cfg.label} impossible`, `Il n'y a pas assez de créneaux ce jour-là pour placer les ${cfg.count} sessions à partir de ${time}.`);
+        return;
+      }
+      // Gilets disponibles à chaque session
+      for(let i = 1; i < times.length; i++){
+        const reste = MAX_VESTS - countVests(date, times[i]);
+        if(pers > reste){
+          showAlert('Capacité maximale atteinte', `Session ${i+1}/${cfg.count} à ${times[i]} : il ne reste que ${reste} gilet(s) (max ${MAX_VESTS}). Impossible de réserver ${pers} joueurs pour toute l'offre ${cfg.label}.`);
+          return;
+        }
+      }
+      // Sessions au-delà de la fermeture : confirmation explicite
+      const oh = getOpenHours(date);
+      if(oh && oh.open){
+        const tard = times.filter(t => timeToMin(t) + 20 > oh.closeMin);
+        if(tard.length && !confirm(`⚠️ Session(s) après la fermeture (${tard.join(', ')}).\n\nConfirmer quand même l'offre ${cfg.label} ?`)) return;
+      }
+      // Même couloir libre sur toutes les sessions (celui cliqué en priorité)
+      const maxCol = Math.min(...times.map(t => grid.find(s => s.time === t).cols));
+      const slotN = parseInt(slot) || 1;
+      const candidats = [slotN, ...Array.from({length: maxCol}, (_, n) => n + 1).filter(c => c !== slotN)];
+      const col = candidats.find(c => c <= maxCol && times.every(t => !bookings[slotKey(date, t, c)]));
+      if(!col){
+        showAlert('Aucun couloir libre', `Aucun couloir n'est libre sur les ${cfg.count} créneaux (${times.join(', ')}). Libérez un couloir ou choisissez un autre horaire.`);
+        return;
+      }
+      offerPlan = { cfg, times, col, gid: 'staff_' + Date.now() };
+    }
+  }
+
   // Blind Test : une seule réservation autorisée par créneau (aucun surbook, même côté staff)
   if(currentView==='bt'){
     const prefixBt = `bt|${date}|${time}|`;
@@ -3334,7 +3452,7 @@ function confirmBooking(){
 
   } else {
     // Comportement standard (laser, BT, édition VR)
-    const k = isEdit && key ? key : slotKey(date,time,slot);
+    const k = isEdit && key ? key : slotKey(date,time, offerPlan ? offerPlan.col : slot);
     const existing = bookings[k] || {};
 
     // Si une répartition d'âge a été saisie, on la préfixe au commentaire
@@ -3360,6 +3478,22 @@ function confirmBooking(){
       ...(existing.vrBlock  ? {vrBlock: true, vrCol: existing.vrCol, vrStep: existing.vrStep} : {}),
       ...ageFields
     };
+
+    // ── Offres Just Play (jeudi) / Afterwork (vendredi) : toutes les sessions ──
+    if(offerPlan){
+      const { cfg, times, col, gid } = offerPlan;
+      const tag = i => `🎯 ${cfg.label} · session ${i+1}/${cfg.count}${type === 't-vendredi' ? ' · 1 boisson offerte' : ''}`;
+      const withTag = (base, i) => base ? `${base} — ${tag(i)}` : tag(i);
+      bookings[k].comment = withTag(finalComment, 0);
+      bookings[k].groupId = gid;
+      for(let i = 1; i < times.length; i++){
+        bookings[slotKey(date, times[i], col)] = {
+          tel, nom, mail, comment: withTag(finalComment, i), pers, type, pay,
+          confirmed: false, present: false, groupId: gid,
+          ...ageFields
+        };
+      }
+    }
 
     // ── EVC : doublon automatique (Partie 2) avec 20 min de pause ──────────────
     if(currentView === 'laser' && type === 't-evc' && !isEdit){
