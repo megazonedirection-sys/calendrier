@@ -478,6 +478,16 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .alert-msg{font-size:13px;color:var(--muted);margin-bottom:18px}
 .btn-alert-ok{padding:9px 28px;background:var(--text);color:#fff;border:none;border-radius:var(--r);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer}
 
+/* ── FENÊTRE D'ANNULATION (boutons explicites) ── */
+.del-btns{display:flex;flex-direction:column;gap:8px}
+.del-btn{width:100%;padding:11px 14px;border-radius:var(--r);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;border:1.5px solid;transition:background .15s}
+.del-btn-one{background:#fff;color:#b91c1c;border-color:#fca5a5}
+.del-btn-one:hover{background:#fef2f2}
+.del-btn-all{background:#dc2626;color:#fff;border-color:#dc2626}
+.del-btn-all:hover{background:#b91c1c}
+.del-btn-keep{background:#f1f5f9;color:var(--text);border-color:var(--border2)}
+.del-btn-keep:hover{background:#e2e8f0}
+
 /* ── COPY MODE BANNER ── */
 .copy-banner{
   display:none;position:sticky;top:104px;z-index:188;
@@ -889,6 +899,20 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
     <div class="alert-title" id="alertTitle">Capacité maximale atteinte</div>
     <div class="alert-msg" id="alertMsg"></div>
     <button class="btn-alert-ok" onclick="document.getElementById('alertOverlay').classList.remove('open')">OK</button>
+  </div>
+</div>
+
+<!-- FENÊTRE D'ANNULATION (remplace les confirm() ambigus OK / Annuler) -->
+<div class="alert-overlay" id="delOverlay" onclick="if(event.target===this) closeDelModal()">
+  <div class="alert-box">
+    <div class="alert-icon">🗑️</div>
+    <div class="alert-title" id="delTitle">Annuler la réservation</div>
+    <div class="alert-msg" id="delMsg"></div>
+    <div class="del-btns">
+      <button class="del-btn del-btn-one" id="delBtnOne" onclick="confirmDelete('one')"></button>
+      <button class="del-btn del-btn-all" id="delBtnAll" onclick="confirmDelete('all')"></button>
+      <button class="del-btn del-btn-keep" id="delBtnKeep" onclick="closeDelModal()"></button>
+    </div>
   </div>
 </div>
 
@@ -3450,28 +3474,51 @@ function delBooking(key){
     return sameGroup || sameTelJour;
   });
 
+  // Fenêtre dédiée à boutons explicites (au lieu de deux confirm() natifs où
+  // « Annuler » voulait dire deux choses opposées selon la question).
+  delPending = { key, autresCles };
+  const dateFr = date.split('-').reverse().join('/');
+  const time   = parts[2];
+  const nom    = b.nom ? `« ${b.nom} »` : 'ce client';
+  const btnOne = document.getElementById('delBtnOne');
+  const btnAll = document.getElementById('delBtnAll');
+  document.getElementById('delBtnKeep').textContent = '↩ Ne rien annuler';
+
   if(autresCles.length > 0){
     const total = autresCles.length + 1;
-    const toutAnnuler = confirm(
-      `${b.nom ? `"${b.nom}" a` : 'Ce client a'} ${total} réservation(s) ce jour-là (${date}).\n\n` +
-      `OK = Annuler les ${total} réservations de la journée\n` +
-      `Annuler (ce message) = Annuler uniquement ce créneau`
-    );
-    if(toutAnnuler){
-      delete bookings[key];
-      autresCles.forEach(k => delete bookings[k]);
-    } else {
-      if(!confirm('Confirmer l\'annulation de ce seul créneau ?')) return;
-      delete bookings[key];
-    }
-    const _w = document.querySelector('.cal-wrap');
-    if(_w){ _savedScrollTop = _w.scrollTop; _savedScrollLeft = _w.scrollLeft; }
-    saveBookings();
-    return;
+    document.getElementById('delTitle').textContent = 'Annuler une réservation';
+    document.getElementById('delMsg').textContent =
+      `${nom} a ${total} sessions le ${dateFr}. Que voulez-vous annuler ?`;
+    btnOne.textContent = `Annuler uniquement cette session (${time})`;
+    btnAll.textContent = `Annuler les ${total} sessions de ${b.nom ? b.nom : 'ce client'}`;
+    btnAll.style.display = '';
+  } else {
+    document.getElementById('delTitle').textContent = 'Supprimer la réservation';
+    document.getElementById('delMsg').textContent =
+      `Supprimer la réservation de ${nom} le ${dateFr} à ${time} ?`;
+    btnOne.textContent = 'Supprimer cette réservation';
+    btnAll.style.display = 'none';
+    document.getElementById('delBtnKeep').textContent = '↩ Garder la réservation';
   }
+  document.getElementById('delOverlay').classList.add('open');
+}
 
-  if(!confirm('Supprimer cette réservation ?')) return;
+let delPending = null;
+
+function closeDelModal(){
+  document.getElementById('delOverlay').classList.remove('open');
+  delPending = null;
+}
+
+// mode : 'one' = uniquement la session cliquée ; 'all' = toutes les sessions
+// du même client ce jour-là (même groupId ou même téléphone + même jour).
+function confirmDelete(mode){
+  if(!delPending) return;
+  const { key, autresCles } = delPending;
+  closeDelModal();
+  if(!bookings[key]) return; // déjà supprimée entre-temps (autre poste)
   delete bookings[key];
+  if(mode === 'all') autresCles.forEach(k => delete bookings[k]);
   const _w = document.querySelector('.cal-wrap');
   if(_w){ _savedScrollTop = _w.scrollTop; _savedScrollLeft = _w.scrollLeft; }
   saveBookings();
