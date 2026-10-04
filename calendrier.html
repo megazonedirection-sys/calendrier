@@ -815,7 +815,7 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
             <option value="t-evc">EVC</option>
             <option value="t-team">All Play</option>
             <option value="t-jeu3">Just Play</option>
-            <option value="t-vendredi">Four Play</option>
+            <option value="t-vendredi">Afterwork</option>
             <option value="t-job">Job</option>
             <option value="t-conge">Congé</option>
             <option value="t-bloque">Bloqué</option>
@@ -1451,10 +1451,14 @@ function escapeHtml(str){
 // Modèle de confirmation client unique, utilisé pour toutes les activités
 // (Laser, VR, Escape, Blind Test). Indique désormais aussi le nombre de
 // sessions réservées, ou le nom de l'offre spéciale si applicable
-// (All Play / Just Play / Four Play).
+// (All Play / Just Play / Afterwork).
 function buildClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin, pers, totalSessions, offerLabel, extraNote){
+  // Afterwork : la boisson offerte fait partie de l'offre, on la mentionne
+  // explicitement (récapitulatif + infos pratiques).
+  const isAfterwork = offerLabel === 'Afterwork';
+  const offerDetail = isAfterwork ? ' + 1 boisson offerte' : '';
   const sessionsLine = offerLabel
-    ? `🎯 Offre réservée  : ${offerLabel} (${totalSessions} partie${totalSessions > 1 ? 's' : ''})\n`
+    ? `🎯 Offre réservée  : ${offerLabel} (${totalSessions} partie${totalSessions > 1 ? 's' : ''}${offerDetail})\n`
     : `🔢 Sessions        : ${totalSessions} partie${totalSessions > 1 ? 's' : ''}\n`;
   return (
     `Bonjour ${nom} 👋\n\n` +
@@ -1474,7 +1478,9 @@ function buildClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin
     `───────────────────────────────────\n` +
     `• Merci d'arriver à l'heure de début indiquée ci-dessus (briefing inclus)\n` +
     `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
-    `• Le règlement s'effectue sur place (CB, espèces)\n\n` +
+    `• Le règlement s'effectue sur place (CB, espèces)\n` +
+    (isAfterwork ? `• 🍹 Votre boisson offerte vous est servie entre les 2 parties (soft uniquement pour les mineurs)\n` : '') +
+    `\n` +
     `───────────────────────────────────\n` +
     `📍 Game Zone Montauban\n` +
     `📞 05.63.03.79.32\n\n` +
@@ -2186,7 +2192,7 @@ const TYPES_LABEL = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-centre':'Centre loisirs',
   't-club':'Club&Asso','t-anniv':'Anniversaire','t-anniv3':'Anniv 3 parties',
   't-evc':'EVC','t-team':'All Play','t-jeu3':'Just Play',
-  't-vendredi':'Four Play','t-weekend':'WE 11/13',
+  't-vendredi':'Afterwork','t-weekend':'WE 11/13',
   't-job':'Job','t-conge':'Congé','t-bloque':'Bloqué','t-message':'Message',
   't-vrzone':'VRzone','t-escapevr':'Escape Game VR',
   't-bt30':'30 min','t-bt60':'60 min'
@@ -2966,7 +2972,7 @@ function adaptModalForView(){
        <option value="t-evc">EVC</option>
        <option value="t-team">All Play</option>
        <option value="t-jeu3">Just Play</option>
-       <option value="t-vendredi">Four Play</option>
+       <option value="t-vendredi">Afterwork</option>
        <option value="t-job">Job</option>
        <option value="t-conge">Congé</option>
        <option value="t-bloque">Bloqué</option>
@@ -3731,7 +3737,7 @@ const TYPE_LABEL_D = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
   't-anniv3':'Anniversaire 3 parties','t-evc':'EVC','t-club':'Club & Asso',
   't-centre':'Centre de loisirs','t-team':'All Play','t-jeu3':'Just Play',
-  't-vendredi':'Four Play','t-escapevr':'Escape Game VR'
+  't-vendredi':'Afterwork','t-escapevr':'Escape Game VR'
 };
 
 function openDemandesPanel(){
@@ -3740,7 +3746,7 @@ function openDemandesPanel(){
 }
 
 // Regroupe les entrées partageant un même groupId (réservations multi-
-// sessions : anniversaire, EVG, Just Play, Four Play, VR Zone multi) en un
+// sessions : anniversaire, EVG, Just Play, Afterwork, VR Zone multi) en un
 // seul groupe, pour n'afficher qu'une seule carte par réservation réelle
 // dans le panneau Demandes.
 function groupDemandesEntries(entries){
@@ -4383,7 +4389,7 @@ async function refuserDemande(ref){
   const d = demandes[ref];
   if(!d) return;
   // Group-aware : si cette demande fait partie d'un groupe multi-sessions
-  // (anniversaire, EVG, Just Play, Four Play, VR Zone multi), refuser
+  // (anniversaire, EVG, Just Play, Afterwork, VR Zone multi), refuser
   // TOUTES les sessions liées ensemble — sinon les autres resteraient
   // orphelines "en attente" sans qu'aucune carte ne les affiche plus.
   const membres = d.groupId
