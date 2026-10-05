@@ -1076,7 +1076,7 @@ async function migrateSlots(){
       // (avant/après le 01/09/2026) — sinon toute réservation VR créée sur
       // le nouveau planning est jugée "invalide" par erreur et déplacée vers
       // un horaire incohérent à chaque chargement de CalendIT.
-      const vrSchedule = date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
+      const vrSchedule = date >= NEW2_SCHEDULE_DATE ? VR_SLOTS_NEW2 : date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
       const vrSlotTimes = new Set(vrSchedule.map(s=>s.time));
       if(!vrSlotTimes.has(time)){
         const [h, m] = time.split(':').map(Number);
@@ -2587,6 +2587,18 @@ function buildSlotsNew(){
 }
 
 const ALL_SLOTS_NEW = buildSlotsNew();
+const NEW2_SCHEDULE_DATE = '2026-11-02';
+function buildSlotsNew2(){
+  const S=STD_COLS,H=HOUR_COLS;const slots=[];
+  for(let h=10;h<14;h++) for(let m=0;m<=40;m+=20) slots.push({time:`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`,cols:S});
+  let t=14*60;
+  while(true){
+    for(let i=0;i<3;i++){const m=t+i*20;if(m>21*60+55)break;const h=Math.floor(m/60),mm=m%60;slots.push({time:`${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`,cols:H});}
+    t+=65;if(t>21*60+55)break;
+  }
+  return slots;
+}
+const ALL_SLOTS_NEW2 = buildSlotsNew2();
 
 // ── VR SLOTS : même rotation que Laser, décalés de +10 min ───────────────────
 function makeVrSlots(base){
@@ -2716,6 +2728,7 @@ function dismissOnlineToast(groupKey){
   }
 }
 const VR_SLOTS_NEW = makeVrSlots(ALL_SLOTS_NEW);
+const VR_SLOTS_NEW2 = makeVrSlots(ALL_SLOTS_NEW2);
 
 // Renvoie les `span` créneaux VR consécutifs à partir de `time`, en marchant
 // sur les index de la vraie grille horaire (ancien planning 20 min / nouveau
@@ -2725,7 +2738,7 @@ const VR_SLOTS_NEW = makeVrSlots(ALL_SLOTS_NEW);
 // retrouvait alors sur des horaires hors grille, invisibles dans le
 // calendrier — le créneau du milieu "manquant").
 function getVrSpanTimes(date, time, span){
-  const activeVrSlots = date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
+  const activeVrSlots = date >= NEW2_SCHEDULE_DATE ? VR_SLOTS_NEW2 : date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
   const startIdx = activeVrSlots.findIndex(s => s.time === time);
   const times = [time];
   if (startIdx === -1) return times; // créneau introuvable dans la grille : cas limite, on ne dérive rien
@@ -2768,9 +2781,10 @@ const BT_SLOTS = buildBTSlots();
 function getActiveSlots(){
   if(currentView==='bt') return BT_SLOTS;
   const dateKey = fmtDate(curDate);
-  const isNew = dateKey >= NEW_SCHEDULE_DATE;
-  if(currentView==='vr')    return isNew ? VR_SLOTS_NEW : VR_SLOTS;
-  return isNew ? ALL_SLOTS_NEW : ALL_SLOTS;
+  const isNew2 = dateKey >= NEW2_SCHEDULE_DATE;
+  const isNew  = dateKey >= NEW_SCHEDULE_DATE;
+  if(currentView==='vr')    return isNew2 ? VR_SLOTS_NEW2 : isNew ? VR_SLOTS_NEW : VR_SLOTS;
+  return isNew2 ? ALL_SLOTS_NEW2 : isNew ? ALL_SLOTS_NEW : ALL_SLOTS;
 }
 
 function isHourSlot(t){ return t.endsWith(':00'); }
@@ -3417,7 +3431,7 @@ function confirmBooking(){
     const dow = new Date(date + 'T12:00:00').getDay();
     if(cfg && !isEdit && dow === cfg.dow){
       // Grille correspondant à la DATE réservée (avant/après le 01/09/2026)
-      const grid = date >= NEW_SCHEDULE_DATE ? ALL_SLOTS_NEW : ALL_SLOTS;
+      const grid = date >= NEW2_SCHEDULE_DATE ? ALL_SLOTS_NEW2 : date >= NEW_SCHEDULE_DATE ? ALL_SLOTS_NEW : ALL_SLOTS;
       const idx  = grid.findIndex(s => s.time === time);
       const times = [time];
       for(let i = 1; i < cfg.count; i++){
@@ -3486,7 +3500,7 @@ function confirmBooking(){
     // Utiliser le planning VR correspondant à la date réservée (avant/après le
     // changement d'horaires du 01/09/2026) — sinon le créneau affiché (nouveau
     // planning) ne se retrouve pas dans l'ancienne liste, et tout plante en silence.
-    const activeVrSlots = date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
+    const activeVrSlots = date >= NEW2_SCHEDULE_DATE ? VR_SLOTS_NEW2 : date >= NEW_SCHEDULE_DATE ? VR_SLOTS_NEW : VR_SLOTS;
     const timeIdx  = activeVrSlots.findIndex(s => s.time === time);
 
     // Si une répartition d'âge a été saisie, on la préfixe au commentaire
