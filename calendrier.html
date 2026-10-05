@@ -75,6 +75,14 @@ nav{
 #planningBanner.ferme{ display:flex;background:#b91c1c;color:#fff;border-bottom:1.5px solid #7f1d1d; }
 #planningBanner.horaires{ display:flex;background:#f97316;color:#fff;border-bottom:1.5px solid #c2410c; }
 
+/* ── BANDEAU : emails client non envoyés (à traiter par téléphone) ── */
+#emailFailBanner{
+  display:none;align-items:center;gap:8px;cursor:pointer;
+  background:#7f1d1d;color:#fff;border-bottom:1.5px solid #450a0a;
+  padding:7px 16px;font-size:13px;font-weight:800;flex-shrink:0;
+}
+#emailFailBanner:hover{ background:#991b1b; }
+
 /* ── BANNIÈRE PERMANENTE : demandes en attente ── */
 #pendingBanner{
   display:none;align-items:center;gap:8px;cursor:pointer;
@@ -713,6 +721,11 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
   </div>
 </div>
 
+<!-- BANDEAU EMAILS CLIENT NON ENVOYÉS -->
+<div id="emailFailBanner" onclick="openDemandesPanel()">
+  <span id="emailFailBannerText"></span>
+</div>
+
 <!-- BANNIÈRE DEMANDES EN ATTENTE -->
 <div id="pendingBanner" onclick="openDemandesPanel()">
   <span id="pendingBannerText"></span>
@@ -1329,6 +1342,12 @@ function initFirebaseSync(){
   // Nombre de gilets laser disponibles : partagé entre tous les postes du
   // staff (modifié via le badge 🦺), et lu séparément par le formulaire en
   // ligne pour respecter la vraie capacité.
+  // Quota EmailJS : publié par CalendIT quand un envoi échoue pour cause de
+  // quota (voir trackEmailResult), retiré dès qu'un envoi réussit à nouveau.
+  db.ref('config/emailQuota').on('value', snap => {
+    emailQuotaReached = !!(snap.val() && snap.val().reached);
+  }, () => {});
+
   db.ref('config/maxVests').on('value', snap => {
     if (snap.exists()) {
       MAX_VESTS = snap.val();
@@ -1490,6 +1509,44 @@ function buildClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// SUIVI DES EMAILS CLIENT NON ENVOYÉS (quota EmailJS atteint, panne…)
+// Jusqu'ici, plusieurs envois (réservations auto-confirmées, groupes, refus)
+// échouaient en silence : le client ne recevait rien et personne ne le savait.
+// Désormais chaque échec est enregistré sur la demande (emailFailed), affiché
+// en rouge sur sa carte avec le téléphone du client, et signalé par un bandeau
+// tant qu'il n'est pas traité. Un quota atteint est aussi publié dans
+// config/emailQuota pour que le formulaire en ligne adapte son message.
+// ══════════════════════════════════════════════════════════════════════
+let emailQuotaReached = false; // synchronisé avec config/emailQuota
+
+// Toutes les demandes d'une même réservation (même groupId), ou la demande seule
+function refsSameGroup(ref){
+  const d = demandes[ref];
+  if(!d || !d.groupId) return [ref];
+  return Object.entries(demandes).filter(([r, dd]) => dd.groupId === d.groupId).map(([r]) => r);
+}
+
+// À appeler après CHAQUE tentative d'envoi d'un email client
+function trackEmailResult(ref, ok, status, errText){
+  if(ok){
+    // Un envoi réussi prouve que le quota est de nouveau disponible
+    if(emailQuotaReached) db.ref('config/emailQuota').remove().catch(()=>{});
+    return;
+  }
+  const quota = status === 429 || /quota|limit|429/i.test(errText || '');
+  const info = { ts: Date.now(), reason: quota ? 'quota' : 'erreur' };
+  refsSameGroup(ref).forEach(r => db.ref(`demandes/${r}/emailFailed`).set(info).catch(()=>{}));
+  if(quota) db.ref('config/emailQuota').set({ reached: true, ts: Date.now() }).catch(()=>{});
+}
+
+// Le staff a prévenu le client autrement (téléphone) : retire l'alerte
+async function marquerEmailTraite(ref){
+  for(const r of refsSameGroup(ref)){
+    await db.ref(`demandes/${r}/emailFailed`).remove().catch(()=>{});
+  }
+}
+
 async function sendClientConfirmationEmail(d, ref, notify){
   if(!d.mail) return;
   const [y,mo,da] = (d.date||'').split('-');
@@ -1516,15 +1573,18 @@ async function sendClientConfirmationEmail(d, ref, notify){
       })
     });
     if(r.ok){
+      trackEmailResult(ref, true, r.status, '');
       if(notify) alert('✅ Email de confirmation envoyé à ' + d.mail);
     } else {
       const t = await r.text();
+      trackEmailResult(ref, false, r.status, t);
       const msg = (t.includes('quota') || t.includes('limit') || t.includes('429'))
         ? `⚠️ Quota EmailJS atteint (200 emails/mois épuisés). L'email n'a pas pu être envoyé à ${d.mail}. Contactez le client : ${d.tel}`
         : `⚠️ Erreur envoi email : ${t}. Contactez le client : ${d.tel}`;
       if(notify) alert(msg); else console.warn(msg);
     }
   } catch(e) {
+    trackEmailResult(ref, false, 0, String(e));
     const msg = `⚠️ Erreur réseau — email non envoyé à ${d.mail}. Contactez le client : ${d.tel}`;
     if(notify) alert(msg); else console.warn(msg, e);
   }
@@ -1825,8 +1885,12 @@ async function sendRawClientEmail(mail, ref, message, subject){
     if(!r.ok){
       const t = await r.text();
       console.warn('⚠️ Erreur envoi email :', t);
+      trackEmailResult(ref, false, r.status, t);
+    } else {
+      trackEmailResult(ref, true, r.status, '');
     }
   } catch(e) {
+    trackEmailResult(ref, false, 0, String(e));
     console.warn('⚠️ Erreur réseau — email non envoyé à', mail, e);
   }
 }
@@ -1874,8 +1938,15 @@ async function sendGroupConfirmationEmail(membres){
         }
       })
     });
-    if(!r.ok) console.warn('⚠️ Erreur envoi email groupé :', await r.text());
+    if(!r.ok){
+      const t = await r.text();
+      console.warn('⚠️ Erreur envoi email groupé :', t);
+      trackEmailResult(membres[0].ref, false, r.status, t);
+    } else {
+      trackEmailResult(membres[0].ref, true, r.status, '');
+    }
   } catch(e) {
+    trackEmailResult(membres[0].ref, false, 0, String(e));
     console.warn('⚠️ Erreur réseau — email groupé non envoyé à', first.mail, e);
   }
 }
@@ -1894,6 +1965,25 @@ function updateDemandesBadge(){
     }
     pending++;
   });
+
+  // ── Bandeau "emails non envoyés" : réservations dont l'email client a échoué
+  // et que le staff n'a pas encore marquées comme traitées ──
+  const failGroups = new Set();
+  Object.entries(demandes).forEach(([r, dd]) => {
+    if(dd.emailFailed) failGroups.add(dd.groupId || r);
+  });
+  const failBanner = document.getElementById('emailFailBanner');
+  const failText   = document.getElementById('emailFailBannerText');
+  if(failBanner && failText){
+    if(failGroups.size > 0){
+      failText.textContent = failGroups.size === 1
+        ? '📧 1 email client non envoyé — appeler le client (voir Demandes)'
+        : `📧 ${failGroups.size} emails clients non envoyés — appeler les clients (voir Demandes)`;
+      failBanner.style.display = 'flex';
+    } else {
+      failBanner.style.display = 'none';
+    }
+  }
 
   // ── Pastille dans le menu ──
   let badge = document.getElementById('demandesBadge');
@@ -2263,8 +2353,12 @@ function refreshOfferTypeOptions(){
     opt.title = block ? reason : '';
   });
   if(hint){
-    hint.textContent = reason || '';
-    hint.style.display = reason ? '' : 'none';
+    // N'afficher le message que les jours où les offres existent (mardi=2,
+    // jeudi=4, vendredi=5) — inutile de le montrer un samedi ou un mercredi.
+    const dow = new Date(date + 'T12:00:00').getDay();
+    const offerDay = [2, 4, 5].includes(dow);
+    hint.textContent = (reason && offerDay) ? reason : '';
+    hint.style.display = (reason && offerDay) ? '' : 'none';
   }
   // L'offre choisie vient d'être grisée (ex : numéro saisi après coup) → retour à "Particulier"
   const chosen = sel.selectedOptions[0];
@@ -3960,6 +4054,15 @@ function demandeCard(membres){
           ⚠️ Doublon probable — ${dupMatches.length > 1 ? `${dupMatches.length} autres demandes` : 'une autre demande'} avec le même numéro pour cette date (${dupMatches.map(([r,dd]) => `${dd.time||'?'} · ${dd.status==='pending'?'en attente':dd.status==='refused'?'refusée':'confirmée'} · reçue ${timeAgo(dd.createdAt)}`).join(' — ')}). Vérifiez avant de refuser l'une des deux.
         </div>` : '';
 
+  // Email client non envoyé (quota EmailJS atteint, panne…) sur au moins une
+  // session de cette réservation : à traiter par téléphone.
+  const failedMember = membres.find(m => m.d.emailFailed);
+  const emailFailWarning = failedMember ? `
+        <div style="margin-top:8px;font-size:12px;font-weight:700;color:#fff;background:#dc2626;border-radius:6px;padding:8px 10px">
+          📧 Email NON envoyé au client (${failedMember.d.emailFailed.reason === 'quota' ? 'quota EmailJS atteint' : 'erreur d\'envoi'}) — appelez le client au ${escapeHtml(d.tel)} pour le prévenir.
+          <button onclick="marquerEmailTraite('${ref}')" style="display:block;margin-top:6px;padding:4px 10px;background:#fff;color:#b91c1c;border:none;border-radius:6px;font-weight:700;font-size:11px;cursor:pointer">✅ Client prévenu</button>
+        </div>` : '';
+
   const sessionsList = isGroup ? `
         <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
           ${membres.map(m => `
@@ -3988,6 +4091,7 @@ function demandeCard(membres){
           ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
         </div>
         ${isPending && d.autoReason && AUTO_REASON_LABEL[d.autoReason]?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">${AUTO_REASON_LABEL[d.autoReason]}</div>`:''}
+        ${emailFailWarning}
         ${dupWarning}
         ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${boldBreakdownNumbers(d.comment)}</div>`:''}
         ${sessionsList}
@@ -4029,10 +4133,11 @@ let modifDemandeState = null; // { membres, activite, activiteLabel }
 // calendrier), sans filtrage par horaire d'ouverture — le staff connaît
 // déjà les horaires réels d'ouverture du jour choisi.
 function getModifSlotsList(activite, dateStr){
-  const isNew = dateStr >= NEW_SCHEDULE_DATE;
+  const isNew2 = dateStr >= NEW2_SCHEDULE_DATE;
+  const isNew  = dateStr >= NEW_SCHEDULE_DATE;
   if(activite === 'bt') return BT_SLOTS.map(s => s.time);
-  if(activite === 'vr') return (isNew ? VR_SLOTS_NEW : VR_SLOTS).map(s => s.time);
-  return (isNew ? ALL_SLOTS_NEW : ALL_SLOTS).map(s => s.time);
+  if(activite === 'vr') return (isNew2 ? VR_SLOTS_NEW2 : isNew ? VR_SLOTS_NEW : VR_SLOTS).map(s => s.time);
+  return (isNew2 ? ALL_SLOTS_NEW2 : isNew ? ALL_SLOTS_NEW : ALL_SLOTS).map(s => s.time);
 }
 
 // Nombre d'index de créneaux à sauter entre 2 sessions d'une même réservation
@@ -4374,9 +4479,13 @@ async function sendClientRescheduleEmail(d, ref, ancienneDate, ancienneHeure){
     if(!r.ok){
       const t = await r.text();
       console.warn('⚠️ Erreur envoi email de reprogrammation :', t);
+      trackEmailResult(ref, false, r.status, t);
       alert(`⚠️ La réservation est confirmée, mais l'email n'a pas pu être envoyé. Contactez le client : ${d.tel}`);
+    } else {
+      trackEmailResult(ref, true, r.status, '');
     }
   } catch(e) {
+    trackEmailResult(ref, false, 0, String(e));
     console.warn('⚠️ Erreur réseau — email de reprogrammation non envoyé à', d.mail, e);
     alert(`⚠️ La réservation est confirmée, mais l'email n'a pas pu être envoyé (erreur réseau). Contactez le client : ${d.tel}`);
   }
@@ -4418,9 +4527,13 @@ async function sendClientRescheduleEmailGroupe(membresModifies, ref, ancienneDat
     if(!r.ok){
       const t = await r.text();
       console.warn('⚠️ Erreur envoi email de reprogrammation groupée :', t);
+      trackEmailResult(ref, false, r.status, t);
       alert(`⚠️ Les réservations sont confirmées, mais l'email n'a pas pu être envoyé. Contactez le client : ${premier.tel}`);
+    } else {
+      trackEmailResult(ref, true, r.status, '');
     }
   } catch(e) {
+    trackEmailResult(ref, false, 0, String(e));
     console.warn('⚠️ Erreur réseau — email de reprogrammation groupée non envoyé', e);
     alert(`⚠️ Les réservations sont confirmées, mais l'email n'a pas pu être envoyé (erreur réseau). Contactez le client : ${premier.tel}`);
   }
@@ -4538,7 +4651,8 @@ async function refuserDemande(ref){
 
   // Email de refus au client via EmailJS (un seul email, pas un par session)
   if(d && d.mail){
-    fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    try {
+    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -4567,12 +4681,20 @@ async function refuserDemande(ref){
             `L'équipe Game Zone Montauban`
         }
       })
-    }).catch(e => {
-      console.warn('EmailJS refus:', e);
-      if(String(e).includes('quota') || String(e).includes('429')){
-        alert('⚠️ Quota EmailJS atteint — email de refus non envoyé à ' + d.mail);
-      }
     });
+    if(r.ok){
+      trackEmailResult(ref, true, r.status, '');
+    } else {
+      const t = await r.text();
+      console.warn('EmailJS refus :', r.status, t);
+      trackEmailResult(ref, false, r.status, t);
+      alert(`⚠️ La demande est refusée, mais l'email de refus n'a pas pu être envoyé à ${d.mail} (quota EmailJS ou erreur). Contactez le client : ${d.tel}`);
+    }
+    } catch(e) {
+      console.warn('EmailJS refus (réseau) :', e);
+      trackEmailResult(ref, false, 0, String(e));
+      alert(`⚠️ La demande est refusée, mais l'email de refus n'a pas pu être envoyé (erreur réseau). Contactez le client : ${d.tel}`);
+    }
   }
   renderDemandes();
 }
