@@ -2355,12 +2355,24 @@ function refreshOfferTypeOptions(){
     opt.title = block ? reason : '';
   });
   if(hint){
-    // N'afficher le message que les jours où les offres existent (mardi=2,
-    // jeudi=4, vendredi=5) — inutile de le montrer un samedi ou un mercredi.
     const dow = new Date(date + 'T12:00:00').getDay();
-    const offerDay = [2, 4, 5].includes(dow);
-    hint.textContent = (reason && offerDay) ? reason : '';
-    hint.style.display = (reason && offerDay) ? '' : 'none';
+    const offerDay = [2, 4, 5].includes(dow); // mardi=2, jeudi=4, vendredi=5
+    const slotMin = timeToMin(time);
+    if(reason && offerDay){
+      // Créneau avant 17h un jour d'offre : message de blocage (existant)
+      hint.textContent = reason;
+      hint.style.color = '#b45309';
+      hint.style.display = '';
+    } else if(!reason && offerDay && slotMin >= OFFER_START_MIN){
+      // Créneau ≥ 17h un jour d'offre : rappel informatif pour le staff
+      const offerName = dow === 2 ? 'All Play' : dow === 4 ? 'Just Play' : 'Afterwork';
+      hint.textContent = `💡 Offre disponible sur ce créneau : ${offerName} (à proposer au client).`;
+      hint.style.color = '#0369a1';
+      hint.style.display = '';
+    } else {
+      hint.textContent = '';
+      hint.style.display = 'none';
+    }
   }
   // L'offre choisie vient d'être grisée (ex : numéro saisi après coup) → retour à "Particulier"
   const chosen = sel.selectedOptions[0];
