@@ -1429,8 +1429,9 @@ function tasksSubscribe(){
   if (isAdmin()) {
     const from = iso(addDays(new Date(), -35));
     tUnsubs.push(onValue(query(ref(db, "taches/fait"), orderByKey(), startAt(from)), snap => { T.faitAll = snap.val() || {}; renderTasks(); }, err => console.warn(err)));
-    L("taches/traite", v => T.traite = v || {});
-  } else { T.faitAll = null; T.traite = {}; }
+  } else { T.faitAll = null; }
+  // Oublis traités par le Boss : lus par tous, pour retirer le bandeau « non faites » une fois traités
+  L("taches/traite", v => T.traite = v || {});
 }
 function saveLaserHist(){
   const today = iso(new Date());
@@ -1640,7 +1641,8 @@ function renderTasks(){
   const prev = prevOpenDay(today);
   if (prev) {
     const pf = T.fait[prev] || {};
-    const missed = tasksFor(prev).filter(t => !pf[t.id]);
+    const ptr = (T.traite || {})[prev] || {};
+    const missed = tasksFor(prev).filter(t => !pf[t.id] && !ptr[t.id]);
     if (missed.length) {
       const cnt = {};
       missed.forEach(t => { const b = t.win ? t.n.replace(/ \((\d+\/\d+|partie [^)]+)\)$/, "") : t.n; cnt[b] = (cnt[b] || 0) + 1; });
