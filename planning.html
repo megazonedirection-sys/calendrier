@@ -756,6 +756,13 @@ $("btnLoginGo").onclick = async () => {
 };
 $("inPwd").addEventListener("keydown", e => { if (e.key === "Enter") $("btnLoginGo").click(); });
 
+/* ---------- Déconnexion automatique du Boss en quittant la page ---------- */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && isAdmin()) {
+    signOut(auth);
+  }
+});
+
 /* ---------- Navigation ---------- */
 $("prev").onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth()-1, 1); ensureMonths(); render(); };
 $("next").onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth()+1, 1); ensureMonths(); render(); };
