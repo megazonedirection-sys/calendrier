@@ -5014,7 +5014,9 @@ if ('serviceWorker' in navigator) {
     try { h = getOpenHours(key); } catch(e) {}
     if (h && h.open === false) return null;
     if (h && h.open) return [h.openMin, h.closeMin];
-    return [14 * 60, 22 * 60]; // aucune restriction connue
+    // Paramètres pas encore chargés : horaires habituels hors vacances (mar → dim)
+    const HAB = { 2:[17*60, 21*60], 3:[14*60, 20*60], 4:[17*60, 21*60], 5:[17*60, 22*60+15], 6:[14*60, 22*60+15], 0:[14*60, 19*60] };
+    return HAB[dow] || null;
   }
   function agentHours(key){
     const es = AGENTS.map(p => S.day[p]).filter(e => enService(e) && e.s && e.e);
@@ -5025,7 +5027,10 @@ if ('serviceWorker' in navigator) {
     const c = centreHours(key), ag = agentHours(key);
     if (!ag) return null;
     const ce = c || ag;
-    return { a:ag[0], o:ce[0], f:ce[1], d:ag[1] };
+    // Arrivée / départ agents bornés autour des horaires du centre (30 min avant l'ouverture,
+    // 1h30 après la fermeture) : un horaire atypique au planning ne décale plus les tâches.
+    const a = c ? Math.max(ag[0], c[0] - 30) : ag[0], d = c ? Math.min(ag[1], c[1] + 90) : ag[1];
+    return { a, o:ce[0], f:ce[1], d };
   }
   function boundMin(spec, R){
     if (!spec || !R) return null;

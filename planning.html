@@ -1516,7 +1516,12 @@ function dayRefs(key){
   const c = dayOpen(key), ag = refHours(key);
   if (!ag) return null;
   const centre = c || ag;
-  return { a: ag[0], o: centre[0], f: centre[1], d: ag[1] };
+  // Arrivée / départ agents bornés autour des horaires du centre (30 min avant l'ouverture,
+  // 1h30 après la fermeture) : un horaire atypique au planning ne décale plus les tâches.
+  const hm = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+  const a = c ? hm(Math.max(toMin(ag[0]), toMin(c[0]) - 30)) : ag[0];
+  const d = c ? hm(Math.min(toMin(ag[1]), toMin(c[1]) + 90)) : ag[1];
+  return { a, o: centre[0], f: centre[1], d };
 }
 function boundMin(spec, R){
   if (!spec || !R) return null;
