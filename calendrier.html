@@ -2381,15 +2381,14 @@ function refreshOfferTypeOptions(){
     if(!opt) return;
     let block = false;
     if(v === 't-viechere'){
-      // Vie Chère : bloquée si hors période ou hors samedi ou avant 19h
+      // Vie Chère : disponible uniquement samedis 10/10–31/10 dès 19h
       block = (!vieChereJour || slotMin < VIE_CHERE_START_MIN) && v !== currentType;
     } else {
-      // Autres offres : bloquées pendant une période Vie Chère (samedi = jour dédié)
-      // ou si reason classique
-      block = (vieChereJour || !!reason) && v !== currentType;
+      // Autres offres : bloquées uniquement si reason classique (créneau trop tôt, etc.)
+      block = !!reason && v !== currentType;
     }
     opt.disabled = block;
-    opt.title = block ? (vieChereJour && v !== 't-viechere' ? 'Ce samedi est réservé à l\'offre Vie Chère.' : (reason || 'Offre non disponible sur cette date.')) : '';
+    opt.title = block ? (reason || 'Offre non disponible sur cette date.') : '';
   });
   if(hint){
     const offerDay = [2, 4, 5].includes(dow); // mardi=2, jeudi=4, vendredi=5
