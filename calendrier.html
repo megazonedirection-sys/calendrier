@@ -2384,11 +2384,11 @@ function refreshOfferTypeOptions(){
       // Vie Chère : disponible uniquement samedis 10/10–31/10 dès 19h
       block = (!vieChereJour || slotMin < VIE_CHERE_START_MIN) && v !== currentType;
     } else {
-      // Autres offres : bloquées uniquement si reason classique (créneau trop tôt, etc.)
-      block = !!reason && v !== currentType;
+      // Autres offres : bloquées si reason classique (créneau trop tôt sur le jour concerné)
+      block = (vieChereJour || !!reason) && v !== currentType;
     }
     opt.disabled = block;
-    opt.title = block ? (reason || 'Offre non disponible sur cette date.') : '';
+    opt.title = block ? (vieChereJour && v !== 't-viechere' ? 'Ce samedi est réservé à l\'offre Vie Chère.' : (reason || 'Offre non disponible sur cette date.')) : '';
   });
   if(hint){
     const offerDay = [2, 4, 5].includes(dow); // mardi=2, jeudi=4, vendredi=5
@@ -3485,7 +3485,9 @@ function confirmBooking(){
     }
     const cfg = OFFER_AUTO_SESSIONS[type];
     const dow = new Date(date + 'T12:00:00').getDay();
-    if(cfg && !isEdit && dow === cfg.dow){
+    // Pour Vie Chère : vérifier aussi que la date est dans la période
+    const cfgDowMatch = cfg && dow === cfg.dow && (type !== 't-viechere' || isVieChere(date));
+    if(cfg && !isEdit && cfgDowMatch){
       // Grille correspondant à la DATE réservée (avant/après le 01/09/2026)
       const grid = date >= NEW2_SCHEDULE_DATE ? ALL_SLOTS_NEW2 : date >= NEW_SCHEDULE_DATE ? ALL_SLOTS_NEW : ALL_SLOTS;
       const idx  = grid.findIndex(s => s.time === time);
