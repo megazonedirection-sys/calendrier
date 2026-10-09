@@ -253,20 +253,23 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-groupe .bk-pay-label.pay-paye,
 .t-centre .bk-pay-label.pay-paye,
 .t-team   .bk-pay-label.pay-paye,
-.t-vendredi .bk-pay-label.pay-paye{background:rgba(255,255,255,.2);color:#dcfce7;border-color:rgba(255,255,255,.3)}
+.t-vendredi .bk-pay-label.pay-paye,
+.t-viechere .bk-pay-label.pay-paye{background:rgba(255,255,255,.2);color:#dcfce7;border-color:rgba(255,255,255,.3)}
 /* EVC payé : vert vif même sur fond rouge */
 .t-evc .bk-pay-label.pay-paye{background:#16a34a;color:#fff;border-color:#15803d}
 .t-groupe .bk-pay-label.pay-incomplet,
 .t-centre .bk-pay-label.pay-incomplet,
 .t-evc    .bk-pay-label.pay-incomplet,
 .t-team   .bk-pay-label.pay-incomplet,
-.t-vendredi .bk-pay-label.pay-incomplet{background:rgba(255,0,0,.3);color:#fecaca;border-color:rgba(255,100,100,.5)}
+.t-vendredi .bk-pay-label.pay-incomplet,
+.t-viechere .bk-pay-label.pay-incomplet{background:rgba(255,0,0,.3);color:#fecaca;border-color:rgba(255,100,100,.5)}
 .t-groupe .bk-pay-label.pay-attente,
 .t-centre .bk-pay-label.pay-attente,
 .t-evc    .bk-pay-label.pay-attente,
 .t-team   .bk-pay-label.pay-attente,
 .t-bloque .bk-pay-label.pay-attente,
-.t-vendredi .bk-pay-label.pay-attente{background:rgba(255,255,255,.15);color:rgba(255,255,255,.9);border-color:rgba(255,255,255,.25)}
+.t-vendredi .bk-pay-label.pay-attente,
+.t-viechere .bk-pay-label.pay-attente{background:rgba(255,255,255,.15);color:rgba(255,255,255,.9);border-color:rgba(255,255,255,.25)}
 
 /* Boutons action — overlay absolu en haut à droite, visible au survol */
 .bk-actions{
@@ -311,7 +314,8 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-bt30        .status-btn.s-tel,
 .t-bt60        .status-btn.s-tel,
 .t-centre      .status-btn.s-tel,
-.t-vrzone      .status-btn.s-tel{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
+.t-vrzone      .status-btn.s-tel,
+.t-viechere    .status-btn.s-tel{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
 .t-particulier .status-btn.s-present,
 .t-club        .status-btn.s-present,
 .t-anniv3      .status-btn.s-present,
@@ -323,7 +327,8 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-bt30        .status-btn.s-present,
 .t-bt60        .status-btn.s-present,
 .t-centre      .status-btn.s-present,
-.t-vrzone      .status-btn.s-present{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
+.t-vrzone      .status-btn.s-present,
+.t-viechere    .status-btn.s-present{background:rgba(0,0,0,.1);color:rgba(0,0,0,.35)}
 /* État actif — commun à tous les fonds */
 .status-btn.s-tel.on{background:#2563eb;color:#fff;box-shadow:0 0 0 2px rgba(37,99,235,.45)}
 .status-btn.s-present.on{background:#0ea5e9;color:#fff;box-shadow:0 0 0 2px rgba(14,165,233,.45)}
@@ -350,7 +355,8 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-bt30        .bk-present-strip,
 .t-bt60        .bk-present-strip,
 .t-centre      .bk-present-strip,
-.t-vrzone      .bk-present-strip{background:rgba(0,0,0,.08);color:rgba(0,0,0,.3)}
+.t-vrzone      .bk-present-strip,
+.t-viechere    .bk-present-strip{background:rgba(0,0,0,.08);color:rgba(0,0,0,.3)}
 .bk-present-strip:hover{background:rgba(22,163,74,.35);color:#fff}
 /* ── CADRE PRÉSENT → jaune ── */
 .bk.is-present{
@@ -400,6 +406,7 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
 .t-team         {background:#7c3aed;color:#ffffff;border-color:#6d28d9}
 .t-jeu3         {background:#5eead4;color:#134e4a;border-color:#14b8a6}
 .t-vendredi     {background:#a16207;color:#ffffff;border-color:#854d0e}
+.t-viechere     {background:#be123c;color:#ffffff;border-color:#9f1239}
 .t-weekend      {background:#fda4af;color:#881337;border-color:#fb7185}
 .t-job          {background:#d1d5db;color:#374151;border-color:#9ca3af}
 .t-conge        {background:#fef08a;color:#713f12;border-color:#facc15}
@@ -829,6 +836,7 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
             <option value="t-team">All Play</option>
             <option value="t-jeu3">Just Play</option>
             <option value="t-vendredi">Afterwork</option>
+            <option value="t-viechere">Vie Chère</option>
             <option value="t-job">Job</option>
             <option value="t-conge">Congé</option>
             <option value="t-bloque">Bloqué</option>
@@ -1473,11 +1481,12 @@ function escapeHtml(str){
 // Modèle de confirmation client unique, utilisé pour toutes les activités
 // (Laser, VR, Escape, Blind Test). Indique désormais aussi le nombre de
 // sessions réservées, ou le nom de l'offre spéciale si applicable
-// (All Play / Just Play / Afterwork).
+// (All Play / Just Play / Afterwork / Vie Chère).
 function buildClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin, pers, totalSessions, offerLabel, extraNote){
   // Afterwork : la boisson offerte fait partie de l'offre, on la mentionne
   // explicitement (récapitulatif + infos pratiques).
   const isAfterwork = offerLabel === 'Afterwork';
+  const isVieChere  = offerLabel === 'Vie Chère';
   const offerDetail = isAfterwork ? ' + 1 boisson offerte' : '';
   const sessionsLine = offerLabel
     ? `🎯 Offre réservée  : ${offerLabel} (${totalSessions} partie${totalSessions > 1 ? 's' : ''}${offerDetail})\n`
@@ -1501,7 +1510,8 @@ function buildClientMessage(nom, ref, activiteLabel, dateF, heureDebut, heureFin
     `• Merci d'arriver à l'heure de début indiquée ci-dessus (briefing inclus)\n` +
     `• En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance\n` +
     `• Le règlement s'effectue sur place (CB, espèces)\n` +
-    (isAfterwork ? `• 🍹 Votre boisson offerte vous est servie entre les 2 parties (soft uniquement pour les mineurs)\n` : '') +
+    (isAfterwork  ? `• 🍹 Votre boisson offerte vous est servie entre les 2 parties (soft uniquement pour les mineurs)\n` : '') +
+    (isVieChere   ? `• 🎁 Offre Vie Chère : tarif réduit dès 19h\n` : '') +
     `\n` +
     `───────────────────────────────────\n` +
     `📍 Game Zone Montauban\n` +
@@ -2285,7 +2295,7 @@ const TYPES_LABEL = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-centre':'Centre loisirs',
   't-club':'Club&Asso','t-anniv':'Anniversaire','t-anniv3':'Anniv 3 parties',
   't-evc':'EVC','t-team':'All Play','t-jeu3':'Just Play',
-  't-vendredi':'Afterwork','t-weekend':'WE 11/13',
+  't-vendredi':'Afterwork','t-viechere':'Vie Chère','t-weekend':'WE 11/13',
   't-job':'Job','t-conge':'Congé','t-bloque':'Bloqué','t-message':'Message',
   't-vrzone':'VRzone','t-escapevr':'Escape Game VR',
   't-bt30':'30 min','t-bt60':'60 min'
@@ -2303,8 +2313,12 @@ const NO_PERS_TYPES = ['t-message', 't-conge', 't-bloque'];
 // ── OFFRES DU MARDI / JEUDI / VENDREDI (All Play, Just Play, Afterwork) ───────
 // Valables uniquement avec une 1ère session à partir de 17h (1er créneau de la
 // grille actuelle ≥ 17h = 17h20). Avant, ce sont des sessions normales.
-const OFFER_TYPES = ['t-team', 't-jeu3', 't-vendredi'];
+const OFFER_TYPES = ['t-team', 't-jeu3', 't-vendredi', 't-viechere'];
 const OFFER_START_MIN = 17 * 60;
+// Offre "Vie Chère" : samedis du 10/10/2026 au 31/10/2026, dès 19h
+const VIE_CHERE_START = '2026-10-10';
+const VIE_CHERE_END   = '2026-10-31';
+const VIE_CHERE_START_MIN = 19 * 60;
 // Quand le staff choisit l'offre le bon jour, toutes les sessions sont
 // réservées d'un coup, avec 1 créneau de pause entre chaque (comme en ligne).
 const OFFER_AUTO_SESSIONS = {
@@ -2317,7 +2331,18 @@ const OFFER_AUTO_SESSIONS = {
 // - le créneau est avant 17h (l'offre commence avec la 1ère session à 17h20) ;
 // - le même client (même téléphone) a déjà une réservation qui débute avant
 //   17h ce jour-là : l'offre ne peut pas s'appliquer à ses créneaux ≥ 17h.
+function isVieChere(date){
+  return date >= VIE_CHERE_START && date <= VIE_CHERE_END
+      && new Date(date + 'T12:00:00').getDay() === 6; // samedi
+}
 function offerBlockedReason(date, time, tel, ignoreKey){
+  // Vie Chère : uniquement samedis 10/10–31/10 dès 19h
+  if(isVieChere(date)){
+    if(timeToMin(time) < VIE_CHERE_START_MIN){
+      return "L'offre Vie Chère est disponible dès 19h les samedis du 10/10 au 31/10.";
+    }
+    return null; // Vie Chère autorisée, on sort directement
+  }
   if(timeToMin(time) < OFFER_START_MIN){
     return "Les offres (All Play, Just Play, Afterwork) sont disponibles à partir de 17h20, avec la 1ère session.";
   }
@@ -2347,18 +2372,35 @@ function refreshOfferTypeOptions(){
   // En modification, on ne grise pas l'offre déjà portée par la réservation
   const currentType = (isEdit && key && bookings[key]) ? bookings[key].type : null;
   const reason = offerBlockedReason(date, time, tel, key);
+  const dow = new Date(date + 'T12:00:00').getDay();
+  const slotMin = timeToMin(time);
+  const vieChereJour = isVieChere(date);
   OFFER_TYPES.forEach(v => {
     const opt = sel.querySelector(`option[value="${v}"]`);
     if(!opt) return;
-    const block = !!reason && v !== currentType;
+    let block = false;
+    if(v === 't-viechere'){
+      // Vie Chère : bloquée si hors période ou hors samedi ou avant 19h
+      block = (!vieChereJour || slotMin < VIE_CHERE_START_MIN) && v !== currentType;
+    } else {
+      // Autres offres : bloquées pendant une période Vie Chère (samedi = jour dédié)
+      // ou si reason classique
+      block = (vieChereJour || !!reason) && v !== currentType;
+    }
     opt.disabled = block;
-    opt.title = block ? reason : '';
+    opt.title = block ? (vieChereJour && v !== 't-viechere' ? 'Ce samedi est réservé à l\'offre Vie Chère.' : (reason || 'Offre non disponible sur cette date.')) : '';
   });
   if(hint){
-    const dow = new Date(date + 'T12:00:00').getDay();
     const offerDay = [2, 4, 5].includes(dow); // mardi=2, jeudi=4, vendredi=5
-    const slotMin = timeToMin(time);
-    if(reason && offerDay){
+    if(vieChereJour && slotMin >= VIE_CHERE_START_MIN){
+      hint.textContent = '💡 Offre Vie Chère disponible sur ce créneau (à proposer au client).';
+      hint.style.color = '#0369a1';
+      hint.style.display = '';
+    } else if(vieChereJour && slotMin < VIE_CHERE_START_MIN){
+      hint.textContent = reason || '';
+      hint.style.color = '#b45309';
+      hint.style.display = reason ? '' : 'none';
+    } else if(reason && offerDay){
       // Créneau avant 17h un jour d'offre : message de blocage (existant)
       hint.textContent = reason;
       hint.style.color = '#b45309';
