@@ -1482,12 +1482,12 @@ function occurrences(key, task){
     // ou un seul passage par bloc (jusqu'à 15 min après la fin) sans répétition
     const out = [];
     laserBlocks(key).forEach(([s0, e0]) => {
-      if (rp >= 15) for (let t = s0; t < e0 && out.length < 96; t += rp) out.push({ d:t, a:Math.min(t + rp, e0) });
+      if (rp >= 10) for (let t = s0; t < e0 && out.length < 96; t += rp) out.push({ d:t, a:Math.min(t + rp, e0) });
       else out.push({ d:s0, a:e0 + 15 });
     });
     return out;
   }
-  if (!R || !(rp >= 15)) return [];
+  if (!R || !(rp >= 10)) return [];
   const d = boundMin(task.pd || "o:0", R), a = boundMin(task.pa || "f:0", R), out = [];
   for (let t = d; t < a && out.length < 48; t += rp) out.push({ d:t, a:Math.min(t + rp, a) });
   return out;
@@ -1896,7 +1896,7 @@ function boundPicker(cls, spec){
   return `<select class="${cls}r" aria-label="Référence"><option value="">—</option>${Object.entries(REFS).map(([k, l]) => `<option value="${k}"${ref === k ? " selected" : ""}>${l}</option>`).join("")}</select>
     <select class="${cls}o" aria-label="Décalage">${OFFSETS.map(m => `<option value="${m}"${m === (+off || 0) ? " selected" : ""}>${offLabel(m)}</option>`).join("")}</select>`;
 }
-const REPEATS = [0, 15, 30, 45, 60, 90, 120, 150, 180, 240];
+const REPEATS = [0, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180, 240];
 const readBound = (row, cls) => { const r = row.querySelector(`.${cls}r`).value; return r ? `${r}:${row.querySelector(`.${cls}o`).value}` : null; };
 function hoursPreview(row){
   const today = iso(new Date()), R = dayRefs(today);

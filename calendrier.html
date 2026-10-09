@@ -5046,12 +5046,12 @@ if ('serviceWorker' in navigator) {
     if (t.lz) {
       const out = [];
       laserBlocks().forEach(([s0, e0]) => {
-        if (rp >= 15) for (let x = s0; x < e0 && out.length < 96; x += rp) out.push({ d:x, a:Math.min(x + rp, e0) });
+        if (rp >= 10) for (let x = s0; x < e0 && out.length < 96; x += rp) out.push({ d:x, a:Math.min(x + rp, e0) });
         else out.push({ d:s0, a:e0 + 15 });
       });
       return out;
     }
-    if (!R || !(rp >= 15)) return [];
+    if (!R || !(rp >= 10)) return [];
     const d = boundMin(t.pd || "o:0", R), a = boundMin(t.pa || "f:0", R), out = [];
     for (let x = d; x < a && out.length < 48; x += rp) out.push({ d:x, a:Math.min(x + rp, a) });
     return out;
