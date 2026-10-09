@@ -1889,6 +1889,7 @@ $("rcClose").onclick = () => $("dlgRecap").close();
 
 /* ---------- Horaires des tâches (Boss) ---------- */
 const OFFSETS = []; for (let m = -240; m <= 240; m += 15) OFFSETS.push(m);
+[-20, -10, 10, 20].forEach(m => OFFSETS.push(m)); OFFSETS.sort((x, y) => x - y);
 const offLabel = m => m === 0 ? "pile" : `${m < 0 ? "−" : "+"}${Math.abs(m) >= 60 ? Math.floor(Math.abs(m) / 60) + "h" + (Math.abs(m) % 60 ? pad(Math.abs(m) % 60) : "") : Math.abs(m) + " min"}`;
 function boundPicker(cls, spec){
   const [ref, off] = spec ? String(spec).split(":") : ["", "0"];
