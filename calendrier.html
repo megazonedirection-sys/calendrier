@@ -368,12 +368,21 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
   background:#eab308;color:#fff;
 }
 
-/* ── CADRE PAYÉ → vert ── */
+/* ── PAYÉ → toute la case en vert foncé ──
+   La bande gauche (élargie) garde la couleur du type de résa, et une pastille
+   nomme le type, pour distinguer un anniversaire d'un groupe une fois payés. */
 .bk.pay-frame-paye{
-  outline:3px solid #16a34a !important;
-  outline-offset:-2px;
-  box-shadow:0 0 0 3px rgba(22,163,74,.25), inset 0 0 0 100px rgba(22,163,74,.08) !important;
+  background:#15803d !important;
+  color:#ffffff !important;
+  border-left-width:12px !important;
+  outline:none !important;
+  box-shadow:none !important;
 }
+.bk.pay-frame-paye .bk-pay-label.pay-paye{background:#ffffff !important;color:#14532d !important;border-color:#ffffff !important}
+.bk.pay-frame-paye .status-btn.s-tel:not(.on),
+.bk.pay-frame-paye .status-btn.s-present:not(.on){background:rgba(0,0,0,.2) !important;color:rgba(255,255,255,.8) !important}
+.bk.pay-frame-paye:not(.is-present) .bk-present-strip{background:rgba(0,0,0,.2) !important;color:rgba(255,255,255,.75) !important}
+.bk-type-chip{display:inline-block;align-self:flex-start;margin-top:4px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:10px;border:none !important;min-height:0}
 
 /* ── CADRE INCOMPLET → rouge ── */
 .bk.pay-frame-incomplet{
@@ -382,10 +391,10 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
   box-shadow:0 0 0 3px rgba(220,38,38,.25), inset 0 0 0 100px rgba(220,38,38,.08) !important;
 }
 
-/* Priorité : paiement prime sur présent */
+/* Priorité : paiement prime sur présent (la bande « Groupe sur place » reste jaune) */
 .bk.is-present.pay-frame-paye{
-  outline:3px solid #16a34a !important;
-  box-shadow:0 0 0 3px rgba(22,163,74,.25), inset 0 0 0 100px rgba(22,163,74,.08) !important;
+  outline:none !important;
+  box-shadow:none !important;
 }
 .bk.is-present.pay-frame-incomplet{
   outline:3px solid #dc2626 !important;
@@ -3049,6 +3058,7 @@ function renderCalendar(){
             <span class="bk-name">Client : ${escapeHtml(b.nom)||'—'}</span>
             <span class="bk-tel">${escapeHtml(b.tel)||''}</span>
           </div>
+          ${b.pay==='paye' && TYPES_LABEL[b.type] ? `<span class="bk-type-chip ${b.type}">${TYPES_LABEL[b.type]}</span>` : ''}
           ${b._offlinePending ? `<div class="bk-offline-badge">🔌 En attente de synchronisation</div>` : ''}
           ${b.comment ? `<div class="bk-comment">Commentaire : ${boldBreakdownNumbers(b.comment)}</div>` : ''}
           <div class="bk-row3">
