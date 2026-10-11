@@ -219,6 +219,9 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 .svsum p{margin:.3rem 0;font-size:.9rem}
 .svsum button{font-size:.8rem;padding:.15rem .5rem;margin:.15rem .2rem 0 0}
 @media (prefers-reduced-motion:no-preference){ .week{animation:in .35s ease-out both} @keyframes in{from{opacity:0;transform:translateY(6px)}} }
+
+/* Champs secrets : masqués sans type="password", pour que le navigateur ne propose jamais de les enregistrer */
+.secret{-webkit-text-security:disc;text-security:disc}
 </style>
 </head>
 <body>
@@ -336,7 +339,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 <dialog id="dlgLogin">
   <h3>Connexion Boss</h3>
   <label for="inPwd">Code</label>
-  <input id="inPwd" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••" style="font-size:1.6rem;letter-spacing:.4em;text-align:center">
+  <input id="inPwd" class="secret" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore name="gz-code-boss" inputmode="numeric" placeholder="••••••" style="font-size:1.6rem;letter-spacing:.4em;text-align:center">
   <div class="err" id="loginErr"></div>
   <div class="actions">
     <button id="btnLoginCancel" type="button">Annuler</button>
@@ -411,7 +414,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
     <label for="tkWho">Qui a fait cette tâche ?</label>
     <select id="tkWho"></select>
     <label for="tkPin">Code personnel</label>
-    <input id="tkPin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••" style="font-size:1.5rem;letter-spacing:.4em;text-align:center">
+    <input id="tkPin" class="secret" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore name="gz-pin" inputmode="numeric" maxlength="4" placeholder="••••" style="font-size:1.5rem;letter-spacing:.4em;text-align:center">
   </div>
   <div id="tkComBlock">
     <label for="tkCom">Commentaire (facultatif)</label>
@@ -1799,7 +1802,7 @@ $("btnTasksAdmin").onclick = () => {
   Object.keys(T.ponct || {}).filter(k => k >= today).sort().forEach(k =>
     Object.entries(T.ponct[k] || {}).forEach(([id, t]) => pl.appendChild(ponctRow(k, id, t))));
   $("taPins").innerHTML = PEOPLE.map(p => `<div><label for="pin-${p.id}">${esc(p.name)}</label>
-    <input id="pin-${p.id}" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="${T.pins[p.id] ? "•••• (inchangé)" : "non défini"}"></div>`).join("");
+    <input id="pin-${p.id}" class="secret" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore name="gz-pin-${p.id}" inputmode="numeric" maxlength="4" placeholder="${T.pins[p.id] ? "•••• (inchangé)" : "non défini"}"></div>`).join("");
   $("taErr").textContent = "";
   $("taDebut").textContent = new Date(suiviStart() + "T12:00:00").toLocaleDateString("fr-FR", { day:"numeric", month:"long", year:"numeric" });
   $("dlgTasks").showModal();
