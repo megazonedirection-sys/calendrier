@@ -217,6 +217,8 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 .svday{display:flex;justify-content:space-between;gap:.6rem;padding:.45rem 0;border-bottom:1px solid var(--line);font-size:.9rem}
 .svday .ko{color:var(--bad)}
 .svsum p{margin:.3rem 0;font-size:.9rem}
+.svflag{cursor:pointer;font:inherit;font-size:.68rem;background:none}
+.svflag:hover{background:rgba(255,204,51,.15)}
 .svsum button{font-size:.8rem;padding:.15rem .5rem;margin:.15rem .2rem 0 0}
 @media (prefers-reduced-motion:no-preference){ .week{animation:in .35s ease-out both} @keyframes in{from{opacity:0;transform:translateY(6px)}} }
 
@@ -1992,7 +1994,7 @@ async function loadSuiviMonth(m){
   try { all = (await get(query(ref(db, "taches/fait"), orderByKey(), startAt(m + "-01"), endAt(m + "-31")))).val() || {}; }
   catch(e) { $("svMonth").innerHTML = `<p class="err">Lecture impossible.</p>`; return; }
   const today = iso(new Date());
-  const per = {}, flagged = {}, missedDays = [];
+  const per = {}, flagged = {}, missedDays = [], flaggedList = [];
   let expected = 0, missed = 0;
   for (let d = 1; d <= new Date(y, mo, 0).getDate(); d++) {
     const k = `${m}-${pad(d)}`;
@@ -2000,18 +2002,38 @@ async function loadSuiviMonth(m){
     if (k < suiviStart()) continue;
     const f = all[k] || {}, list = tasksFor(k);
     Object.values(f).forEach(r => { per[r.qui] = (per[r.qui] || 0) + 1; });
-    list.forEach(t => { if (flags(k, t, f[t.id]).length) flagged[f[t.id].qui] = (flagged[f[t.id].qui] || 0) + 1; });
+    list.forEach(t => {
+      const fl = flags(k, t, f[t.id]);
+      if (!fl.length) return;
+      flagged[f[t.id].qui] = (flagged[f[t.id].qui] || 0) + 1;
+      flaggedList.push({ k, t, r: f[t.id], fl });
+    });
     if (k === today) continue; // la journée en cours n'est pas terminée
     const miss = list.filter(t => !f[t.id]).length;
     expected += list.length; missed += miss;
     if (miss) missedDays.push([k, miss]);
   }
-  const who = PEOPLE.filter(p => per[p.id]).map(p => `<span class="who ${p.id}">${esc(p.name)}</span> : ${per[p.id]}${flagged[p.id] ? ` <span class="flag">${flagged[p.id]} à vérifier</span>` : ""}`).join(" · ");
+  const who = PEOPLE.filter(p => per[p.id]).map(p => `<span class="who ${p.id}">${esc(p.name)}</span> : ${per[p.id]}${flagged[p.id] ? ` <button type="button" class="flag svflag" data-who="${p.id}">${flagged[p.id]} à vérifier</button>` : ""}`).join(" · ");
   $("svMonth").innerHTML = `<p>Tâches validées : ${who || "aucune"}</p>
     <p>${expected ? `${expected - missed}/${expected} tâches faites sur les jours terminés (${Math.round((expected - missed) / expected * 100)} %)` : "Pas encore de journée terminée ce mois-ci."}</p>
     ${missedDays.length ? `<p class="ko" style="color:var(--bad)">Non faites : ${missedDays.map(([k, n]) => `<button type="button" data-k="${k}">${esc(shortDay(k))} (${n})</button>`).join("")}</p>` : ""}
-    <p class="period">Calcul basé sur la liste de tâches actuelle.</p>`;
+    <div id="svFlagList"></div>
+    <p class="period">Calcul basé sur la liste de tâches et les plages horaires actuelles.</p>`;
   $("svMonth").querySelectorAll("button[data-k]").forEach(b => b.onclick = () => loadSuivi(b.dataset.k));
+  // « à vérifier » : liste des validations hors plage de l'agent, chaque ligne ouvre la journée
+  $("svMonth").querySelectorAll(".svflag").forEach(b => b.onclick = () => {
+    const box = $("svFlagList"), who = b.dataset.who;
+    if (box.dataset.who === who) { box.innerHTML = ""; box.dataset.who = ""; return; }
+    box.dataset.who = who;
+    box.innerHTML = `<p style="margin:.6rem 0 .2rem;font-weight:600">À vérifier · ${esc(pname(who))}</p>` +
+      flaggedList.filter(x => x.r.qui === who).map(x => {
+        const pl = plageLabel(plage(x.k, x.t));
+        return `<button type="button" class="svday svjump" data-k="${x.k}" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:.45rem 0">
+          <span>${esc(shortDay(x.k))} · ${esc(x.t.n)}${pl ? `<small style="display:block;color:var(--muted)">plage prévue : ${esc(pl)}</small>` : ""}</span>
+          <span class="who ${esc(who)}">cochée à ${x.r.t ? hhmm(new Date(x.r.t)) : "?"} <span class="flag">${esc(x.fl.join(", "))}</span></span></button>`;
+      }).join("");
+    box.querySelectorAll(".svjump").forEach(j => j.onclick = () => { loadSuivi(j.dataset.k); $("svDay").scrollIntoView({ behavior:"smooth", block:"start" }); });
+  });
 }
 const svShift = n => { const v = $("svDate").value || iso(new Date()); loadSuivi(iso(addDays(new Date(v + "T12:00:00"), n))); };
 $("btnSuivi").onclick = () => { svMonthShown = null; $("dlgSuivi").showModal(); loadSuivi(iso(new Date())); };
