@@ -368,21 +368,12 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
   background:#eab308;color:#fff;
 }
 
-/* ── PAYÉ → toute la case en vert foncé ──
-   La bande gauche (élargie) garde la couleur du type de résa, et une pastille
-   nomme le type, pour distinguer un anniversaire d'un groupe une fois payés. */
+/* ── CADRE PAYÉ → vert ── */
 .bk.pay-frame-paye{
-  background:#15803d !important;
-  color:#ffffff !important;
-  border-left-width:12px !important;
-  outline:none !important;
-  box-shadow:none !important;
+  outline:3px solid #16a34a !important;
+  outline-offset:-2px;
+  box-shadow:0 0 0 3px rgba(22,163,74,.25), inset 0 0 0 100px rgba(22,163,74,.08) !important;
 }
-.bk.pay-frame-paye .bk-pay-label.pay-paye{background:#ffffff !important;color:#14532d !important;border-color:#ffffff !important}
-.bk.pay-frame-paye .status-btn.s-tel:not(.on),
-.bk.pay-frame-paye .status-btn.s-present:not(.on){background:rgba(0,0,0,.2) !important;color:rgba(255,255,255,.8) !important}
-.bk.pay-frame-paye:not(.is-present) .bk-present-strip{background:rgba(0,0,0,.2) !important;color:rgba(255,255,255,.75) !important}
-.bk-type-chip{display:inline-block;align-self:flex-start;margin-top:4px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:10px;border:none !important;min-height:0}
 
 /* ── CADRE INCOMPLET → rouge ── */
 .bk.pay-frame-incomplet{
@@ -391,10 +382,10 @@ tbody tr:hover .add-btn{border-color:var(--accent);color:var(--accent);backgroun
   box-shadow:0 0 0 3px rgba(220,38,38,.25), inset 0 0 0 100px rgba(220,38,38,.08) !important;
 }
 
-/* Priorité : paiement prime sur présent (la bande « Groupe sur place » reste jaune) */
+/* Priorité : paiement prime sur présent */
 .bk.is-present.pay-frame-paye{
-  outline:none !important;
-  box-shadow:none !important;
+  outline:3px solid #16a34a !important;
+  box-shadow:0 0 0 3px rgba(22,163,74,.25), inset 0 0 0 100px rgba(22,163,74,.08) !important;
 }
 .bk.is-present.pay-frame-incomplet{
   outline:3px solid #dc2626 !important;
@@ -618,12 +609,22 @@ body.copy-mode .slot-cell.too-close{background:#fff7ed !important;outline:2px da
   border-radius:12px;padding:3px 12px;font-size:12px;font-weight:700;
   margin-left:12px;white-space:nowrap;vertical-align:middle;
 }
-/* Fond jaune pâle uni sur les créneaux en période de vacances
-   (plus de hachures : elles sont réservées aux créneaux fermés) */
-#calTbl.vacances-active tbody tr:not(.past-row):not(.closed-row) td.slot-cell{
-  background:#fefbe0;
+/* Fond rayé jaune sur les créneaux vides en période de vacances */
+#calTbl.vacances-active tbody tr:not(.past-row) td.slot-cell{
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(254,249,195,.55) 0px, rgba(254,249,195,.55) 5px,
+    rgba(255,255,255,.0)  5px, rgba(255,255,255,.0)  13px
+  );
 }
-/* Créneaux passés en vacances : même rendu que hors vacances */
+/* Variante grisée pour les créneaux passés en vacances */
+#calTbl.vacances-active tbody tr.past-row td.slot-cell{
+  background: repeating-linear-gradient(
+    135deg,
+    #e9eaec 0px, #e9eaec 5px,
+    #f1f3f7 5px, #f1f3f7 13px
+  ) !important;
+}
 /* Heure légèrement ambrée pour signaler la période */
 #calTbl.vacances-active tbody tr:not(.past-row) .time-cell{
   color:#92400e !important;font-weight:700;
@@ -3048,7 +3049,6 @@ function renderCalendar(){
             <span class="bk-name">Client : ${escapeHtml(b.nom)||'—'}</span>
             <span class="bk-tel">${escapeHtml(b.tel)||''}</span>
           </div>
-          ${b.pay==='paye' && TYPES_LABEL[b.type] ? `<span class="bk-type-chip ${b.type}">${TYPES_LABEL[b.type]}</span>` : ''}
           ${b._offlinePending ? `<div class="bk-offline-badge">🔌 En attente de synchronisation</div>` : ''}
           ${b.comment ? `<div class="bk-comment">Commentaire : ${boldBreakdownNumbers(b.comment)}</div>` : ''}
           <div class="bk-row3">
@@ -4989,7 +4989,7 @@ if ('serviceWorker' in navigator) {
 #tk .foot{padding:7px 12px;border-top:1px solid #334155;color:#94a3b8;font-size:11.5px;display:flex;justify-content:space-between;gap:8px}
 #tk .done-msg{padding:10px 12px;color:#86efac;border-top:1px solid #334155}
 </style>
-<div id="side-col"><div id="tk"></div><div id="po"></div></div>
+<div id="side-col"><div id="tk"></div></div>
 <script>
 (function(){
   const NAMES = { melodie:"Mélodie", kelian:"Kélian", boss:"Boss" };
@@ -5014,9 +5014,7 @@ if ('serviceWorker' in navigator) {
     try { h = getOpenHours(key); } catch(e) {}
     if (h && h.open === false) return null;
     if (h && h.open) return [h.openMin, h.closeMin];
-    // Paramètres pas encore chargés : horaires habituels hors vacances (mar → dim)
-    const HAB = { 2:[17*60, 21*60], 3:[14*60, 20*60], 4:[17*60, 21*60], 5:[17*60, 22*60+15], 6:[14*60, 22*60+15], 0:[14*60, 19*60] };
-    return HAB[dow] || null;
+    return [14 * 60, 22 * 60]; // aucune restriction connue
   }
   function agentHours(key){
     const es = AGENTS.map(p => S.day[p]).filter(e => enService(e) && e.s && e.e);
@@ -5027,10 +5025,7 @@ if ('serviceWorker' in navigator) {
     const c = centreHours(key), ag = agentHours(key);
     if (!ag) return null;
     const ce = c || ag;
-    // Arrivée / départ agents bornés autour des horaires du centre (30 min avant l'ouverture,
-    // 1h30 après la fermeture) : un horaire atypique au planning ne décale plus les tâches.
-    const a = c ? Math.max(ag[0], c[0] - 30) : ag[0], d = c ? Math.min(ag[1], c[1] + 90) : ag[1];
-    return { a, o:ce[0], f:ce[1], d };
+    return { a:ag[0], o:ce[0], f:ce[1], d:ag[1] };
   }
   function boundMin(spec, R){
     if (!spec || !R) return null;
@@ -5046,12 +5041,12 @@ if ('serviceWorker' in navigator) {
     if (t.lz) {
       const out = [];
       laserBlocks().forEach(([s0, e0]) => {
-        if (rp >= 10) for (let x = s0; x < e0 && out.length < 96; x += rp) out.push({ d:x, a:Math.min(x + rp, e0) });
+        if (rp >= 15) for (let x = s0; x < e0 && out.length < 96; x += rp) out.push({ d:x, a:Math.min(x + rp, e0) });
         else out.push({ d:s0, a:e0 + 15 });
       });
       return out;
     }
-    if (!R || !(rp >= 10)) return [];
+    if (!R || !(rp >= 15)) return [];
     const d = boundMin(t.pd || "o:0", R), a = boundMin(t.pa || "f:0", R), out = [];
     for (let x = d; x < a && out.length < 48; x += rp) out.push({ d:x, a:Math.min(x + rp, a) });
     return out;
@@ -5222,186 +5217,6 @@ if ('serviceWorker' in navigator) {
       console.error(e);
       err.textContent = e && e.code === "PERMISSION_DENIED" ? "Enregistrement refusé (déjà fait, ou règle Firebase manquante)." : "Erreur : " + (e.message || e);
     }
-  }
-})();
-</script>
-
-<!-- ════════════════════════════════════════════════════════════════════════
-     POSTES DU JOUR (bandeau à droite, sous les tâches)
-     Calcul identique au bloc « Postes du jour » de planning.html (à garder en
-     phase si les règles changent). Rien n'est enregistré : tout est recalculé
-     à partir du planning du jour, des parties laser (occupation_laser) et des
-     réservations VR (dispo). Le bandeau se déroule tout seul quand les postes
-     changent, et se replie d'un clic.
-     ════════════════════════════════════════════════════════════════════════ -->
-<style>
-#po{font-size:12.5px;filter:drop-shadow(0 8px 20px rgba(0,0,0,.28));flex-shrink:0;display:none}
-#po.on{display:block}
-#po .po-head{display:flex;align-items:center;gap:8px;background:#0f172a;color:#e2e8f0;border-radius:10px;padding:9px 12px;cursor:pointer;border-left:4px solid #2dd4bf;user-select:none}
-#po.open .po-head{border-radius:10px 10px 0 0}
-#po .po-head .t{font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#po .chev{color:#94a3b8;transition:transform .25s}
-#po.open .chev{transform:rotate(180deg)}
-#po .po-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s ease}
-#po.open .po-body{grid-template-rows:1fr}
-#po .po-body>div{overflow:hidden;background:#1e293b;color:#e2e8f0;border-radius:0 0 10px 10px}
-#po.open .po-body>div{overflow-y:auto;max-height:40vh}
-#po .pp{padding:8px 12px;border-top:1px solid #334155}
-#po .pp:first-child{border-top:0}
-#po .pp .l1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-#po .pp .nm{font-weight:800;min-width:60px}
-#po .nm.boss{color:#8cc6ff} #po .nm.melodie{color:#ff8cc2} #po .nm.kelian{color:#c4a6ff}
-#po .tag{border-radius:5px;padding:1px 7px;font-weight:800;font-size:11.5px}
-#po .until{color:#94a3b8;font-size:11px;margin-left:auto;white-space:nowrap}
-#po .nx{color:#cbd5e1;font-size:11.5px;margin-top:3px}
-#po .trk{position:relative;height:8px;background:#334155;border-radius:4px;overflow:hidden;margin-top:6px}
-#po .trk i{position:absolute;top:0;bottom:0;border-right:1px solid #1e293b}
-#po .trk b{position:absolute;top:0;bottom:0;width:2px;background:#fff}
-#po .foot{padding:7px 12px;border-top:1px solid #334155;color:#94a3b8;font-size:11px;line-height:1.45}
-#po .pz-c{background:#ff8a2a;color:#1a0d05}
-#po .pz-l{background:#22c55e;color:#04210f}
-#po .pz-v{background:#38bdf8;color:#04223a}
-#po .pz-cl{background:repeating-linear-gradient(135deg,#ff8a2a 0 8px,#22c55e 8px 16px);color:#14090a}
-#po .pz-bv{background:repeating-linear-gradient(135deg,#ffb066 0 8px,#38bdf8 8px 16px);color:#14090a}
-#po .pz-t{background:#a898bd;color:#17101f}
-</style>
-<script>
-(function(){
-  const NAMES = { boss:"Boss", melodie:"Mélodie", kelian:"Kélian" };
-  const ORDER = ["boss", "melodie", "kelian"], AGENTS = ["melodie", "kelian"];
-  const POSTES = { c:"Caisse / bar", l:"Laser", v:"VR", cl:"Caisse + laser", bv:"Propreté + VR", t:"Tout (seul)" };
-  const LASER_SWAP = 120; // le rôle laser alterne entre les agents toutes les 2 h
-  const pad2 = n => String(n).padStart(2, "0");
-  const isoT = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  const minT = s => { const [h, m] = String(s).split(":").map(Number); return h * 60 + m; };
-  const fmtM = m => `${Math.floor(m / 60)}h${pad2(((m % 60) + 60) % 60)}`;
-  const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
-  const asArr = v => Array.isArray(v) ? v : (v && typeof v === "object") ? Object.values(v) : [];
-  const enService = e => !!e && !e.off && !e.cp && !e.abs && !e.adm;
-
-  let S = { day:{}, occ:null, occLoaded:false, hist:null, dispo:{} };
-  let refs = [], day = null, started = false, open = false, lastSig = null;
-
-  function centreHours(){
-    const dow = new Date(day + "T12:00:00").getDay();
-    if (dow === 1) return null;
-    let h = null;
-    try { h = getOpenHours(day); } catch(e) {}
-    if (h && h.open === false) return null;
-    if (h && h.open) return [h.openMin, h.closeMin];
-    const HAB = { 2:[17*60, 21*60], 3:[14*60, 20*60], 4:[17*60, 21*60], 5:[17*60, 22*60+15], 6:[14*60, 22*60+15], 0:[14*60, 19*60] };
-    return HAB[dow] || null;
-  }
-  function laserBlocks(){
-    const raw = S.occLoaded ? (S.occ && S.occ.l) : S.hist;
-    return asArr(raw).map(b => asArr(b).map(Number)).filter(b => b.length === 2 && b[1] > b[0]);
-  }
-  function vrBlocks(){
-    const list = [];
-    Object.entries(S.dispo || {}).forEach(([k, n]) => {
-      const p = k.split("|");
-      if (p[0] === "vr" && p[1] === day && n > 0 && /^\d{1,2}:\d{2}$/.test(p[2])) { const t = minT(p[2]); list.push([t, t + 20]); }
-    });
-    list.sort((a, b) => a[0] - b[0]);
-    const out = [];
-    list.forEach(([s0, e0]) => { const l = out[out.length - 1]; if (l && s0 <= l[1] + 10) l[1] = Math.max(l[1], e0); else out.push([s0, e0]); });
-    return out;
-  }
-  const during = (blocks, t) => blocks.some(([s0, e0]) => s0 < t + 15 && e0 > t);
-
-  function compute(){
-    const info = S.day._info || {};
-    if (info.f) return null;
-    const h = centreHours(), steps = new Set();
-    if (h) for (let t = h[0]; t < h[1]; t += 15) steps.add(t);
-    if (info.o && info.c) for (let t = minT(info.o); t < minT(info.c); t += 15) steps.add(t);
-    if (!steps.size) return null;
-    const sorted = [...steps].sort((a, b) => a - b), o = sorted[0];
-    const lz = laserBlocks(), vr = vrBlocks();
-    const parity = Math.round(new Date(day + "T12:00:00").getTime() / 86400000) % 2;
-    const bossOn = enService(S.day.boss);
-    const res = {};
-    const put = (pid, t, p) => {
-      const a = res[pid] = res[pid] || [], l = a[a.length - 1];
-      if (l && l[1] === t && l[2] === p) l[1] = t + 15; else a.push([t, t + 15, p]);
-    };
-    for (const t of sorted) {
-      const ag = AGENTS.filter(id => { const e = S.day[id]; return enService(e) && e.s && e.e && minT(e.s) <= t && minT(e.e) >= t + 15; });
-      const L = during(lz, t), V = during(vr, t);
-      let laserAg = ag[0], autre = null;
-      if (ag.length === 2) { laserAg = ag[(Math.floor((t - o) / LASER_SWAP) + parity) % 2]; autre = ag.find(x => x !== laserAg); }
-      if (bossOn) {
-        if (ag.length === 2) { put("boss", t, "c"); put(laserAg, t, L ? "l" : "bv"); put(autre, t, "bv"); }
-        else if (ag.length === 1) {
-          if (L && V) { put("boss", t, "cl"); put(laserAg, t, "v"); }
-          else { put("boss", t, "c"); put(laserAg, t, L ? "l" : "bv"); }
-        } else put("boss", t, "t");
-      } else if (ag.length === 2) {
-        if (L && V) { put(laserAg, t, "cl"); put(autre, t, "v"); }
-        else { put(autre, t, "c"); put(laserAg, t, L ? "l" : "bv"); }
-      } else if (ag.length === 1) put(laserAg, t, "t");
-    }
-    return { o, c: sorted[sorted.length - 1] + 15, res, lz, vr };
-  }
-
-  function stop(){ refs.forEach(([r, fn]) => r.off("value", fn)); refs = []; }
-  function on(path, fn){
-    const r = db.ref(path), cb = snap => { fn(snap.val()); render(); };
-    r.on("value", cb, e => console.warn("Postes :", path, e && e.code));
-    refs.push([r, cb]);
-  }
-  function start(){
-    stop();
-    day = isoT(new Date()); lastSig = null;
-    S = { day:{}, occ:null, occLoaded:false, hist:null, dispo:{} };
-    on(`planning/months/${day.slice(0, 7)}/days/${day}`, v => S.day = v || {});
-    on(`occupation_laser/${day}`, v => { S.occ = v; S.occLoaded = true; });
-    on(`taches/laser/${day}`, v => S.hist = v);
-    on("dispo", v => S.dispo = v || {});
-    started = true;
-  }
-  auth.onAuthStateChanged(u => {
-    if (u && !u.isAnonymous) start();
-    else { stop(); started = false; const el = document.getElementById("po"); if (el) { el.className = ""; el.innerHTML = ""; } }
-  });
-  setInterval(() => { if (!started) return; if (isoT(new Date()) !== day) start(); else render(); }, 30000);
-
-  function render(){
-    const el = document.getElementById("po");
-    if (!el || !started) return;
-    const P = compute();
-    const now = nowMin();
-    // Fermé, rien de planifié, ou journée terminée : pas de bandeau
-    if (!P || !Object.keys(P.res).length || now >= P.c) { el.className = ""; el.innerHTML = ""; return; }
-    const ppl = ORDER.filter(id => P.res[id]);
-    const before = now < P.o;
-    const curOf = id => P.res[id].find(x => x[0] <= now && x[1] > now);
-    const nextOf = id => P.res[id].find(x => x[0] > now);
-    // Ouverture automatique quand les postes en cours changent
-    const sig = before ? "avant" : ppl.map(id => { const c = curOf(id); return id + ":" + (c ? c[2] : "-"); }).join();
-    if (lastSig !== null && sig !== lastSig) open = true;
-    lastSig = sig;
-    const head = before
-      ? `👥 Postes · ouverture à ${fmtM(P.o)}`
-      : "👥 " + (ppl.map(id => { const c = curOf(id); return c ? `${NAMES[id]} ${POSTES[c[2]]}` : null; }).filter(Boolean).join(" · ") || "Postes");
-    const span = P.c - P.o, pct = m => ((m - P.o) / span * 100).toFixed(2) + "%";
-    let body = "";
-    ppl.forEach(id => {
-      const c = curOf(id), n = nextOf(id), first = P.res[id][0];
-      const tag = k => `<span class="tag pz-${k}">${POSTES[k]}</span>`;
-      const l1 = c ? `${tag(c[2])}<span class="until">jusqu'à ${fmtM(c[1])}</span>`
-        : `<span class="until" style="margin-left:0">${first[0] > now ? `prend son poste à ${fmtM(first[0])}` : "a terminé"}</span>`;
-      const nx = c && n ? `<div class="nx">${n[0] === c[1] ? "puis" : `à ${fmtM(n[0])}`} → ${POSTES[n[2]]}</div>`
-        : !c && n ? `<div class="nx">${fmtM(n[0])} → ${POSTES[n[2]]}</div>` : "";
-      const trk = P.res[id].map(([s0, e0, k]) => `<i class="pz-${k}" style="left:${pct(s0)};width:${((e0 - s0) / span * 100).toFixed(2)}%;${e0 <= now ? "opacity:.35" : ""}" title="${fmtM(s0)}–${fmtM(e0)} ${POSTES[k]}"></i>`).join("");
-      body += `<div class="pp"><div class="l1"><span class="nm ${id}">${NAMES[id]}</span>${l1}</div>${nx}
-        <div class="trk">${trk}${!before ? `<b style="left:${pct(now)}"></b>` : ""}</div></div>`;
-    });
-    const blk = (b, l) => `${l} : ${b.length ? b.map(([s0, e0]) => `${fmtM(s0)}–${fmtM(e0)}`).join(", ") : "aucune réservation"}`;
-    body += `<div class="foot">${blk(P.lz, "Laser")}<br>${blk(P.vr, "VR")}</div>`;
-    el.className = "on" + (open ? " open" : "");
-    el.innerHTML = `<div class="po-head"><span class="t">${head.replace(/[&<>]/g, x => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[x]))}</span><span class="chev">▾</span></div><div class="po-body"><div>${body}</div></div>`;
-    el.querySelector(".po-head").onclick = () => { open = !open; render(); };
   }
 })();
 </script>
