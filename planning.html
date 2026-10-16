@@ -157,6 +157,35 @@ dialog.wide{width:min(96vw,760px);max-height:92vh;overflow:auto}
 .check input{width:auto}
 .loading{text-align:center;color:var(--muted);padding:3rem;grid-column:1/-1}
 
+/* ---------- Postes du jour ---------- */
+.tbox.postes{box-shadow:inset 0 3px 0 #2dd4bf}
+.ponav{display:flex;align-items:center;gap:.3rem;margin-left:auto}
+.ponav button{font-size:.85rem;padding:.25rem .6rem}
+.ponav input{width:auto;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:.2rem .4rem;font-size:.85rem}
+.ponow{padding:.6rem .9rem;border-bottom:1px solid var(--line);font-size:.92rem;display:flex;flex-wrap:wrap;gap:.3rem .9rem;align-items:center}
+.ponow b{font-family:"Chakra Petch",sans-serif;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.porow{display:grid;grid-template-columns:78px 1fr;gap:.6rem;align-items:start;padding:.5rem .9rem;border-top:1px solid var(--line)}
+.porow:first-of-type{border-top:0}
+.porow .pn{font-weight:600;padding-top:.35rem}
+.poaxis{position:relative;height:1rem;font-size:.68rem;color:var(--muted)}
+.poaxis span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.poaxis span:first-child{transform:none}
+.potrack{position:relative;height:32px;background:var(--panel2);border-radius:7px;overflow:hidden}
+.poseg{position:absolute;top:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;overflow:hidden;white-space:nowrap;border-right:2px solid var(--panel)}
+.poseg.past{opacity:.4}
+.ponowline{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text);box-shadow:0 0 0 1px var(--bg);z-index:2}
+.polist{font-size:.76rem;color:var(--muted);margin-top:.3rem;line-height:1.5}
+.polist .cur{color:var(--text);font-weight:600}
+.polegend{display:flex;flex-wrap:wrap;gap:.35rem .8rem;padding:.55rem .9rem;border-top:1px solid var(--line);font-size:.75rem;color:var(--muted)}
+.polegend i{display:inline-block;width:14px;height:10px;border-radius:3px;margin-right:.3rem;vertical-align:-1px}
+.po-c{background:#ff8a2a;color:#1a0d05}
+.po-l{background:#22c55e;color:#04210f}
+.po-v{background:#38bdf8;color:#04223a}
+.po-cl{background:repeating-linear-gradient(135deg,#ff8a2a 0 9px,#22c55e 9px 18px);color:#14090a}
+.po-bv{background:repeating-linear-gradient(135deg,#ffb066 0 9px,#38bdf8 9px 18px);color:#14090a}
+.po-t{background:#a898bd;color:#17101f}
+.ptag{display:inline-block;border-radius:5px;padding:.05rem .45rem;font-size:.78rem;font-weight:700}
+
 /* ---------- Tâches du jour ---------- */
 .tasks{max-width:900px;margin:1rem auto 0;padding:0 1rem}
 .tbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:inset 0 3px 0 #ff8a2a}
@@ -217,8 +246,13 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 .svday{display:flex;justify-content:space-between;gap:.6rem;padding:.45rem 0;border-bottom:1px solid var(--line);font-size:.9rem}
 .svday .ko{color:var(--bad)}
 .svsum p{margin:.3rem 0;font-size:.9rem}
+.svflag{cursor:pointer;font:inherit;font-size:.68rem;background:none}
+.svflag:hover{background:rgba(255,204,51,.15)}
 .svsum button{font-size:.8rem;padding:.15rem .5rem;margin:.15rem .2rem 0 0}
 @media (prefers-reduced-motion:no-preference){ .week{animation:in .35s ease-out both} @keyframes in{from{opacity:0;transform:translateY(6px)}} }
+
+/* Champs secrets : masqués sans type="password", pour que le navigateur ne propose jamais de les enregistrer */
+.secret{-webkit-text-security:disc;text-security:disc}
 </style>
 </head>
 <body>
@@ -232,6 +266,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 </header>
 
 <section id="tasks" class="tasks" aria-live="polite"></section>
+<section id="postes" class="tasks"></section>
 
 <section class="monthbar">
   <button id="prev" type="button" aria-label="Mois précédent">‹</button>
@@ -336,7 +371,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 <dialog id="dlgLogin">
   <h3>Connexion Boss</h3>
   <label for="inPwd">Code</label>
-  <input id="inPwd" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••" style="font-size:1.6rem;letter-spacing:.4em;text-align:center">
+  <input id="inPwd" class="secret" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore name="gz-code-boss" inputmode="numeric" placeholder="••••••" style="font-size:1.6rem;letter-spacing:.4em;text-align:center">
   <div class="err" id="loginErr"></div>
   <div class="actions">
     <button id="btnLoginCancel" type="button">Annuler</button>
@@ -411,7 +446,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
     <label for="tkWho">Qui a fait cette tâche ?</label>
     <select id="tkWho"></select>
     <label for="tkPin">Code personnel</label>
-    <input id="tkPin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••" style="font-size:1.5rem;letter-spacing:.4em;text-align:center">
+    <input id="tkPin" class="secret" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore name="gz-pin" inputmode="numeric" maxlength="4" placeholder="••••" style="font-size:1.5rem;letter-spacing:.4em;text-align:center">
   </div>
   <div id="tkComBlock">
     <label for="tkCom">Commentaire (facultatif)</label>
@@ -1413,6 +1448,9 @@ const pname = id => (PEOPLE.find(p => p.id === id) || { name:id }).name;
 let T = { catalogue:{}, pins:{}, ponct:{}, fait:{}, err:false, occ:null, occLoaded:false, laserHist:{}, faitAll:null, traite:{} };
 let tFull = (() => { try { return localStorage.getItem("gz-taches-full") === "1"; } catch(e) { return false; } })();
 let tUnsubs = [], tDay = null, tPinFails = 0, tPinLock = 0, ticking = null;
+// Postes : parties laser des jours à venir (consultation Boss)
+const poOcc = {}, poOccSub = {};
+let poDay = null; // null = aujourd'hui
 
 function tasksSubscribe(){
   tUnsubs.forEach(u => u()); tUnsubs = [];
@@ -1439,6 +1477,8 @@ function tasksSubscribe(){
   } else { T.faitAll = null; }
   // Oublis traités par le Boss : lus par tous, pour retirer le bandeau « non faites » une fois traités
   L("taches/traite", v => T.traite = v || {});
+  // Réservations (nœud public dispo, sans données clients) : pour savoir quand la VR tourne
+  tUnsubs.push(onValue(ref(db, "dispo"), snap => { T.dispo = snap.val() || {}; renderTasks(); }, err => console.warn("Postes (dispo) :", err)));
 }
 function saveLaserHist(){
   const today = iso(new Date());
@@ -1448,7 +1488,10 @@ function saveLaserHist(){
 }
 const asArr = v => Array.isArray(v) ? v : (v && typeof v === "object") ? Object.values(v) : [];
 function laserBlocks(key){
-  const raw = key === iso(new Date()) && T.occLoaded ? (T.occ && T.occ.l) : (T.laserHist || {})[key];
+  const today = iso(new Date());
+  const raw = key === today && T.occLoaded ? (T.occ && T.occ.l)
+    : key > today && poOcc[key] !== undefined ? (poOcc[key] && poOcc[key].l)
+    : (T.laserHist || {})[key];
   return asArr(raw).map(b => asArr(b).map(Number)).filter(b => b.length === 2 && b[1] > b[0]);
 }
 // Changement de jour (page restée ouverte) et mise à jour des tâches « non faites »
@@ -1482,12 +1525,12 @@ function occurrences(key, task){
     // ou un seul passage par bloc (jusqu'à 15 min après la fin) sans répétition
     const out = [];
     laserBlocks(key).forEach(([s0, e0]) => {
-      if (rp >= 15) for (let t = s0; t < e0 && out.length < 96; t += rp) out.push({ d:t, a:Math.min(t + rp, e0) });
+      if (rp >= 10) for (let t = s0; t < e0 && out.length < 96; t += rp) out.push({ d:t, a:Math.min(t + rp, e0) });
       else out.push({ d:s0, a:e0 + 15 });
     });
     return out;
   }
-  if (!R || !(rp >= 15)) return [];
+  if (!R || !(rp >= 10)) return [];
   const d = boundMin(task.pd || "o:0", R), a = boundMin(task.pa || "f:0", R), out = [];
   for (let t = d; t < a && out.length < 48; t += rp) out.push({ d:t, a:Math.min(t + rp, a) });
   return out;
@@ -1509,19 +1552,6 @@ const REFS = { a:"Arrivée agents", o:"Ouverture centre", f:"Fermeture centre", 
 function refHours(key){
   const es = AGENTS.map(p => entry(key, p.id)).filter(e => enService(e) && e.s && e.e);
   if (es.length) return [es.map(e => e.s).sort()[0], es.map(e => e.e).sort().pop()];
-  // Aucun agent planifié : utiliser les horaires théoriques du template de la semaine
-  // (prend en compte la période normale/vacances/été et le modèle A/B)
-  const monday = mondayOf(new Date(key + "T12:00:00"));
-  const period = weekPeriod(monday);
-  const model  = weekModel(monday);
-  const i = dayIndex(key);
-  const tpl = model && TPL[period] && TPL[period][model];
-  if (tpl) {
-    const shifts = Object.values(tpl).map(ag => ag && ag[i]).filter(h => h && h[0] && h[1]);
-    if (shifts.length) {
-      return [shifts.map(h => h[0]).sort()[0], shifts.map(h => h[1]).sort().pop()];
-    }
-  }
   return dayOpen(key);
 }
 // Les 4 heures de référence d'une journée (null si fermé et personne de planifié)
@@ -1529,7 +1559,12 @@ function dayRefs(key){
   const c = dayOpen(key), ag = refHours(key);
   if (!ag) return null;
   const centre = c || ag;
-  return { a: ag[0], o: centre[0], f: centre[1], d: ag[1] };
+  // Arrivée / départ agents bornés autour des horaires du centre (30 min avant l'ouverture,
+  // 1h30 après la fermeture) : un horaire atypique au planning ne décale plus les tâches.
+  const hm = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+  const a = c ? hm(Math.max(toMin(ag[0]), toMin(c[0]) - 30)) : ag[0];
+  const d = c ? hm(Math.min(toMin(ag[1]), toMin(c[1]) + 90)) : ag[1];
+  return { a, o: centre[0], f: centre[1], d };
 }
 function boundMin(spec, R){
   if (!spec || !R) return null;
@@ -1595,6 +1630,7 @@ function missedToTreat(){
 }
 
 function renderTasks(){
+  renderPostes();
   const el = $("tasks");
   if (!el) return;
   if (!user) { el.innerHTML = ""; return; }
@@ -1669,6 +1705,137 @@ function renderTasks(){
       html += `<div class="tmissed">⚠ Non faites ${esc(dayLabel(prev))} : ${Object.entries(cnt).map(([n, c]) => esc(n) + (c > 1 ? ` (×${c})` : "")).join(", ")}</div>`;
     }
   }
+  el.innerHTML = html + `</div>`;
+}
+
+/* ==========================================================================
+   POSTES DU JOUR (calcul automatique, rien n'est enregistré)
+   Par tranche de 15 min pendant l'ouverture, d'après le planning (qui est en
+   service), les parties laser (occupation_laser) et les réservations VR (dispo).
+   Règles :
+   - Boss + 2 agents : Boss caisse ; 1 agent laser (pendant les parties),
+     l'autre propreté + VR.
+   - Boss + 1 agent : Boss caisse, agent laser ; si laser ET VR en même temps :
+     Boss caisse + laser, agent VR.
+   - 2 agents sans Boss : 1 caisse, 1 laser ; si laser ET VR en même temps :
+     celui du laser fait caisse + laser, l'autre la VR.
+   - Seul : tout.
+   Le rôle « laser » alterne entre les deux agents toutes les 2 h (départ
+   alterné d'un jour à l'autre).
+   ========================================================================== */
+const POSTES = {
+  c:  { n:"Caisse / bar" },
+  l:  { n:"Laser" },
+  v:  { n:"VR" },
+  cl: { n:"Caisse + laser" },
+  bv: { n:"Propreté + VR" },
+  t:  { n:"Tout (seul)" }
+};
+const LASER_SWAP = 120; // minutes
+function vrBlocks(key){
+  const list = [];
+  Object.entries(T.dispo || {}).forEach(([k, n]) => {
+    const p = k.split("|");
+    if (p[0] === "vr" && p[1] === key && n > 0 && /^\d{1,2}:\d{2}$/.test(p[2])) { const t = toMin(p[2]); list.push([t, t + 20]); }
+  });
+  list.sort((a, b) => a[0] - b[0]);
+  const out = [];
+  list.forEach(([s0, e0]) => { const l = out[out.length - 1]; if (l && s0 <= l[1] + 10) l[1] = Math.max(l[1], e0); else out.push([s0, e0]); });
+  return out;
+}
+const during = (blocks, t) => blocks.some(([s0, e0]) => s0 < t + 15 && e0 > t);
+function computePostes(key){
+  const info = entry(key, "_info");
+  if (info && info.f) return null;
+  const h = dayOpen(key), steps = new Set();
+  if (h) for (let t = toMin(h[0]); t < toMin(h[1]); t += 15) steps.add(t);
+  if (info && info.o && info.c) for (let t = toMin(info.o); t < toMin(info.c); t += 15) steps.add(t);
+  if (!steps.size) return null;
+  const sorted = [...steps].sort((a, b) => a - b), o = sorted[0];
+  const lz = laserBlocks(key), vr = vrBlocks(key);
+  const parity = Math.round(new Date(key + "T12:00:00").getTime() / 86400000) % 2;
+  const bossOn = enService(entry(key, "boss"));
+  const res = {};
+  const put = (pid, t, p) => {
+    const a = res[pid] = res[pid] || [], l = a[a.length - 1];
+    if (l && l[1] === t && l[2] === p) l[1] = t + 15; else a.push([t, t + 15, p]);
+  };
+  for (const t of sorted) {
+    const ag = AGENTS.filter(p => { const e = entry(key, p.id); return enService(e) && e.s && e.e && toMin(e.s) <= t && toMin(e.e) >= t + 15; }).map(p => p.id);
+    const L = during(lz, t), V = during(vr, t);
+    let laserAg = ag[0], autre = null;
+    if (ag.length === 2) { laserAg = ag[(Math.floor((t - o) / LASER_SWAP) + parity) % 2]; autre = ag.find(x => x !== laserAg); }
+    if (bossOn) {
+      if (ag.length === 2) { put("boss", t, "c"); put(laserAg, t, L ? "l" : "bv"); put(autre, t, "bv"); }
+      else if (ag.length === 1) {
+        if (L && V) { put("boss", t, "cl"); put(laserAg, t, "v"); }
+        else { put("boss", t, "c"); put(laserAg, t, L ? "l" : "bv"); }
+      } else put("boss", t, "t");
+    } else if (ag.length === 2) {
+      if (L && V) { put(laserAg, t, "cl"); put(autre, t, "v"); }
+      else { put(autre, t, "c"); put(laserAg, t, L ? "l" : "bv"); }
+    } else if (ag.length === 1) put(laserAg, t, "t");
+  }
+  return { o, c: sorted[sorted.length - 1] + 15, res, lz, vr };
+}
+$("postes").addEventListener("click", e => {
+  const b = e.target.closest("[data-po]");
+  if (!b || !isAdmin()) return;
+  const n = +b.dataset.po, today = iso(new Date());
+  poDay = n === 0 ? null : iso(addDays(new Date((poDay || today) + "T12:00:00"), n));
+  if (poDay === today) poDay = null;
+  renderPostes();
+});
+$("postes").addEventListener("change", e => {
+  if (!e.target.classList.contains("podate") || !e.target.value) return;
+  poDay = e.target.value === iso(new Date()) ? null : e.target.value;
+  e.target.blur();
+  renderPostes();
+});
+function renderPostes(){
+  const el = $("postes");
+  if (!el) return;
+  if (!user) { el.innerHTML = ""; return; }
+  if (el.contains(document.activeElement) && document.activeElement.type === "date") return; // calendrier ouvert
+  const today = iso(new Date());
+  if (!isAdmin()) poDay = null;
+  const key = poDay || today;
+  if (key > today && !poOccSub[key]) poOccSub[key] = onValue(ref(db, `occupation_laser/${key}`), snap => { poOcc[key] = snap.val(); renderPostes(); }, err => console.warn(err));
+  const P = computePostes(key);
+  const nav = isAdmin() ? `<span class="ponav"><button type="button" data-po="-1" aria-label="Jour précédent">‹</button><input type="date" class="podate" value="${key}" aria-label="Choisir un jour"><button type="button" data-po="1" aria-label="Jour suivant">›</button>${key !== today ? `<button type="button" data-po="0">Aujourd'hui</button>` : ""}</span>` : "";
+  const headHtml = `<header><h2>${key === today ? "Postes du jour" : "Postes"}<small>${esc(dayLabel(key))}</small></h2>${nav}</header>`;
+  if (!P || !Object.keys(P.res).length) {
+    // fermé ou rien de planifié : rien pour les agents, message pour le Boss
+    el.innerHTML = isAdmin() ? `<div class="tbox postes">${headHtml}<p class="tempty">${P === null ? "Fermé ce jour-là." : "Planning de l'équipe pas encore rempli pour ce jour."}</p></div>` : "";
+    return;
+  }
+  const now = key === today ? minOf(new Date()) : (key < today ? 99999 : -1), span = P.c - P.o;
+  const pct = m => ((m - P.o) / span * 100).toFixed(2) + "%";
+  const ppl = PEOPLE.filter(p => P.res[p.id]);
+  const inDay = now >= P.o && now < P.c;
+  let ticks = "";
+  for (let m = Math.ceil(P.o / 60) * 60; m < P.c; m += 60) if (m - P.o >= 20 && P.c - m >= 20) ticks += `<span style="left:${pct(m)}">${Math.floor(m / 60)}h</span>`;
+  let html = `<div class="tbox postes">${headHtml}`;
+  if (inDay) {
+    const cur = ppl.map(p => { const s = P.res[p.id].find(x => x[0] <= now && x[1] > now); return s ? `<span><span class="who ${p.id}">${esc(p.name)}</span> <span class="ptag po-${s[2]}">${POSTES[s[2]].n}</span></span>` : ""; }).filter(Boolean);
+    if (cur.length) html += `<div class="ponow"><b>Maintenant</b>${cur.join("")}</div>`;
+  }
+  html += `<div class="porow"><span></span><div class="poaxis"><span style="left:0">${fmtMin(P.o)}</span>${ticks}<span style="left:auto;right:0;transform:none">${fmtMin(P.c)}</span></div></div>`;
+  ppl.forEach(p => {
+    const segs = P.res[p.id];
+    const bars = segs.map(([s0, e0, k]) => {
+      const w = (e0 - s0) / span * 100;
+      return `<span class="poseg po-${k}${e0 <= now ? " past" : ""}" style="left:${pct(s0)};width:${w.toFixed(2)}%" title="${fmtMin(s0)}–${fmtMin(e0)} · ${POSTES[k].n}">${w >= 14 ? POSTES[k].n : ""}</span>`;
+    }).join("");
+    const list = segs.map(([s0, e0, k]) => `<span class="${s0 <= now && e0 > now ? "cur" : ""}">${fmtMin(s0)}–${fmtMin(e0)} ${POSTES[k].n}</span>`).join(" · ");
+    html += `<div class="porow"><span class="pn who ${p.id}">${esc(p.name)}</span><div>
+      <div class="potrack">${bars}${inDay ? `<span class="ponowline" style="left:${pct(now)}"></span>` : ""}</div>
+      <div class="polist">${list}</div></div></div>`;
+  });
+  const used = new Set(); ppl.forEach(p => P.res[p.id].forEach(x => used.add(x[2])));
+  const nb = (b, l) => `${l} : ${b.length ? `${b.length} bloc${b.length > 1 ? "s" : ""} (${b.map(([s0, e0]) => `${fmtMin(s0)}–${fmtMin(e0)}`).join(", ")})` : "aucune réservation"}`;
+  html += `<div class="polegend">${Object.keys(POSTES).filter(k => used.has(k)).map(k => `<span><i class="po-${k}"></i>${POSTES[k].n}</span>`).join("")}
+    <span style="flex-basis:100%">${key > today ? "Réservations connues à ce jour · " : ""}${nb(P.lz, "Laser")} · ${nb(P.vr, "VR")}${AGENTS.every(a => P.res[a.id]) ? " · le laser alterne entre les agents toutes les 2 h" : ""}</span></div>`;
   el.innerHTML = html + `</div>`;
 }
 
@@ -1807,7 +1974,7 @@ $("btnTasksAdmin").onclick = () => {
   Object.keys(T.ponct || {}).filter(k => k >= today).sort().forEach(k =>
     Object.entries(T.ponct[k] || {}).forEach(([id, t]) => pl.appendChild(ponctRow(k, id, t))));
   $("taPins").innerHTML = PEOPLE.map(p => `<div><label for="pin-${p.id}">${esc(p.name)}</label>
-    <input id="pin-${p.id}" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="${T.pins[p.id] ? "•••• (inchangé)" : "non défini"}"></div>`).join("");
+    <input id="pin-${p.id}" class="secret" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore name="gz-pin-${p.id}" inputmode="numeric" maxlength="4" placeholder="${T.pins[p.id] ? "•••• (inchangé)" : "non défini"}"></div>`).join("");
   $("taErr").textContent = "";
   $("taDebut").textContent = new Date(suiviStart() + "T12:00:00").toLocaleDateString("fr-FR", { day:"numeric", month:"long", year:"numeric" });
   $("dlgTasks").showModal();
@@ -1897,13 +2064,14 @@ $("rcClose").onclick = () => $("dlgRecap").close();
 
 /* ---------- Horaires des tâches (Boss) ---------- */
 const OFFSETS = []; for (let m = -240; m <= 240; m += 15) OFFSETS.push(m);
+[-20, -10, 10, 20].forEach(m => OFFSETS.push(m)); OFFSETS.sort((x, y) => x - y);
 const offLabel = m => m === 0 ? "pile" : `${m < 0 ? "−" : "+"}${Math.abs(m) >= 60 ? Math.floor(Math.abs(m) / 60) + "h" + (Math.abs(m) % 60 ? pad(Math.abs(m) % 60) : "") : Math.abs(m) + " min"}`;
 function boundPicker(cls, spec){
   const [ref, off] = spec ? String(spec).split(":") : ["", "0"];
   return `<select class="${cls}r" aria-label="Référence"><option value="">—</option>${Object.entries(REFS).map(([k, l]) => `<option value="${k}"${ref === k ? " selected" : ""}>${l}</option>`).join("")}</select>
     <select class="${cls}o" aria-label="Décalage">${OFFSETS.map(m => `<option value="${m}"${m === (+off || 0) ? " selected" : ""}>${offLabel(m)}</option>`).join("")}</select>`;
 }
-const REPEATS = [0, 15, 30, 45, 60, 90, 120, 150, 180, 240];
+const REPEATS = [0, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180, 240];
 const readBound = (row, cls) => { const r = row.querySelector(`.${cls}r`).value; return r ? `${r}:${row.querySelector(`.${cls}o`).value}` : null; };
 function hoursPreview(row){
   const today = iso(new Date()), R = dayRefs(today);
@@ -1996,7 +2164,7 @@ async function loadSuiviMonth(m){
   try { all = (await get(query(ref(db, "taches/fait"), orderByKey(), startAt(m + "-01"), endAt(m + "-31")))).val() || {}; }
   catch(e) { $("svMonth").innerHTML = `<p class="err">Lecture impossible.</p>`; return; }
   const today = iso(new Date());
-  const per = {}, flagged = {}, missedDays = [];
+  const per = {}, flagged = {}, missedDays = [], flaggedList = [];
   let expected = 0, missed = 0;
   for (let d = 1; d <= new Date(y, mo, 0).getDate(); d++) {
     const k = `${m}-${pad(d)}`;
@@ -2004,18 +2172,38 @@ async function loadSuiviMonth(m){
     if (k < suiviStart()) continue;
     const f = all[k] || {}, list = tasksFor(k);
     Object.values(f).forEach(r => { per[r.qui] = (per[r.qui] || 0) + 1; });
-    list.forEach(t => { if (flags(k, t, f[t.id]).length) flagged[f[t.id].qui] = (flagged[f[t.id].qui] || 0) + 1; });
+    list.forEach(t => {
+      const fl = flags(k, t, f[t.id]);
+      if (!fl.length) return;
+      flagged[f[t.id].qui] = (flagged[f[t.id].qui] || 0) + 1;
+      flaggedList.push({ k, t, r: f[t.id], fl });
+    });
     if (k === today) continue; // la journée en cours n'est pas terminée
     const miss = list.filter(t => !f[t.id]).length;
     expected += list.length; missed += miss;
     if (miss) missedDays.push([k, miss]);
   }
-  const who = PEOPLE.filter(p => per[p.id]).map(p => `<span class="who ${p.id}">${esc(p.name)}</span> : ${per[p.id]}${flagged[p.id] ? ` <span class="flag">${flagged[p.id]} à vérifier</span>` : ""}`).join(" · ");
+  const who = PEOPLE.filter(p => per[p.id]).map(p => `<span class="who ${p.id}">${esc(p.name)}</span> : ${per[p.id]}${flagged[p.id] ? ` <button type="button" class="flag svflag" data-who="${p.id}">${flagged[p.id]} à vérifier</button>` : ""}`).join(" · ");
   $("svMonth").innerHTML = `<p>Tâches validées : ${who || "aucune"}</p>
     <p>${expected ? `${expected - missed}/${expected} tâches faites sur les jours terminés (${Math.round((expected - missed) / expected * 100)} %)` : "Pas encore de journée terminée ce mois-ci."}</p>
     ${missedDays.length ? `<p class="ko" style="color:var(--bad)">Non faites : ${missedDays.map(([k, n]) => `<button type="button" data-k="${k}">${esc(shortDay(k))} (${n})</button>`).join("")}</p>` : ""}
-    <p class="period">Calcul basé sur la liste de tâches actuelle.</p>`;
+    <div id="svFlagList"></div>
+    <p class="period">Calcul basé sur la liste de tâches et les plages horaires actuelles.</p>`;
   $("svMonth").querySelectorAll("button[data-k]").forEach(b => b.onclick = () => loadSuivi(b.dataset.k));
+  // « à vérifier » : liste des validations hors plage de l'agent, chaque ligne ouvre la journée
+  $("svMonth").querySelectorAll(".svflag").forEach(b => b.onclick = () => {
+    const box = $("svFlagList"), who = b.dataset.who;
+    if (box.dataset.who === who) { box.innerHTML = ""; box.dataset.who = ""; return; }
+    box.dataset.who = who;
+    box.innerHTML = `<p style="margin:.6rem 0 .2rem;font-weight:600">À vérifier · ${esc(pname(who))}</p>` +
+      flaggedList.filter(x => x.r.qui === who).map(x => {
+        const pl = plageLabel(plage(x.k, x.t));
+        return `<button type="button" class="svday svjump" data-k="${x.k}" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:.45rem 0">
+          <span>${esc(shortDay(x.k))} · ${esc(x.t.n)}${pl ? `<small style="display:block;color:var(--muted)">plage prévue : ${esc(pl)}</small>` : ""}</span>
+          <span class="who ${esc(who)}">cochée à ${x.r.t ? hhmm(new Date(x.r.t)) : "?"} <span class="flag">${esc(x.fl.join(", "))}</span></span></button>`;
+      }).join("");
+    box.querySelectorAll(".svjump").forEach(j => j.onclick = () => { loadSuivi(j.dataset.k); $("svDay").scrollIntoView({ behavior:"smooth", block:"start" }); });
+  });
 }
 const svShift = n => { const v = $("svDate").value || iso(new Date()); loadSuivi(iso(addDays(new Date(v + "T12:00:00"), n))); };
 $("btnSuivi").onclick = () => { svMonthShown = null; $("dlgSuivi").showModal(); loadSuivi(iso(new Date())); };
