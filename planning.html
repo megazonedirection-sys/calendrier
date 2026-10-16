@@ -964,6 +964,7 @@ function renderWeek(monday, today){
       <select data-k="model" aria-label="Modèle">${Object.entries(MODELS).map(([k,v]) => `<option value="${k}" ${k===(meta.model||"A")?"selected":""}>${v}</option>`).join("")}</select>
       <button type="button" data-a="apply">Appliquer le modèle</button>
       <button type="button" data-a="clear">Vider la semaine</button>
+      <button type="button" data-a="swap" title="Échange les cases de Mélodie et de Kélian sur toute la semaine (horaires, repos, absences, notes), sans toucher au Boss">Intervertir Mélodie ⇄ Kélian</button>
       ${override(monday) ? '<button type="button" data-a="auto">Revenir au cycle</button>' : ""}
     </div>`;
   }
@@ -1056,6 +1057,30 @@ function renderWeek(monday, today){
       if (!confirm("Remettre cette semaine sur le cycle automatique ? Ses créneaux seront recalculés.")) return;
       const up = { [`weeks/${wkKey}`]: null };
       buildWeek(up, monday, autoPeriod(monday), autoModel(monday), true, cursor.getFullYear(), cursor.getMonth());
+      await write(() => update(ref(db, "planning"), up));
+    };
+    // Échange exact des cases des deux agents, du mardi au dimanche (même si la
+    // semaine déborde sur un autre mois). Le Boss et les infos de journée ne
+    // bougent pas. Postes, tâches et effectif VR suivent automatiquement.
+    art.querySelector('[data-a="swap"]').onclick = async () => {
+      const lab = `${monday.getDate()} ${monday.toLocaleDateString("fr-FR",{month:"long"})}`;
+      if (!confirm(`Intervertir les horaires de Mélodie et de Kélian sur la semaine du ${lab} ?\n\nHoraires, repos, absences et notes sont échangés jour par jour. Le Boss n'est pas modifié.`)) return;
+      const up = {};
+      for (let i = 1; i <= 6; i++) {
+        const key = iso(addDays(monday, i));
+        const m = entry(key, "melodie"), k = entry(key, "kelian");
+        if (!m && !k) continue;
+        const prep = v => {
+          if (!v) return null;
+          const c = { ...v };
+          if (daysUntil(key) < 7) c.mod = Date.now(); else delete c.mod; // badge « modifié le » dans le délai de prévenance
+          return c;
+        };
+        putCell(up, key, "melodie", prep(k));
+        putCell(up, key, "kelian", prep(m));
+        bounds(up, key);
+      }
+      if (!Object.keys(up).length) { alert("Aucun horaire à intervertir cette semaine."); return; }
       await write(() => update(ref(db, "planning"), up));
     };
     art.querySelector('[data-a="clear"]').onclick = async () => {
