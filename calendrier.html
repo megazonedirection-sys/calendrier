@@ -5239,6 +5239,10 @@ if ('serviceWorker' in navigator) {
        l'agent qui n'est pas au laser) ;
      - s = Salle : Boss + 2 → l'agent hors laser ; Boss + 1 → le Boss ;
        sans Boss → l'agent en caisse ;
+     - w = Sanitaires (WC, lavage entrée) : jamais la personne en caisse
+       (hygiène). Boss + 2 → à tour de rôle entre les agents ; Boss + 1 → l'agent ;
+       sans Boss → l'agent au laser. Toutes les tâches « Sanitaires » vont
+       ensemble au même agent.
      - m (ou rien) = Ménage : à tour de rôle entre les agents, inversé chaque jour.
        Le Boss ne fait jamais le ménage. Les tâches du même groupe (gr) vont au
        même agent ; une tâche répétée garde le même agent pour tous ses passages.
@@ -5265,6 +5269,13 @@ if ('serviceWorker' in navigator) {
     const cmp = (x, y) => ("osf".indexOf(x.m || "s") - "osf".indexOf(y.m || "s")) || ((x.o || 0) - (y.o || 0)) || (String(x.id) < String(y.id) ? -1 : String(x.id) > String(y.id) ? 1 : 0);
     list.forEach(t => {
       const ps = t.ps || "m";
+      if (ps === "w") {
+        const tt = refTime(t), R = rolesAt(ctx, tt == null ? ctx.o : tt);
+        if (ctx.bossOn && R.ag.length >= 2) { (units.sani = units.sani || []).push(t); return; } // personne en caisse parmi les agents : rotation
+        if (R.ag.length >= 2) out[t.id] = R.laser;      // sans Boss : l'agent au laser (jamais celui de la caisse)
+        else if (R.ag.length === 1) out[t.id] = R.ag[0];
+        return;
+      }
       if (ps !== "m") {
         const tt = refTime(t), R = rolesAt(ctx, tt == null ? ctx.o : tt);
         const who = ps === "l" ? R.laser : ps === "c" ? R.caisse : R.salle;

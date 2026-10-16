@@ -485,7 +485,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 
 <dialog id="dlgHours" class="wide">
   <h3>Horaires des tâches</h3>
-  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». « Seulement pendant les parties laser » : la tâche n'apparaît que pendant les réservations laser (De / À ignorés). « Répéter » crée un passage à cocher à chaque intervalle dans la plage (lavage des tables, vérification fumée…). Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée. « Poste » : à qui la tâche est attribuée. Laser = l'agent qui tient le laser à ce moment-là ; Caisse / bar = la personne en caisse (le Boss s'il est là) ; Salle = l'agent hors laser avec le Boss + 2 agents, le Boss s'il n'y a qu'un agent, l'agent en caisse sans le Boss ; Ménage = à tour de rôle entre les agents, inversé chaque jour (jamais le Boss). Les tâches de ménage du même groupe vont toujours au même agent (ex. WC + lavage entrée).</p>
+  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». « Seulement pendant les parties laser » : la tâche n'apparaît que pendant les réservations laser (De / À ignorés). « Répéter » crée un passage à cocher à chaque intervalle dans la plage (lavage des tables, vérification fumée…). Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée. « Poste » : à qui la tâche est attribuée. Laser = l'agent qui tient le laser à ce moment-là ; Caisse / bar = la personne en caisse (le Boss s'il est là) ; Salle = l'agent hors laser avec le Boss + 2 agents, le Boss s'il n'y a qu'un agent, l'agent en caisse sans le Boss ; Sanitaires (WC, lavage entrée) = jamais la personne en caisse : à tour de rôle entre les agents avec le Boss, l'agent au laser sans le Boss, toutes ensemble au même agent ; Ménage = à tour de rôle entre les agents, inversé chaque jour (jamais le Boss). Les tâches de ménage du même groupe vont toujours au même agent (ex. WC + lavage entrée).</p>
   <div id="hrList"></div>
   <div class="err" id="hrErr"></div>
   <div class="actions">
@@ -1522,6 +1522,10 @@ function tasksFor(key){
      l'agent qui n'est pas au laser) ;
    - s = Salle : Boss + 2 → l'agent hors laser ; Boss + 1 → le Boss ;
      sans Boss → l'agent en caisse ;
+   - w = Sanitaires (WC, lavage entrée) : jamais la personne en caisse
+     (hygiène). Boss + 2 → à tour de rôle entre les agents ; Boss + 1 → l'agent ;
+     sans Boss → l'agent au laser. Toutes les tâches « Sanitaires » vont
+     ensemble au même agent.
    - m (ou rien) = Ménage : à tour de rôle entre les agents, inversé chaque jour.
      Le Boss ne fait jamais le ménage. Les tâches du même groupe (gr) vont au
      même agent ; une tâche répétée garde le même agent pour tous ses passages.
@@ -1548,6 +1552,13 @@ function assignCore(dayKey, list, ctx, refTime){
   const cmp = (x, y) => ("osf".indexOf(x.m || "s") - "osf".indexOf(y.m || "s")) || ((x.o || 0) - (y.o || 0)) || (String(x.id) < String(y.id) ? -1 : String(x.id) > String(y.id) ? 1 : 0);
   list.forEach(t => {
     const ps = t.ps || "m";
+    if (ps === "w") {
+      const tt = refTime(t), R = rolesAt(ctx, tt == null ? ctx.o : tt);
+      if (ctx.bossOn && R.ag.length >= 2) { (units.sani = units.sani || []).push(t); return; } // personne en caisse parmi les agents : rotation
+      if (R.ag.length >= 2) out[t.id] = R.laser;      // sans Boss : l'agent au laser (jamais celui de la caisse)
+      else if (R.ag.length === 1) out[t.id] = R.ag[0];
+      return;
+    }
     if (ps !== "m") {
       const tt = refTime(t), R = rolesAt(ctx, tt == null ? ctx.o : tt);
       const who = ps === "l" ? R.laser : ps === "c" ? R.caisse : R.salle;
@@ -2161,7 +2172,7 @@ function boundPicker(cls, spec){
     <select class="${cls}o" aria-label="Décalage">${OFFSETS.map(m => `<option value="${m}"${m === (+off || 0) ? " selected" : ""}>${offLabel(m)}</option>`).join("")}</select>`;
 }
 const REPEATS = [0, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180, 240];
-const PS_LABELS = { m:"Ménage (à tour de rôle)", l:"Laser", c:"Caisse / bar", s:"Salle" };
+const PS_LABELS = { m:"Ménage (à tour de rôle)", w:"Sanitaires (WC, entrée)", l:"Laser", c:"Caisse / bar", s:"Salle" };
 const readBound = (row, cls) => { const r = row.querySelector(`.${cls}r`).value; return r ? `${r}:${row.querySelector(`.${cls}o`).value}` : null; };
 function hoursPreview(row){
   const today = iso(new Date()), R = dayRefs(today);
