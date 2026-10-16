@@ -1395,6 +1395,8 @@ function initFirebaseSync(){
   // Écouter les demandes en ligne
   db.ref('demandes').on('value', snap => {
     demandes = snap.val() || {};
+    demandesChargees = true;
+    syncAnnivAgesPlanning(); // nettoie les entrées des demandes devenues réservations
     // Auto-valider les demandes directes non encore traitées.
     // Les demandes issues d'une même réservation multi-session (même groupId)
     // sont regroupées AVANT traitement : on attend que TOUTES les sessions du
@@ -2209,6 +2211,12 @@ function annivAgeOf(b){
 // demandes en ligne (autres clés) ne sont pas touchées.
 const ANNIV_AGE_INCONNU = 99;
 let annivAgesServeur = null; // dernier état lu de anniv_ages
+let demandesChargees = false; // demandes reçues au moins une fois
+// Statuts d'une demande devenue une vraie réservation : son entrée dans
+// anniv_ages est alors retirée, la réservation étant publiée (« b_ ») à ses
+// vrais horaires — elle suit ainsi les déplacements faits dans le planning.
+// Les demandes en attente ou en cours de traitement gardent leur entrée.
+const DEMANDE_RESERVEE = ['processed', 'accepted'];
 function computeAnnivAgesPlanning(bk){
   const n = new Date();
   const today = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
@@ -2228,7 +2236,8 @@ function syncAnnivAgesPlanning(){
     if(!cur || cur.t !== v.t || cur.a !== v.a) up[`${d}/${k}`] = v;
   }));
   Object.entries(annivAgesServeur).forEach(([d, m]) => Object.keys(m || {}).forEach(k => {
-    if(k.startsWith('b_') && !(voulu[d] && voulu[d][k])) up[`${d}/${k}`] = null;
+    if(k.startsWith('b_')) { if(!(voulu[d] && voulu[d][k])) up[`${d}/${k}`] = null; }
+    else if(demandesChargees && demandes[k] && DEMANDE_RESERVEE.includes(demandes[k].status)) up[`${d}/${k}`] = null;
   }));
   if(Object.keys(up).length) db.ref('anniv_ages').update(up).catch(e => console.warn('Résumé âges anniversaire (planning) :', e));
 }
