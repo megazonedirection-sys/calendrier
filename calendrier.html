@@ -1103,7 +1103,9 @@ async function migrateSlots(){
         if(time==='17:10') candidate='17:25';
         if(time==='17:30') candidate='17:45';
         if(time==='17:50') candidate='18:05';
-        newTime = candidate;
+        // Ne déplacer que vers un horaire réellement présent dans la grille :
+        // sinon la réservation glissait de +10 min à CHAQUE connexion au CalendIT.
+        if(vrSlotTimes.has(candidate)) newTime = candidate;
       }
     }
 
@@ -1120,6 +1122,9 @@ async function migrateSlots(){
 
     if(newTime && newTime !== time){
       const newKey = `${view}|${date}|${newTime}|${slot}`;
+      // Jamais d'écrasement : si la case cible est déjà occupée (ou visée par
+      // une autre migration), la réservation reste où elle est.
+      if(all[newKey] || newKey in updates) continue;
       updates[key]    = null;
       updates[newKey] = val;
       migrated++;
@@ -1485,6 +1490,22 @@ function escapeHtml(str){
   }[c]));
 }
 
+// ── Résumé public des âges d'anniversaire (anniv_ages/{date}/{ref} = {t, a}) ──
+// Écrit par le formulaire en ligne, sans aucune donnée client. CalendIT le
+// tient à jour : retiré si la demande est refusée ou supprimée, déplacé si
+// l'horaire est modifié, purgé une fois la date passée.
+function annivAgeRetirer(ref, date){
+  if(!ref || !date) return Promise.resolve();
+  return db.ref(`anniv_ages/${date}/${ref}`).remove().catch(()=>{});
+}
+function annivAgeDeplacer(ref, d, newDate, newTime){
+  if(!d || d.activiteLabel !== 'Forfait Anniversaire') return Promise.resolve();
+  const age = parseInt(d.annivAge);
+  return annivAgeRetirer(ref, d.date).then(() => {
+    if(age && !isNaN(age)) return db.ref(`anniv_ages/${newDate}/${ref}`).set({ t: newTime, a: age }).catch(()=>{});
+  });
+}
+
 // Construit le corps du message client à partir des infos de la réservation
 // (utilisé aussi bien pour une session unique que pour un groupe multi-session).
 // Modèle de confirmation client unique, utilisé pour toutes les activités
@@ -1665,6 +1686,7 @@ async function createBookingFromDemande(ref, d, forcedSlot){
       // Pas assez de casques libres simultanément — passer en validation manuelle
       await db.ref(`demandes/${ref}/status`).set('pending');
       await db.ref(`demandes/${ref}/direct`).set(false);
+      await db.ref(`demandes/${ref}/autoReason`).set('verif_complet');
       return false;
     }
     const newEntries = {};
@@ -1706,6 +1728,7 @@ async function createBookingFromDemande(ref, d, forcedSlot){
     // Créneau complet — passer en validation manuelle
     await db.ref(`demandes/${ref}/status`).set('pending');
     await db.ref(`demandes/${ref}/direct`).set(false);
+      await db.ref(`demandes/${ref}/autoReason`).set('verif_complet');
     return false;
   }
   // Créer la (ou les) réservation(s)
@@ -1745,19 +1768,74 @@ async function createBookingFromDemande(ref, d, forcedSlot){
 // en double. On mémorise ce qui est déjà en cours pour l'ignorer.
 const enCoursTraitement = new Set();
 
+// ══════════════════════════════════════════════════════════════════════
+// SECONDE VÉRIFICATION avant toute auto-confirmation
+// Le formulaire en ligne vérifie déjà tout côté client, mais ce contrôle
+// peut être contourné (ou devenir faux si deux clients réservent les
+// dernières places au même instant). CalendIT revérifie donc ici, sur le
+// vrai planning : horaire de la grille, créneau pas encore passé, heures
+// d'ouverture, nombre de joueurs, gilets disponibles et compatibilité des
+// groupes Laser. Au moindre doute, la demande repasse en validation manuelle.
+// ══════════════════════════════════════════════════════════════════════
+const AUTO_DUREE_FERMETURE = {
+  'VR Zone (action, arcade, zombies…)': 30, // briefing + jeu
+  'Escape Game VR': 70,                     // 3 créneaux + briefing
+  'Blind Test Musical': 30,
+};
+function verifierDemandeAuto(d){
+  const act = d.activite || 'laser', date = d.date || '', time = d.time || '';
+  if(!['laser','vr','bt'].includes(act) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return 'verif_donnees';
+  if(!getModifSlotsList(act, date).includes(time)) return 'verif_horaire';
+  const debut = new Date(`${date}T${time}:00`);
+  if(isNaN(debut.getTime()) || debut.getTime() < Date.now() - 5 * 60000) return 'verif_passe';
+  const oh = getOpenHours(date);
+  if(oh){
+    if(!oh.open) return 'verif_ferme';
+    const t = timeToMin(time), duree = AUTO_DUREE_FERMETURE[d.activiteLabel] || 20;
+    if(t < oh.openMin || t + duree > oh.closeMin) return 'verif_ferme';
+  }
+  const pers = parseInt(d.pers) || 0;
+  const maxAct = act === 'vr' ? VR_COLS : act === 'bt' ? 12 : MAX_VESTS;
+  if(pers < 1 || pers > maxAct) return 'verif_capacite';
+  if(act === 'laser'){
+    let used = 0;
+    const catsPresentes = [];
+    Object.entries(bookings).forEach(([k, b]) => {
+      const p = k.split('|');
+      if(!b || p[0] !== 'laser' || p[1] !== date || p[2] !== time) return;
+      used += parseInt(b.pers) || 0;
+      if(!NO_PERS_TYPES.includes(b.type)) catsPresentes.push(computeCategories(b.enfants79, b.enfants1012, b.ados1315, b.ados1618, b.adultes));
+    });
+    if(used + pers > MAX_VESTS) return 'verif_capacite';
+    const miennes = computeCategories(d.enfants79, d.enfants1012, d.ados1315, d.ados1618, d.adultes);
+    if(catsPresentes.some(c => !c.some(x => miennes.includes(x)))) return 'verif_profil';
+  }
+  return null;
+}
+// Repasse une ou plusieurs demandes en validation manuelle, avec le motif
+async function renvoyerEnManuel(refs, reason){
+  for(const r of refs){
+    await db.ref(`demandes/${r}`).update({ status: 'pending', direct: false, autoReason: reason })
+      .catch(e => console.warn('Retour en validation manuelle :', e));
+  }
+}
+
 async function autoValiderDemande(ref, d){
   if(enCoursTraitement.has(ref)) return;
   enCoursTraitement.add(ref);
-  if(!(await reserverDemande(ref))) return; // déjà traitée par un autre poste
-  let ok;
   try {
-    ok = await createBookingFromDemande(ref, d); // réservation enregistrée ici
-  } catch(e) {
-    enCoursTraitement.delete(ref); // pourra être retentée (verrou expiré)
-    throw e;
+    if(!(await reserverDemande(ref))) return; // déjà traitée par un autre poste
+    const pb = verifierDemandeAuto(d);
+    if(pb){ await renvoyerEnManuel([ref], pb); return; }
+    const ok = await createBookingFromDemande(ref, d); // réservation enregistrée ici
+    if(!ok) return;
+    await sendClientConfirmationEmail(d, ref, false);
+  } finally {
+    // Toujours libérer : sinon une demande repassée « en attente » ne pouvait
+    // plus être validée à la main (bouton Valider sans effet jusqu'au
+    // rechargement de la page).
+    enCoursTraitement.delete(ref);
   }
-  if(!ok) return;
-  await sendClientConfirmationEmail(d, ref, false);
 }
 
 // Traite un groupe de demandes issues d'une même réservation multi-session :
@@ -1796,22 +1874,31 @@ function computeGroupSlot(membres){
 async function autoValiderGroupe(groupId, membres){
   if(enCoursTraitement.has(groupId)) return;
   enCoursTraitement.add(groupId);
-  // Réserver chaque session ; dès que la première est déjà prise par un
-  // autre poste, on abandonne le groupe (c'est cet autre poste qui le traite).
-  const reservees = [];
-  for(const m of membres){
-    if(await reserverDemande(m.ref)) reservees.push(m);
-    else if(!reservees.length) return;
-  }
-  if(!reservees.length) return;
-  const slotCommun = computeGroupSlot(reservees);
-  const confirmees = [];
-  for(const {ref, d} of reservees){
-    const ok = await createBookingFromDemande(ref, d, slotCommun); // enregistrée ici
-    if(ok) confirmees.push({ref, d});
-  }
-  if(confirmees.length){
-    await sendGroupConfirmationEmail(confirmees);
+  try {
+    // Réserver chaque session ; dès que la première est déjà prise par un
+    // autre poste, on abandonne le groupe (c'est cet autre poste qui le traite).
+    const reservees = [];
+    for(const m of membres){
+      if(await reserverDemande(m.ref)) reservees.push(m);
+      else if(!reservees.length) return;
+    }
+    if(!reservees.length) return;
+    // Seconde vérification : tout ou rien. Si une seule session pose
+    // problème, TOUTE la réservation repasse en validation manuelle (même
+    // règle que le formulaire en ligne pour les sessions multiples).
+    const pb = reservees.map(m => verifierDemandeAuto(m.d)).find(Boolean);
+    if(pb){ await renvoyerEnManuel(reservees.map(m => m.ref), pb); return; }
+    const slotCommun = computeGroupSlot(reservees);
+    const confirmees = [];
+    for(const {ref, d} of reservees){
+      const ok = await createBookingFromDemande(ref, d, slotCommun); // enregistrée ici
+      if(ok) confirmees.push({ref, d});
+    }
+    if(confirmees.length){
+      await sendGroupConfirmationEmail(confirmees);
+    }
+  } finally {
+    enCoursTraitement.delete(groupId); // permet la validation manuelle ensuite
   }
 }
 
@@ -2244,6 +2331,10 @@ function purgeDemandesTraiteesPassees(){
         purge++;
       }
     });
+    // Résumé des âges d'anniversaire : dates passées supprimées
+    db.ref('anniv_ages').once('value').then(s => {
+      Object.keys(s.val() || {}).forEach(dt => { if(dt < aujourdhui) db.ref(`anniv_ages/${dt}`).remove().catch(()=>{}); });
+    }).catch(()=>{});
     // Rafraîchit l'affichage si le panneau Demandes est actuellement ouvert
     const overlay = document.getElementById('demandesOverlay');
     if (purge > 0 && overlay && overlay.style.display !== 'none') renderDemandes();
@@ -2325,7 +2416,7 @@ const NO_PERS_TYPES = ['t-message', 't-conge', 't-bloque'];
 const OFFER_TYPES = ['t-team', 't-jeu3', 't-vendredi', 't-viechere'];
 const OFFER_START_MIN = 17 * 60;
 // Offre "Vie Chère" : samedis du 10/10/2026 au 31/10/2026, dès 19h
-const VIE_CHERE_START = '2026-10-03';
+const VIE_CHERE_START = '2026-10-10';
 const VIE_CHERE_END   = '2026-10-31';
 const VIE_CHERE_START_MIN = 19 * 60;
 // Quand le staff choisit l'offre le bon jour, toutes les sessions sont
@@ -2354,7 +2445,7 @@ function offerBlockedReason(date, time, tel, ignoreKey){
     return null; // Vie Chère autorisée, on sort directement
   }
   if(timeToMin(time) < OFFER_START_MIN){
-    return "Les offres (All Play, Just Play, Afterwork) sont disponibles à partir de 17h20, avec la 1ère session.";
+    return "Les offres (All Play, Just Play, Afterwork) sont disponibles à partir de 17h00 (1ère session).";
   }
   if(tel){
     for(const [k, b] of Object.entries(bookings)){
@@ -2550,8 +2641,10 @@ function getOpenHoursHabituel(dateStr){
   // Mardi–Samedi
   if(isSummer){
     return { open:true, openMin:14*60, closeMin:20*60 }; // été 14h–20h
+  } else if(dow === 2 || dow === 3){
+    return { open:true, openMin:14*60, closeMin:20*60 }; // vacances mar/mer 14h–20h (comme planning et résa en ligne)
   } else {
-    return { open:true, openMin:14*60, closeMin:22*60 }; // autres vac 14h–22h
+    return { open:true, openMin:14*60, closeMin:22*60 }; // vacances jeu→sam 14h–22h
   }
 }
 
@@ -2574,7 +2667,9 @@ function buildClientIndex(){
 }
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
-function fmtDate(d){ return d.toISOString().split('T')[0]; }
+// Date locale (et non UTC) : toISOString() renvoyait la veille entre minuit et 2h
+// du matin (heure de Paris), ce qui affichait les réservations du mauvais jour.
+function fmtDate(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 
 function dispDate(d){
   const D=['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
@@ -2716,7 +2811,10 @@ function checkNewOnlineBookings(newBookings){
 
   // Ne notifier que les réservations issues du formulaire en ligne
   // (commentaire préfixé "[En ligne]"), pas les créations manuelles du staff.
-  const onlineAdded = added.filter(k => newBookings[k].comment && newBookings[k].comment.startsWith('[En ligne]'));
+  const onlineAdded = added.filter(k => {
+    const c = newBookings[k].comment || '';
+    return c.startsWith('[En ligne]') || c.startsWith('[Réservation directe en ligne]');
+  });
   if (!onlineAdded.length) return;
 
   // Regrouper par client (tel + date) pour n'ajouter qu'une seule bulle
@@ -2764,7 +2862,7 @@ function renderOnlineToastQueue(queue){
     (document.getElementById('side-col') || document.body).appendChild(stack);
   }
   stack.innerHTML = entries.map(([groupKey, g]) => {
-    const actLabel = ACTIVITE_LABEL[g.activite] || g.activite;
+    const actLabel = ACTIVITE_LABEL[g.activite] || escapeHtml(g.activite);
     const [y, mo, da] = (g.date||'').split('-');
     const isConflict = groupKey.startsWith('conflit_');
     return `
@@ -2772,7 +2870,7 @@ function renderOnlineToastQueue(queue){
         <div style="font-weight:700;margin-bottom:2px">${isConflict ? '⚠️ Conflit à résoudre' : '🆕 Nouvelle réservation en ligne'}</div>
         <div>${actLabel}</div>
         <div>${escapeHtml(g.nom)||'?'} · ${escapeHtml(g.tel)||''}</div>
-        <div>${da}/${mo}/${y} à ${(g.times||[]).join(', ')}</div>
+        <div>${escapeHtml(da)}/${escapeHtml(mo)}/${escapeHtml(y)} à ${escapeHtml((g.times||[]).join(', '))}</div>
         ${isConflict ? `<div style="margin-top:4px;font-size:11px;color:#fca5a5">Recontactez le client concerné pour reprogrammer, puis fermez cette alerte.</div>` : ''}
         <button aria-label="Fermer" onclick="dismissOnlineToast('${groupKey.replace(/'/g,"\\'")}')">✕</button>
       </div>
@@ -2882,8 +2980,14 @@ function isPastSlot(t){
   const [h,m]=t.split(':').map(Number);
   const slotMin=h*60+m;
   const nowMin=now.getHours()*60+now.getMinutes();
-  // Durée du créneau selon la vue
-  const duration = currentView==='bt' ? 30 : 20;
+  // Durée réelle = écart avec le créneau suivant (20, 25 ou 30 min selon la grille)
+  const slots=getActiveSlots();
+  const idx=slots.findIndex(s=>s.time===t);
+  let duration = currentView==='bt' ? 30 : 20;
+  if(idx>=0 && idx+1<slots.length){
+    const gap = timeToMin(slots[idx+1].time) - slotMin;
+    if(gap>0 && gap<=60) duration = gap;
+  }
   return slotMin + duration <= nowMin;
 }
 
@@ -3050,7 +3154,7 @@ function renderCalendar(){
 
         const payLabel = {'attente':'⏳ Attente','paye':'✅ Payé','incomplet':'⚠️ Incomplet'};
         const div=document.createElement('div');
-        div.className=`bk ${b.type}${b.evcPart2?' evc-part2':''}${b.vrStep>0?' vr-suite':''}${b.present?' is-present':''}${b.pay==='paye'?' pay-frame-paye':b.pay==='incomplet'?' pay-frame-incomplet':''}${b._offlinePending?' bk-offline-pending':''}`;
+        div.className=`bk ${String(b.type||'').replace(/[^\w-]/g,'')}${b.evcPart2?' evc-part2':''}${b.vrStep>0?' vr-suite':''}${b.present?' is-present':''}${b.pay==='paye'?' pay-frame-paye':b.pay==='incomplet'?' pay-frame-incomplet':''}${b._offlinePending?' bk-offline-pending':''}`;
         div.dataset.key=k;
         div.draggable=true;
         div.innerHTML=`
@@ -3062,7 +3166,7 @@ function renderCalendar(){
           ${b._offlinePending ? `<div class="bk-offline-badge">🔌 En attente de synchronisation</div>` : ''}
           ${b.comment ? `<div class="bk-comment">Commentaire : ${boldBreakdownNumbers(b.comment)}</div>` : ''}
           <div class="bk-row3">
-            <span class="bk-pers">👥 : ${b.pers}</span>
+            <span class="bk-pers">👥 : ${escapeHtml(b.pers)}</span>
             ${b.profil ? `<span style="font-size:11px;font-weight:700;background:rgba(0,0,0,.1);border-radius:8px;padding:2px 6px;">${PROFIL_BADGE_LABEL[b.profil]||''}</span>` : ''}
             <span class="bk-pay-label ${PAY_CLASS[b.pay]||'pay-attente'}">🧾 : ${payLabel[b.pay]||'Attente'}</span>
             <div class="bk-status">
@@ -3564,7 +3668,9 @@ function confirmBooking(){
   }
 
   // ── Auto-remplissage VR (nouvelle réservation uniquement) ───────────────────
-  if(currentView==='vr' && !isEdit){
+  // Un « Message » en VR passe par le chemin standard : avec 0 joueur, la
+  // boucle par casque n'écrivait rien et le message disparaissait.
+  if(currentView==='vr' && !isEdit && !NO_PERS_TYPES.includes(type)){
     const durSlots = VR_DURATION[type] || 2;
     // Utiliser le planning VR correspondant à la date réservée (avant/après le
     // changement d'horaires du 01/09/2026) — sinon le créneau affiché (nouveau
@@ -3586,15 +3692,31 @@ function confirmBooking(){
       finalCommentVr = bp.length ? `[Staff] ${bp.join(' | ')}` : comment;
     }
 
-    // Vérifier les conflits avant d'écrire
+    // Choisir un bloc de casques libres sur toute la durée : d'abord à partir
+    // du casque cliqué, sinon le premier bloc libre (avant : toujours à partir
+    // du casque 1, donc refus si le casque 1 était pris même avec 3 et 4 libres).
+    const blocLibre = c0 => {
+      if(c0 + pers - 1 > VR_COLS) return false;
+      for(let col=c0; col<c0+pers; col++){
+        for(let d=0; d<durSlots; d++){
+          const tIdx = timeIdx + d;
+          if(tIdx >= activeVrSlots.length) break;
+          if(bookings[`vr|${date}|${activeVrSlots[tIdx].time}|${col}`]) return false;
+        }
+      }
+      return true;
+    };
+    const slotClic = parseInt(slot) || 1;
+    const candidatsVr = [slotClic, ...Array.from({length: VR_COLS}, (_, n) => n + 1).filter(c => c !== slotClic)];
+    const startCol = candidatsVr.find(blocLibre) || 1;
     const conflits = [];
-    for(let col=1; col<=pers; col++){
+    for(let col=startCol; col<startCol+pers; col++){
       for(let d=0; d<durSlots; d++){
         const tIdx = timeIdx + d;
         if(tIdx >= activeVrSlots.length) break;
         const t = activeVrSlots[tIdx].time;
         const k2 = `vr|${date}|${t}|${col}`;
-        if(bookings[k2]) conflits.push(`Casque ${col} à ${t}`);
+        if(col > VR_COLS || bookings[k2]) conflits.push(`Casque ${col} à ${t}`);
       }
     }
     if(conflits.length){
@@ -3607,7 +3729,7 @@ function confirmBooking(){
 
     // Remplir N casques × durée
     const durMin = durSlots * 20;
-    for(let col=1; col<=pers; col++){
+    for(let col=startCol; col<startCol+pers; col++){
       for(let d=0; d<durSlots; d++){
         const tIdx = timeIdx + d;
         if(tIdx >= activeVrSlots.length) break;
@@ -3645,6 +3767,15 @@ function confirmBooking(){
       if (comment) bp.push(`Note: ${comment}`);
       finalComment = bp.length ? `[Staff] ${bp.join(' | ')}` : comment;
     }
+    // Modification sans changer la note ni la répartition : on garde le
+    // commentaire d'origine tel quel. Avant, ouvrir puis valider une réservation
+    // en ligne effaçait la répartition des joueurs, le tag d'offre et « [En ligne] ».
+    if(isEdit && existing.comment){
+      const AGE_KEYS = ['enfants79','enfants1012','ados1315','ados1618','adultes'];
+      const sameNote = comment === extractEditableNote(existing.comment);
+      const sameAges = AGE_KEYS.every(f => (ageFields[f]||0) === (existing[f]||0));
+      if(sameNote && sameAges) finalComment = existing.comment;
+    }
 
     bookings[k]={
       tel, nom, mail, comment: finalComment, pers, type, pay,
@@ -3674,9 +3805,13 @@ function confirmBooking(){
 
     // ── EVC : doublon automatique (Partie 2) avec 20 min de pause ──────────────
     if(currentView === 'laser' && type === 't-evc' && !isEdit){
-      const idx2 = ALL_SLOTS.findIndex(s => s.time === time);
-      if(idx2 >= 0 && idx2 + 2 < ALL_SLOTS.length){
-        const time2 = ALL_SLOTS[idx2 + 2].time;
+      // Grille correspondant à la date réservée (l'ancienne grille ALL_SLOTS
+      // n'a plus les bons horaires depuis le 01/09/2026 : la partie 2 n'était
+      // jamais créée, ou à un horaire hors grille, invisible dans le calendrier).
+      const evcGrid = date >= NEW2_SCHEDULE_DATE ? ALL_SLOTS_NEW2 : date >= NEW_SCHEDULE_DATE ? ALL_SLOTS_NEW : ALL_SLOTS;
+      const idx2 = evcGrid.findIndex(s => s.time === time);
+      if(idx2 >= 0 && idx2 + 2 < evcGrid.length){
+        const time2 = evcGrid[idx2 + 2].time;
         const k2 = slotKey(date, time2, slot);
         if(bookings[k2]){
           setTimeout(()=>showAlert(
@@ -3684,7 +3819,7 @@ function confirmBooking(){
             `La 2ème partie EVC prévue à ${time2} est déjà occupée sur ce couloir.\nVeuillez la placer manuellement.`
           ), 200);
         } else {
-          const pauseNote = `(pause 20 min à ${ALL_SLOTS[idx2+1].time})`;
+          const pauseNote = `(pause à ${evcGrid[idx2+1].time})`;
           bookings[k2] = {
             tel, nom, mail,
             comment: comment
@@ -4043,6 +4178,14 @@ const AUTO_REASON_LABEL = {
   capacite_insuffisante: '🎯 Le créneau était presque complet au moment de la demande — vérifier la capacité restante.',
   creneau_complet:       '🎵 Ce créneau Blind Test était déjà occupé au moment de la demande.',
   erreur_verification:   '🔄 Erreur technique lors de la vérification automatique — à valider manuellement.',
+  // Seconde vérification par CalendIT : le client a vu « confirmée » à l'écran
+  verif_donnees:  '🛡️ Demande incomplète ou mal formée, bloquée par CalendIT. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  verif_horaire:  '🛡️ Horaire hors de la grille du jour, bloqué par CalendIT. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  verif_passe:    '🛡️ Créneau déjà commencé au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  verif_ferme:    '🛡️ Hors des heures d\'ouverture du jour, bloqué par CalendIT. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  verif_capacite: '🛡️ Plus assez de places (ou de gilets) au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  verif_complet:  '🛡️ Plus de colonne ou de casque libre au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  verif_profil:   '🛡️ Groupe incompatible avec un groupe déjà placé sur ce créneau. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
 };
 const TYPE_LABEL_D = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
@@ -4112,10 +4255,10 @@ function demandeCard(membres){
   const isRefused = d.status === 'refused';
   const isSuccess = d.status === 'accepted' || d.status === 'processed';
   const borderColor = isPending ? '#f97316' : isSuccess ? '#16a34a' : isRefused ? '#ef4444' : '#94a3b8';
-  const statusLabel = isPending ? '⏳ En attente' : isSuccess ? '✅ Confirmée' : isRefused ? '❌ Refusée' : d.status === 'processing' ? '⏳ Traitement en cours…' : `❓ ${d.status || 'Statut inconnu'}`;
+  const statusLabel = isPending ? '⏳ En attente' : isSuccess ? '✅ Confirmée' : isRefused ? '❌ Refusée' : d.status === 'processing' ? '⏳ Traitement en cours…' : `❓ ${escapeHtml(d.status || 'Statut inconnu')}`;
   // Plusieurs sessions liées → une seule ligne "📅 date à h1, h2, h3" au lieu
   // d'une carte par session.
-  const heures = membres.map(m => m.d.time).join(', ');
+  const heures = escapeHtml(membres.map(m => m.d.time).join(', '));
   const sessionsBadge = isGroup
     ? `<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">🔗 ${membres.length} sessions liées</span>`
     : '';
@@ -4134,7 +4277,7 @@ function demandeCard(membres){
   );
   const dupWarning = dupMatches.length ? `
         <div style="margin-top:8px;font-size:12px;font-weight:700;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:6px 10px">
-          ⚠️ Doublon probable — ${dupMatches.length > 1 ? `${dupMatches.length} autres demandes` : 'une autre demande'} avec le même numéro pour cette date (${dupMatches.map(([r,dd]) => `${dd.time||'?'} · ${dd.status==='pending'?'en attente':dd.status==='refused'?'refusée':'confirmée'} · reçue ${timeAgo(dd.createdAt)}`).join(' — ')}). Vérifiez avant de refuser l'une des deux.
+          ⚠️ Doublon probable — ${dupMatches.length > 1 ? `${dupMatches.length} autres demandes` : 'une autre demande'} avec le même numéro pour cette date (${dupMatches.map(([r,dd]) => `${escapeHtml(dd.time||'?')} · ${dd.status==='pending'?'en attente':dd.status==='refused'?'refusée':'confirmée'} · reçue ${timeAgo(dd.createdAt)}`).join(' — ')}). Vérifiez avant de refuser l'une des deux.
         </div>` : '';
 
   // Email client non envoyé (quota EmailJS atteint, panne…) sur au moins une
@@ -4150,7 +4293,7 @@ function demandeCard(membres){
         <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
           ${membres.map(m => `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:5px 8px">
-              <span style="font-size:12px;font-weight:600">🕐 ${m.d.time}</span>
+              <span style="font-size:12px;font-weight:600">🕐 ${escapeHtml(m.d.time)}</span>
               <div style="display:flex;gap:4px">
                 ${isPending?`<button onclick="openModifSingleSessionModal('${m.ref}')" title="Modifier uniquement cette session" style="padding:3px 8px;background:#fff;color:#7c3aed;border:1px solid #c4b5fd;border-radius:6px;font-size:11px;cursor:pointer">✏️</button>`:''}
                 <button onclick="supprimerDemande('${m.ref}')" title="Supprimer uniquement cette session" style="padding:3px 8px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;cursor:pointer">🗑</button>
@@ -4166,19 +4309,19 @@ function demandeCard(membres){
         <div style="font-weight:800;font-size:15px">${escapeHtml(d.nom)} <span style="font-family:'DM Mono',monospace;font-size:12px;color:#64748b;font-weight:400">${escapeHtml(d.tel)}</span></div>
         ${d.mail?`<div style="font-size:12px;color:#64748b">${escapeHtml(d.mail)}</div>`:''}
         <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
-          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${d.activiteLabel==='Escape Game VR'?'🔓 Escape Game VR':d.activiteLabel&&d.activiteLabel.startsWith('VR Zone')?'🥽 VR Zone':(ACTIVITE_LABEL[d.activite]||d.activite)}</span>
-          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${TYPE_LABEL_D[d.forceType || d.type]||d.forceType||d.type}</span>
-          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">👥 ${d.pers} joueurs</span>
-          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${dateF} à ${heures}</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${escapeHtml(getClientActivityLabel(d))}</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">${escapeHtml(TYPE_LABEL_D[d.forceType || d.type]||d.forceType||d.type)}</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">👥 ${escapeHtml(d.pers)} joueurs</span>
+          <span style="background:#f1f5f9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600">📅 ${escapeHtml(dateF)} à ${heures}</span>
           ${sessionsBadge}
-          ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||d.profil}</span>`:''}
+          ${d.profil?`<span style="background:#ede9fe;color:#6d28d9;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">${PROFIL_BADGE_LABEL[d.profil]||escapeHtml(d.profil)}</span>`:''}
         </div>
         ${isPending && d.autoReason && AUTO_REASON_LABEL[d.autoReason]?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px">${AUTO_REASON_LABEL[d.autoReason]}</div>`:''}
         ${emailFailWarning}
         ${dupWarning}
         ${d.comment?`<div style="margin-top:8px;font-size:13px;color:#334155;background:#fff;border-radius:6px;padding:8px 10px;border:1px solid #e2e8f0">💬 ${boldBreakdownNumbers(d.comment)}</div>`:''}
         ${sessionsList}
-        <div style="margin-top:6px;font-size:11px;color:#94a3b8">${isGroup ? '' : `Ref: ${ref} · `}Reçue ${ago}</div>
+        <div style="margin-top:6px;font-size:11px;color:#94a3b8">${isGroup ? '' : `Ref: ${escapeHtml(ref)} · `}Reçue ${ago}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
         <span style="font-size:12px;font-weight:700;color:${borderColor};text-align:center">${statusLabel}</span>
@@ -4315,7 +4458,7 @@ function openModifDemandeModal(ref){
 
   const dateInput = document.getElementById('modifDemandeDate');
   dateInput.value = d.date;
-  dateInput.min = new Date().toISOString().slice(0,10);
+  dateInput.min = fmtDate(new Date());
   populateModifDemandeTimeSelect();
   document.getElementById('modifDemandeOverlay').classList.add('open');
 }
@@ -4341,7 +4484,7 @@ function openModifSingleSessionModal(ref){
 
   const dateInput = document.getElementById('modifDemandeDate');
   dateInput.value = d.date;
-  dateInput.min = new Date().toISOString().slice(0,10);
+  dateInput.min = fmtDate(new Date());
   populateModifDemandeTimeSelect();
   document.getElementById('modifDemandeOverlay').classList.add('open');
 }
@@ -4416,6 +4559,7 @@ async function confirmModifierParStaff(){
       `Aucun email n'est envoyé à ce stade — la demande reste en attente de validation.`
     )) return;
     try {
+      await annivAgeDeplacer(ref, ancien, dateVal, startTime);
       await db.ref(`demandes/${ref}`).update({ date: dateVal, time: startTime });
       if(demandes[ref]){ demandes[ref].date = dateVal; demandes[ref].time = startTime; }
       closeModifDemandeModal();
@@ -4483,6 +4627,7 @@ async function confirmModifierParStaff(){
 
     const ancienneDate = premier.date, ancienneHeure = premier.time;
     for(let i = 0; i < membres.length; i++){
+      await annivAgeDeplacer(membres[i].ref, membres[i].d, dateVal, times[i]);
       await db.ref(`demandes/${membres[i].ref}`).update({ date: dateVal, time: times[i], status: 'accepted' });
     }
 
@@ -4730,6 +4875,7 @@ async function refuserDemande(ref){
 
   for(const [r] of membres){
     await db.ref(`demandes/${r}/status`).set('refused');
+    await annivAgeRetirer(r, (demandes[r] || d).date);
   }
 
   // Email de refus au client via EmailJS (un seul email, pas un par session)
@@ -4784,6 +4930,7 @@ async function refuserDemande(ref){
 
 async function supprimerDemande(ref){
   if(!confirm('Supprimer définitivement cette demande ?')) return;
+  await annivAgeRetirer(ref, demandes[ref] && demandes[ref].date);
   await db.ref(`demandes/${ref}`).remove();
   delete demandes[ref];
   renderDemandes();

@@ -705,10 +705,10 @@ function computeEffectif(key){
   const period = weekPeriod(mondayOf(new Date(key + "T12:00:00")));
   const steps = new Set();
   const dh = dayHours(key, i, period);
-  if (!dh) return null; // fermé (habituellement ou congés)
-  const [o, c] = dh.map(toMin);
-  for (let t = o; t < c; t += 15) steps.add(t);
   const info = d._info;
+  // Fermé habituellement, sauf ouverture exceptionnelle saisie ce jour-là
+  if (!dh && !(info && info.o && info.c)) return null;
+  if (dh) { const [o, c] = dh.map(toMin); for (let t = o; t < c; t += 15) steps.add(t); }
   if (info && info.o && info.c) for (let t = toMin(info.o); t < toMin(info.c); t += 15) steps.add(t);
   const boss = enService(entry(key, "boss")) ? 1 : 0;
   const segs = [];
@@ -1107,7 +1107,6 @@ function daysUntil(key){
 }
 function syncType(){
   const t = $("inType").value;
-  $("timesRow").hidden = t !== "work" && t !== "cp";
   $("cpHint").hidden = t !== "cp";
   $("admHint").hidden = t !== "admin";
   $("timesRow").hidden = !["work","cp","admin"].includes(t);
