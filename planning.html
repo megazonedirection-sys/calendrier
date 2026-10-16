@@ -1514,6 +1514,37 @@ function tasksFor(key){
   Object.entries((T.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz }); });
   return list.sort((a, b) => "osf".indexOf(a.m) - "osf".indexOf(b.m) || a.o - b.o || (a.win ? a.win.d : 0) - (b.win ? b.win.d : 0));
 }
+/* Attribution des tâches aux agents, à tour de rôle (calcul identique dans
+   calendrier.html : assignCore). Tâches rangées par moment, ordre, identifiant,
+   attribuées en alternance ; l'agent qui commence change chaque jour. Seuls
+   les agents présents à l'heure de la tâche comptent ; une tâche répétée garde
+   le même agent pour tous ses passages. Le Boss est hors rotation. Indicatif :
+   n'importe quel agent peut cocher (le suivi signale « à la place de »). */
+function assignCore(dayKey, list, shifts, refTime){
+  const out = {};
+  if (!shifts.length) return out;
+  const ids = ["melodie", "kelian"];
+  const at = t => t == null ? shifts.map(x => x[0]) : shifts.filter(([, s, e]) => s <= t && t <= e).map(x => x[0]);
+  const bases = {};
+  list.forEach(t => { const b = String(t.id).split("~")[0]; (bases[b] = bases[b] || []).push(t); });
+  const order = Object.keys(bases).sort((a, b) => {
+    const x = bases[a][0], y = bases[b][0];
+    return ("osf".indexOf(x.m || "s") - "osf".indexOf(y.m || "s")) || ((x.o || 0) - (y.o || 0)) || (a < b ? -1 : a > b ? 1 : 0);
+  });
+  const dn = Math.round(new Date(dayKey + "T12:00:00").getTime() / 86400000);
+  order.forEach((b, i) => {
+    const pref = ids[(i + dn) % 2], other = ids[(i + dn + 1) % 2];
+    const pick = t => { const here = at(t); return here.includes(pref) ? pref : here.includes(other) ? other : null; };
+    const def = pick(refTime(bases[b][0])) || pick(null);
+    if (!def) return;
+    bases[b].forEach(t => { const here = at(refTime(t)); out[t.id] = here.includes(def) ? def : (here[0] || def); });
+  });
+  return out;
+}
+function assignFor(key){
+  const shifts = AGENTS.map(p => [p.id, entry(key, p.id)]).filter(([, e]) => enService(e) && e.s && e.e).map(([id, e]) => [id, toMin(e.s), toMin(e.e)]);
+  return assignCore(key, tasksFor(key), shifts, t => { const p = plage(key, t); return p.d != null ? p.d : p.a != null ? p.a : null; });
+}
 /* Tâche répétée (rp = intervalle en minutes) : un passage par intervalle dans la plage,
    par défaut de l'ouverture à la fermeture du centre. Chaque passage est cochable
    de son heure jusqu'au passage suivant (le dernier jusqu'à la fin de la plage). */
@@ -1635,6 +1666,7 @@ function renderTasks(){
   if (!user) { el.innerHTML = ""; return; }
   const today = iso(new Date());
   const list = tasksFor(today), fait = T.fait[today] || {};
+  const pour = assignFor(today);
   const h = dayOpen(today), now = minOf(new Date());
   const closedPassed = h && now > toMin(h[1]);
   const noCatalogue = !Object.keys(T.catalogue || {}).length && !Object.keys(T.ponct || {}).length;
@@ -1659,14 +1691,15 @@ function renderTasks(){
     const st = r ? "done" : tStatus(today, t);
     const p = plage(today, t), pl = plageLabel(p);
     const cls = st === "done" ? "done" : st === "late" ? "missed" : st === "early" ? "early" : "";
+    const pr = pour[t.id];
     const right = r
-      ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "…"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}</span>`
+      ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "…"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}${pr && r.qui !== pr ? `<span class="flag">à la place de ${esc(pname(pr))}</span>` : ""}</span>`
       : st === "late" ? `<span class="who" style="color:var(--bad)">Non faite${motifOf(today, t.id) ? `<span class="tc" style="color:var(--bad)">motif (${esc(pname(motifOf(today, t.id).qui))}) : « ${esc(motifOf(today, t.id).c || "—")} »</span>` : ""}</span>`
       : st === "early" ? `<span class="who" style="color:var(--muted)">dispo à ${fmtMin(p.d)}</span>`
       : p.a != null ? `<span class="who" style="color:var(--warn)">avant ${fmtMin(p.a)}</span>` : "";
     return `<button type="button" class="titem ${cls}" data-tid="${esc(t.id)}" ${r && !isAdmin() ? "disabled" : ""}>
       <span class="box">${r ? "✓" : ""}</span>
-      <span class="tn">${esc(t.n)}${r && r.c ? `<span class="tc">« ${esc(r.c)} »</span>` : ""}${!r && pl ? `<span class="tp">${esc(pl)}</span>` : ""}</span>${right}</button>`;
+      <span class="tn">${esc(t.n)}${r && r.c ? `<span class="tc">« ${esc(r.c)} »</span>` : ""}${!r && (pr || pl) ? `<span class="tp">${pr ? `<b class="who ${pr}">pour ${esc(pname(pr))}</b>` : ""}${pr && pl ? " · " : ""}${esc(pl)}</span>` : ""}</span>${right}</button>`;
   };
   if (!list.length) html += `<p class="tempty">${h ? "Aucune tâche prévue aujourd'hui." : "Fermé aujourd'hui : pas de tâche."}</p>`;
   else if (!tFull) {
@@ -1895,7 +1928,8 @@ function openTick(tid){
         if (!T.pins.boss) { $("tkAgent").hidden = $("tkComBlock").hidden = $("tkGo").hidden = true; }
       } else if (plageLabel(plage(today, task))) $("tkInfo").textContent += " · " + plageLabel(plage(today, task));
       $("tkWho").innerHTML = opts.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
-      const pref = (() => { try { return localStorage.getItem("gz-tache-qui"); } catch(e) { return null; } })() || focus;
+      // Agent prévu par la rotation en premier, sinon le dernier utilisé sur cet appareil
+      const pref = assignFor(today)[tid] || (() => { try { return localStorage.getItem("gz-tache-qui"); } catch(e) { return null; } })() || focus;
       if (opts.some(p => p.id === pref)) $("tkWho").value = pref;
     }
   }
@@ -2047,8 +2081,8 @@ function openRecap(){
   items.forEach(x => (byDay[x.key] = byDay[x.key] || []).push(x.t));
   $("rcList").innerHTML = items.length ? Object.keys(byDay).sort().reverse().map(k => `<div class="rcday" data-k="${k}">
       <h4>${esc(dayLabel(k))} <button type="button" class="rcall" style="font-size:.75rem;padding:.15rem .5rem;margin-left:.4rem">Tout traiter</button></h4>
-      ${byDay[k].map(t => { const pl = plageLabel(plage(k, t)); return `<div class="rcrow" data-id="${esc(t.id)}">
-        <span class="rn">${esc(t.n)}${pl ? `<small>${esc(pl)}</small>` : ""}${motifOf(k, t.id) ? `<small style="color:var(--bad)">Motif (${esc(pname(motifOf(k, t.id).qui))}) : « ${esc(motifOf(k, t.id).c || "—")} »</small>` : ""}</span>
+      ${byDay[k].map(t => { const pl = plageLabel(plage(k, t)), pr = assignFor(k)[t.id]; return `<div class="rcrow" data-id="${esc(t.id)}">
+        <span class="rn">${esc(t.n)}${pl || pr ? `<small>${pr ? `prévue pour ${esc(pname(pr))}` : ""}${pl && pr ? " · " : ""}${esc(pl)}</small>` : ""}${motifOf(k, t.id) ? `<small style="color:var(--bad)">Motif (${esc(pname(motifOf(k, t.id).qui))}) : « ${esc(motifOf(k, t.id).c || "—")} »</small>` : ""}</span>
         <input type="text" maxlength="120" placeholder="Note (facultatif)">
         <button type="button" class="primary rcok">Traité</button></div>`; }).join("")}</div>`).join("")
     : `<p class="period">✓ Aucun oubli à traiter.</p>`;
@@ -2152,7 +2186,7 @@ async function loadSuivi(key){
   $("svDay").innerHTML = `<p class="period">Chargement…</p>`;
   let fait = {};
   try { fait = (await get(ref(db, `taches/fait/${key}`))).val() || {}; } catch(e) { $("svDay").innerHTML = `<p class="err">Lecture impossible.</p>`; return; }
-  const list = tasksFor(key), tr = (T.traite || {})[key] || {};
+  const list = tasksFor(key), tr = (T.traite || {})[key] || {}, pour = assignFor(key);
   const ids = new Set(list.map(t => t.id));
   // Validations dont la tâche a été supprimée depuis : affichées avec leur intitulé d'origine
   Object.entries(fait).forEach(([id, r]) => { if (!ids.has(id)) list.push({ id, n:(r.n || "?") + " (tâche retirée)", m:"s" }); });
@@ -2160,8 +2194,8 @@ async function loadSuivi(key){
   else $("svDay").innerHTML = list.map(t => {
     const r = fait[t.id], fl = flags(key, t, r);
     return `<div class="svday"><span>${esc(t.n)}${r && r.c ? `<span class="tc" style="display:block;font-size:.78rem;color:var(--muted)">« ${esc(r.c)} »</span>` : ""}</span>
-      ${r ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "?"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}</span>`
-          : `<span class="ko">${key <= iso(new Date()) ? "Non faite" : "À venir"}${motifOf(key, t.id) ? `<span style="display:block;font-size:.76rem">motif (${esc(pname(motifOf(key, t.id).qui))}) : « ${esc(motifOf(key, t.id).c || "—")} »</span>` : ""}${tr[t.id] ? `<span style="display:block;font-size:.76rem;color:var(--muted)">traité${tr[t.id].c ? ` : « ${esc(tr[t.id].c)} »` : ""}</span>` : ""}</span>`}</div>`;
+      ${r ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "?"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}${pour[t.id] && r.qui !== pour[t.id] ? `<span class="flag">à la place de ${esc(pname(pour[t.id]))}</span>` : ""}</span>`
+          : `<span class="ko">${key <= iso(new Date()) ? "Non faite" : "À venir"}${pour[t.id] ? ` (prévue pour ${esc(pname(pour[t.id]))})` : ""}${motifOf(key, t.id) ? `<span style="display:block;font-size:.76rem">motif (${esc(pname(motifOf(key, t.id).qui))}) : « ${esc(motifOf(key, t.id).c || "—")} »</span>` : ""}${tr[t.id] ? `<span style="display:block;font-size:.76rem;color:var(--muted)">traité${tr[t.id].c ? ` : « ${esc(tr[t.id].c)} »` : ""}</span>` : ""}</span>`}</div>`;
   }).join("");
   loadSuiviMonth(key.slice(0, 7));
 }

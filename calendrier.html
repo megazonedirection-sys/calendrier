@@ -5129,6 +5129,7 @@ if ('serviceWorker' in navigator) {
 #tk .it .bx:hover{border-color:#22c55e}
 #tk .it .nm{flex:1;line-height:1.3}
 #tk .it .nm small{display:block;color:#94a3b8;font-size:11px}
+#tk .pour{font-weight:800} #tk .pour.melodie{color:#ff8cc2} #tk .pour.kelian{color:#c4a6ff}
 #tk .it.lt{background:rgba(239,68,68,.14)}
 #tk .it.lt .nm{color:#fecaca}
 #tk .it.lt .nm small{color:#fca5a5}
@@ -5224,12 +5225,44 @@ if ('serviceWorker' in navigator) {
     if (centreHours(key)) {
       const i = (new Date(key + "T12:00:00").getDay() + 5) % 7, dom = +key.slice(8);
       Object.entries(S.catalogue || {}).forEach(([id, t]) => {
-        if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz });
+        if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz });
       });
     }
-    Object.entries((S.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz }); });
+    Object.entries((S.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz }); });
     return list;
   }
+  /* Attribution des tâches aux agents, à tour de rôle (calcul identique dans
+     planning.html : assignCore). Tâches rangées par moment, ordre, identifiant,
+     attribuées en alternance ; l'agent qui commence change chaque jour. Seuls
+     les agents présents à l'heure de la tâche comptent ; une tâche répétée garde
+     le même agent pour tous ses passages. Le Boss est hors rotation. Indicatif :
+     n'importe quel agent peut cocher. */
+  function assignCore(dayKey, list, shifts, refTime){
+    const out = {};
+    if (!shifts.length) return out;
+    const ids = ["melodie", "kelian"];
+    const at = t => t == null ? shifts.map(x => x[0]) : shifts.filter(([, s, e]) => s <= t && t <= e).map(x => x[0]);
+    const bases = {};
+    list.forEach(t => { const b = String(t.id).split("~")[0]; (bases[b] = bases[b] || []).push(t); });
+    const order = Object.keys(bases).sort((a, b) => {
+      const x = bases[a][0], y = bases[b][0];
+      return ("osf".indexOf(x.m || "s") - "osf".indexOf(y.m || "s")) || ((x.o || 0) - (y.o || 0)) || (a < b ? -1 : a > b ? 1 : 0);
+    });
+    const dn = Math.round(new Date(dayKey + "T12:00:00").getTime() / 86400000);
+    order.forEach((b, i) => {
+      const pref = ids[(i + dn) % 2], other = ids[(i + dn + 1) % 2];
+      const pick = t => { const here = at(t); return here.includes(pref) ? pref : here.includes(other) ? other : null; };
+      const def = pick(refTime(bases[b][0])) || pick(null);
+      if (!def) return;
+      bases[b].forEach(t => { const here = at(refTime(t)); out[t.id] = here.includes(def) ? def : (here[0] || def); });
+    });
+    return out;
+  }
+  function assignToday(list){
+    const shifts = AGENTS.map(id => [id, S.day[id]]).filter(([, e]) => enService(e) && e.s && e.e).map(([id, e]) => [id, minT(e.s), minT(e.e)]);
+    return assignCore(day, list, shifts, t => { const p = plage(t); return p.d != null ? p.d : p.a != null ? p.a : null; });
+  }
+  let POUR = {};
   function plage(t){
     if (t.win) return { d:t.win.d, a:t.win.a };
     const R = dayRefs(day);
@@ -5283,6 +5316,7 @@ if ('serviceWorker' in navigator) {
     const el = document.getElementById("tk");
     if (!el || !started) return;
     const all = tasksToday();
+    POUR = assignToday(all);
     const due = [], late = [], next = [];
     let nDone = 0;
     all.forEach(t => {
@@ -5320,6 +5354,7 @@ if ('serviceWorker' in navigator) {
     const f = el.querySelector(".form");
     if (f) {
       if (keep) { if (f.querySelector(".txt") && keep.txt != null) f.querySelector(".txt").value = keep.txt; f.querySelector(".who").value = keep.who; f.querySelector(".pin").value = keep.pin; }
+      else if (POUR[form.id] && f.querySelector(`.who option[value="${POUR[form.id]}"]`)) f.querySelector(".who").value = POUR[form.id]; // agent prévu, présélectionné
       const who = f.querySelector(".who"), go = f.querySelector(".go");
       const label = () => { if (form.late) go.textContent = who.value === "boss" ? "Valider (motif facultatif)" : "Envoyer le motif"; };
       who.onchange = label; label();
@@ -5331,10 +5366,10 @@ if ('serviceWorker' in navigator) {
     if (form && !f) form = null; // la tâche a été traitée ailleurs
   }
   function item(t, isLate){
-    const p = plage(t);
+    const p = plage(t), pour = POUR[t.id];
     const html = `<div class="it${isLate ? " lt" : ""}">
       ${isLate ? "" : `<button type="button" class="bx" data-ok="${esc(t.id)}" aria-label="Cocher"></button>`}
-      <span class="nm">${esc(t.n)}<small>${isLate ? (p.a != null ? `à faire avant ${fmtM(p.a)}` : "à faire avant le départ") : (p.d != null && p.a != null ? `${fmtM(p.d)} → ${fmtM(p.a)}` : p.a != null ? `avant ${fmtM(p.a)}` : "dans la journée")}</small></span>
+      <span class="nm">${esc(t.n)}<small>${pour ? `<b class="pour ${pour}">${NAMES[pour]}</b> · ` : ""}${isLate ? (p.a != null ? `à faire avant ${fmtM(p.a)}` : "à faire avant le départ") : (p.d != null && p.a != null ? `${fmtM(p.d)} → ${fmtM(p.a)}` : p.a != null ? `avant ${fmtM(p.a)}` : "dans la journée")}</small></span>
       ${isLate ? `<button type="button" class="mot" data-mot="${esc(t.id)}">Motif</button>` : ""}
     </div>`;
     if (!form || form.id !== t.id) return html;
