@@ -5387,9 +5387,20 @@ if ('serviceWorker' in navigator) {
      POSTES DU JOUR (bandeau à droite, sous les tâches)
      Calcul identique au bloc « Postes du jour » de planning.html (à garder en
      phase si les règles changent). Rien n'est enregistré : tout est recalculé
-     à partir du planning du jour, des parties laser (occupation_laser) et des
-     réservations VR (dispo). Le bandeau se déroule tout seul quand les postes
-     changent, et se replie d'un clic.
+     à partir du planning du jour et des réservations VR (dispo). Indépendant
+     des tâches. Règles :
+     - Boss + 2 agents : Boss caisse ; 1 agent laser par tranche de 2 h
+       (sessions ou pas), l'autre propreté + VR.
+     - Boss + 1 agent : agent laser toute la vacation ; pendant une session VR :
+       agent VR, Boss caisse + laser.
+     - 2 agents sans Boss : moitié de vacation chacun au laser, l'autre en
+       caisse (relève au milieu de la période commune, arrondi au quart
+       d'heure) ; pendant une session VR : l'agent du laser passe en VR, celui
+       de la caisse fait caisse + laser.
+     - Seul : tout. L'agent qui commence au laser change d'un jour à l'autre.
+     Les parties laser (occupation_laser) sont seulement affichées en bas.
+     Le bandeau se déroule tout seul quand les postes changent, et se replie
+     d'un clic.
      ════════════════════════════════════════════════════════════════════════ -->
 <style>
 #po{font-size:12.5px;filter:drop-shadow(0 8px 20px rgba(0,0,0,.28));flex-shrink:0;display:none}
@@ -5427,7 +5438,7 @@ if ('serviceWorker' in navigator) {
   const NAMES = { boss:"Boss", melodie:"Mélodie", kelian:"Kélian" };
   const ORDER = ["boss", "melodie", "kelian"], AGENTS = ["melodie", "kelian"];
   const POSTES = { c:"Caisse / bar", l:"Laser", v:"VR", cl:"Caisse + laser", bv:"Propreté + VR", t:"Tout (seul)" };
-  const LASER_SWAP = 120; // le rôle laser alterne entre les agents toutes les 2 h
+  const LASER_SWAP = 120; // avec le Boss + 2 agents, le laser change d'agent toutes les 2 h
   const pad2 = n => String(n).padStart(2, "0");
   const isoT = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   const minT = s => { const [h, m] = String(s).split(":").map(Number); return h * 60 + m; };
@@ -5477,6 +5488,13 @@ if ('serviceWorker' in navigator) {
     const lz = laserBlocks(), vr = vrBlocks();
     const parity = Math.round(new Date(day + "T12:00:00").getTime() / 86400000) % 2;
     const bossOn = enService(S.day.boss);
+    // 2 agents sans Boss : relève au milieu de la période où les deux sont présents
+    const es = AGENTS.map(id => S.day[id]).filter(e => enService(e) && e.s && e.e);
+    let mid = null;
+    if (es.length === 2) {
+      const s0 = Math.max(...es.map(e => minT(e.s))), e0 = Math.min(...es.map(e => minT(e.e)));
+      if (e0 > s0) mid = Math.round((s0 + e0) / 2 / 15) * 15;
+    }
     const res = {};
     const put = (pid, t, p) => {
       const a = res[pid] = res[pid] || [], l = a[a.length - 1];
@@ -5484,18 +5502,21 @@ if ('serviceWorker' in navigator) {
     };
     for (const t of sorted) {
       const ag = AGENTS.filter(id => { const e = S.day[id]; return enService(e) && e.s && e.e && minT(e.s) <= t && minT(e.e) >= t + 15; });
-      const L = during(lz, t), V = during(vr, t);
+      const V = during(vr, t);
       let laserAg = ag[0], autre = null;
-      if (ag.length === 2) { laserAg = ag[(Math.floor((t - o) / LASER_SWAP) + parity) % 2]; autre = ag.find(x => x !== laserAg); }
+      if (ag.length === 2) {
+        const part = bossOn ? Math.floor((t - o) / LASER_SWAP) : (mid != null && t >= mid ? 1 : 0);
+        laserAg = ag[(part + parity) % 2]; autre = ag.find(x => x !== laserAg);
+      }
       if (bossOn) {
-        if (ag.length === 2) { put("boss", t, "c"); put(laserAg, t, L ? "l" : "bv"); put(autre, t, "bv"); }
+        if (ag.length === 2) { put("boss", t, "c"); put(laserAg, t, "l"); put(autre, t, "bv"); }
         else if (ag.length === 1) {
-          if (L && V) { put("boss", t, "cl"); put(laserAg, t, "v"); }
-          else { put("boss", t, "c"); put(laserAg, t, L ? "l" : "bv"); }
+          if (V) { put("boss", t, "cl"); put(laserAg, t, "v"); }
+          else { put("boss", t, "c"); put(laserAg, t, "l"); }
         } else put("boss", t, "t");
       } else if (ag.length === 2) {
-        if (L && V) { put(laserAg, t, "cl"); put(autre, t, "v"); }
-        else { put(autre, t, "c"); put(laserAg, t, L ? "l" : "bv"); }
+        if (V) { put(laserAg, t, "v"); put(autre, t, "cl"); }
+        else { put(laserAg, t, "l"); put(autre, t, "c"); }
       } else if (ag.length === 1) put(laserAg, t, "t");
     }
     return { o, c: sorted[sorted.length - 1] + 15, res, lz, vr };

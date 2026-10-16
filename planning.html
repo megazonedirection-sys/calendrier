@@ -1710,17 +1710,20 @@ function renderTasks(){
 /* ==========================================================================
    POSTES DU JOUR (calcul automatique, rien n'est enregistré)
    Par tranche de 15 min pendant l'ouverture, d'après le planning (qui est en
-   service), les parties laser (occupation_laser) et les réservations VR (dispo).
+   service) et les réservations VR (dispo). Indépendant des tâches : les
+   tâches gardent leurs propres horaires. Les parties laser ne changent pas
+   les postes (le laser est tenu en continu) ; elles sont seulement affichées.
    Règles :
-   - Boss + 2 agents : Boss caisse ; 1 agent laser (pendant les parties),
-     l'autre propreté + VR.
-   - Boss + 1 agent : Boss caisse, agent laser ; si laser ET VR en même temps :
-     Boss caisse + laser, agent VR.
-   - 2 agents sans Boss : 1 caisse, 1 laser ; si laser ET VR en même temps :
-     celui du laser fait caisse + laser, l'autre la VR.
+   - Boss + 2 agents : Boss caisse ; 1 agent laser par tranche de 2 h
+     (sessions ou pas), l'autre propreté + VR.
+   - Boss + 1 agent : Boss caisse, agent laser toute la vacation ; pendant
+     une session VR : agent VR, Boss caisse + laser.
+   - 2 agents sans Boss : chacun la moitié de la vacation au laser, l'autre
+     à la caisse. Relève au milieu de la période où les deux sont présents
+     (arrondi au quart d'heure). Pendant une session VR : l'agent du laser
+     passe en VR, celui de la caisse fait caisse + laser.
    - Seul : tout.
-   Le rôle « laser » alterne entre les deux agents toutes les 2 h (départ
-   alterné d'un jour à l'autre).
+   L'agent qui commence au laser change d'un jour à l'autre.
    ========================================================================== */
 const POSTES = {
   c:  { n:"Caisse / bar" },
@@ -1754,6 +1757,13 @@ function computePostes(key){
   const lz = laserBlocks(key), vr = vrBlocks(key);
   const parity = Math.round(new Date(key + "T12:00:00").getTime() / 86400000) % 2;
   const bossOn = enService(entry(key, "boss"));
+  // 2 agents sans Boss : relève au milieu de la période où les deux sont présents
+  const es = AGENTS.map(p => entry(key, p.id)).filter(e => enService(e) && e.s && e.e);
+  let mid = null;
+  if (es.length === 2) {
+    const s0 = Math.max(...es.map(e => toMin(e.s))), e0 = Math.min(...es.map(e => toMin(e.e)));
+    if (e0 > s0) mid = Math.round((s0 + e0) / 2 / 15) * 15;
+  }
   const res = {};
   const put = (pid, t, p) => {
     const a = res[pid] = res[pid] || [], l = a[a.length - 1];
@@ -1761,21 +1771,24 @@ function computePostes(key){
   };
   for (const t of sorted) {
     const ag = AGENTS.filter(p => { const e = entry(key, p.id); return enService(e) && e.s && e.e && toMin(e.s) <= t && toMin(e.e) >= t + 15; }).map(p => p.id);
-    const L = during(lz, t), V = during(vr, t);
+    const V = during(vr, t);
     let laserAg = ag[0], autre = null;
-    if (ag.length === 2) { laserAg = ag[(Math.floor((t - o) / LASER_SWAP) + parity) % 2]; autre = ag.find(x => x !== laserAg); }
+    if (ag.length === 2) {
+      const part = bossOn ? Math.floor((t - o) / LASER_SWAP) : (mid != null && t >= mid ? 1 : 0);
+      laserAg = ag[(part + parity) % 2]; autre = ag.find(x => x !== laserAg);
+    }
     if (bossOn) {
-      if (ag.length === 2) { put("boss", t, "c"); put(laserAg, t, L ? "l" : "bv"); put(autre, t, "bv"); }
+      if (ag.length === 2) { put("boss", t, "c"); put(laserAg, t, "l"); put(autre, t, "bv"); }
       else if (ag.length === 1) {
-        if (L && V) { put("boss", t, "cl"); put(laserAg, t, "v"); }
-        else { put("boss", t, "c"); put(laserAg, t, L ? "l" : "bv"); }
+        if (V) { put("boss", t, "cl"); put(laserAg, t, "v"); }
+        else { put("boss", t, "c"); put(laserAg, t, "l"); }
       } else put("boss", t, "t");
     } else if (ag.length === 2) {
-      if (L && V) { put(laserAg, t, "cl"); put(autre, t, "v"); }
-      else { put(autre, t, "c"); put(laserAg, t, L ? "l" : "bv"); }
+      if (V) { put(laserAg, t, "v"); put(autre, t, "cl"); }
+      else { put(laserAg, t, "l"); put(autre, t, "c"); }
     } else if (ag.length === 1) put(laserAg, t, "t");
   }
-  return { o, c: sorted[sorted.length - 1] + 15, res, lz, vr };
+  return { o, c: sorted[sorted.length - 1] + 15, res, lz, vr, bossOn };
 }
 $("postes").addEventListener("click", e => {
   const b = e.target.closest("[data-po]");
@@ -1834,7 +1847,7 @@ function renderPostes(){
   const used = new Set(); ppl.forEach(p => P.res[p.id].forEach(x => used.add(x[2])));
   const nb = (b, l) => `${l} : ${b.length ? `${b.length} bloc${b.length > 1 ? "s" : ""} (${b.map(([s0, e0]) => `${fmtMin(s0)}–${fmtMin(e0)}`).join(", ")})` : "aucune réservation"}`;
   html += `<div class="polegend">${Object.keys(POSTES).filter(k => used.has(k)).map(k => `<span><i class="po-${k}"></i>${POSTES[k].n}</span>`).join("")}
-    <span style="flex-basis:100%">${key > today ? "Réservations connues à ce jour · " : ""}${nb(P.lz, "Laser")} · ${nb(P.vr, "VR")}${AGENTS.every(a => P.res[a.id]) ? " · le laser alterne entre les agents toutes les 2 h" : ""}</span></div>`;
+    <span style="flex-basis:100%">${key > today ? "Réservations connues à ce jour · " : ""}${nb(P.lz, "Laser")} · ${nb(P.vr, "VR")}${AGENTS.every(a => P.res[a.id]) ? (P.bossOn ? " · le laser change d'agent toutes les 2 h" : " · le laser change d'agent à mi-journée") : ""}</span></div>`;
   el.innerHTML = html + `</div>`;
 }
 
