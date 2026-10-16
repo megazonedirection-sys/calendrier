@@ -853,6 +853,11 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
           </select>
           <div id="fTypeOfferHint" style="display:none;font-size:11px;color:#b45309;margin-top:4px"></div>
         </div>
+        <div class="fg" id="fAnnivAgeGroup" style="display:none">
+          <label>🎂 Âge de l'enfant fêté</label>
+          <input type="number" id="fAnnivAge" min="5" max="18" placeholder="ex : 10">
+          <div style="font-size:11px;color:#94a3b8;margin-top:4px">Sert au contrôle des anniversaires réservés en ligne sur le même créneau (écart d'âge max 1 an). Sans âge, un anniversaire en ligne sur ce créneau passera en validation manuelle.</div>
+        </div>
         <div class="fg">
           <label>💳 Paiement</label>
           <select id="fPay">
@@ -1334,6 +1339,7 @@ function initFirebaseSync(){
     db.ref('dispo').set(computeDispoFromBookings(bookings)).catch(()=>{});
     db.ref('dispo_profil').set(computeProfilFlagsFromBookings(bookings)).catch(()=>{});
     db.ref('occupation_laser').set(computeOccupationLaser(bookings)).catch(()=>{});
+    syncAnnivAgesPlanning();
     if(premiereSynchro) traiterDemandesAuto();
     if(!_initialScrollDone){
       _initialScrollDone = true;
@@ -1368,6 +1374,13 @@ function initFirebaseSync(){
   // ligne pour respecter la vraie capacité.
   // Quota EmailJS : publié par CalendIT quand un envoi échoue pour cause de
   // quota (voir trackEmailResult), retiré dès qu'un envoi réussit à nouveau.
+  // Résumé public des âges d'anniversaire : suivi pour y publier les
+  // anniversaires du planning (voir syncAnnivAgesPlanning)
+  db.ref('anniv_ages').on('value', snap => {
+    annivAgesServeur = snap.val() || {};
+    syncAnnivAgesPlanning();
+  }, e => console.warn('Résumé âges anniversaire :', e));
+
   db.ref('config/emailQuota').on('value', snap => {
     emailQuotaReached = !!(snap.val() && snap.val().reached);
   }, () => {});
@@ -1753,6 +1766,7 @@ async function createBookingFromDemande(ref, d, forcedSlot){
       ...(d.ados1315    !== undefined ? {ados1315:    d.ados1315}    : {}),
       ...(d.ados1618    !== undefined ? {ados1618:    d.ados1618}    : {}),
       ...(d.adultes     !== undefined ? {adultes:     d.adultes}     : {}),
+      ...(parseInt(d.annivAge) ? {annivAge: parseInt(d.annivAge)} : {}),
       ...(d.groupId ? {groupId: d.groupId} : {})
     };
   });
@@ -1809,6 +1823,16 @@ function verifierDemandeAuto(d){
     if(used + pers > MAX_VESTS) return 'verif_capacite';
     const miennes = computeCategories(d.enfants79, d.enfants1012, d.ados1315, d.ados1618, d.adultes);
     if(catsPresentes.some(c => !c.some(x => miennes.includes(x)))) return 'verif_profil';
+    // Forfait Anniversaire : un autre anniversaire déjà au planning sur cette
+    // partie → écart d'âge max 1 an ; âge inconnu → validation manuelle.
+    if(d.activiteLabel === 'Forfait Anniversaire'){
+      const monAge = parseInt(d.annivAge) || null;
+      const autres = Object.entries(bookings).filter(([k, b]) => {
+        const p = k.split('|');
+        return b && p[0] === 'laser' && p[1] === date && p[2] === time && ANNIV_TYPES.includes(b.type);
+      }).map(([, b]) => annivAgeOf(b));
+      if(autres.length && (!monAge || autres.some(a => !a || Math.abs(a - monAge) > 1))) return 'verif_anniv';
+    }
   }
   return null;
 }
@@ -2164,6 +2188,49 @@ function computeProfilFlagsFromBookings(bk){
     flags[slotKeyStr][sig] = true;
   });
   return flags;
+}
+
+// ── Âge de l'enfant fêté d'une réservation anniversaire ──
+// Champ annivAge (saisi dans CalendIT ou recopié de la demande en ligne) ;
+// à défaut, « … 10 ans » dans le commentaire (anciennes réservations).
+function annivAgeOf(b){
+  if(!b) return null;
+  const a = parseInt(b.annivAge);
+  if(a && a > 0 && a < 99) return a;
+  const m = String(b.comment || '').match(/(\d{1,2})\s*ans\b/i);
+  return m ? parseInt(m[1]) : null;
+}
+// Résumé public anniv_ages/{date}/b_{réservation} = {t, a} : CalendIT y publie
+// chaque partie des anniversaires du planning (saisis à la main ou en ligne),
+// sans aucune donnée client, pour que le contrôle d'âge du formulaire en ligne
+// les voie. Âge inconnu → a = 99 : l'écart dépasse forcément 1 an, donc un
+// anniversaire en ligne sur ce créneau passe en validation manuelle.
+// Les entrées « b_ » sont recalculées à chaque changement ; les entrées des
+// demandes en ligne (autres clés) ne sont pas touchées.
+const ANNIV_AGE_INCONNU = 99;
+let annivAgesServeur = null; // dernier état lu de anniv_ages
+function computeAnnivAgesPlanning(bk){
+  const n = new Date();
+  const today = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+  const res = {};
+  Object.entries(bk || {}).forEach(([key, b]) => {
+    const p = key.split('|');
+    if(p.length < 4 || p[0] !== 'laser' || p[1] < today || !b || !['t-anniv','t-anniv3'].includes(b.type)) return;
+    (res[p[1]] = res[p[1]] || {})['b_' + firebaseSafeKey(`${p[2]}_${p[3]}`)] = { t: p[2], a: annivAgeOf(b) || ANNIV_AGE_INCONNU };
+  });
+  return res;
+}
+function syncAnnivAgesPlanning(){
+  if(annivAgesServeur === null || serverBookings === null || isFirebaseConnected === false) return;
+  const voulu = computeAnnivAgesPlanning(bookings), up = {};
+  Object.entries(voulu).forEach(([d, m]) => Object.entries(m).forEach(([k, v]) => {
+    const cur = (annivAgesServeur[d] || {})[k];
+    if(!cur || cur.t !== v.t || cur.a !== v.a) up[`${d}/${k}`] = v;
+  }));
+  Object.entries(annivAgesServeur).forEach(([d, m]) => Object.keys(m || {}).forEach(k => {
+    if(k.startsWith('b_') && !(voulu[d] && voulu[d][k])) up[`${d}/${k}`] = null;
+  }));
+  if(Object.keys(up).length) db.ref('anniv_ages').update(up).catch(e => console.warn('Résumé âges anniversaire (planning) :', e));
 }
 
 // Occupation du Laser par jour, pour la règle VR du formulaire en ligne —
@@ -3327,6 +3394,7 @@ function adaptModalForView(){
   document.getElementById('fAgeGroup').style.display = (currentView==='laser') ? '' : 'none';
   updateAgeGroupVisibility();
   refreshOfferTypeOptions(); // grise les offres si le créneau est avant 17h20
+  updateAnnivAgeVisibility();
 }
 
 // Affiche le bloc "répartition par âge" pour Laser Game, Blind Test, VR Zone
@@ -3422,6 +3490,8 @@ function editBooking(key){
   document.getElementById('fAdo1618').value = b.ados1618    || 0;
   document.getElementById('fAdultes').value = b.adultes     || 0;
   updateAgeGroupVisibility(); // recalcule après avoir défini le vrai type (VR Zone vs Escape)
+  document.getElementById('fAnnivAge').value = annivAgeOf(b) || '';
+  updateAnnivAgeVisibility();
   refreshOfferTypeOptions();  // tel et type connus : recalcule le grisage des offres
   document.getElementById('btnCopy').style.display='';
   document.getElementById('copyInfo').textContent='Vous pouvez copier cette réservation vers un autre créneau.';
@@ -3434,6 +3504,7 @@ function clearForm(){
   document.getElementById('fType').value='t-particulier';
   document.getElementById('fPay').value='attente';
   ['fEnf79','fEnf1012','fAdo1315','fAdo1618','fAdultes'].forEach(id=>document.getElementById(id).value='0');
+  document.getElementById('fAnnivAge').value='';
 }
 
 // ── AUTO TYPE ──────────────────────────────────────────────────────────────────
@@ -3464,6 +3535,15 @@ function onTypeChange(){
   autoUpdateType();
   updatePersMin();
   updateAgeGroupVisibility();
+  updateAnnivAgeVisibility();
+}
+// Champ « Âge de l'enfant fêté » : uniquement pour les anniversaires Laser
+const ANNIV_TYPES = ['t-anniv', 't-anniv3'];
+function updateAnnivAgeVisibility(){
+  const g = document.getElementById('fAnnivAgeGroup');
+  if(!g) return;
+  const type = document.getElementById('fType').value;
+  g.style.display = (currentView === 'laser' && ANNIV_TYPES.includes(type)) ? '' : 'none';
 }
 
 // ── AUTOCOMPLETE ─────────────────────────────────────────────────────────────
@@ -3777,6 +3857,7 @@ function confirmBooking(){
       if(sameNote && sameAges) finalComment = existing.comment;
     }
 
+    const annivAgeSaisi = (currentView === 'laser' && ANNIV_TYPES.includes(type)) ? (parseInt(document.getElementById('fAnnivAge').value) || null) : null;
     bookings[k]={
       tel, nom, mail, comment: finalComment, pers, type, pay,
       // Préserver les statuts opérationnels lors d'une modification
@@ -3784,8 +3865,16 @@ function confirmBooking(){
       present:   existing.present   || false,
       ...(existing.evcPart2 ? {evcPart2: true} : {}),
       ...(existing.vrBlock  ? {vrBlock: true, vrCol: existing.vrCol, vrStep: existing.vrStep} : {}),
+      ...(annivAgeSaisi ? {annivAge: annivAgeSaisi} : {}),
       ...ageFields
     };
+    // Même âge sur toutes les parties de cet anniversaire (même client, même jour)
+    if(annivAgeSaisi){
+      Object.entries(bookings).forEach(([kk, bb]) => {
+        const pp = kk.split('|');
+        if(pp[0] === 'laser' && pp[1] === date && bb && bb.tel === tel && ANNIV_TYPES.includes(bb.type)) bb.annivAge = annivAgeSaisi;
+      });
+    }
 
     // ── Offres Just Play (jeudi) / Afterwork (vendredi) : toutes les sessions ──
     if(offerPlan){
@@ -4186,6 +4275,7 @@ const AUTO_REASON_LABEL = {
   verif_capacite: '🛡️ Plus assez de places (ou de gilets) au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   verif_complet:  '🛡️ Plus de colonne ou de casque libre au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   verif_profil:   '🛡️ Groupe incompatible avec un groupe déjà placé sur ce créneau. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  verif_anniv:    '🛡️ Un autre anniversaire est au planning sur ce créneau (écart d\'âge de plus d\'1 an, ou âge inconnu). ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
 };
 const TYPE_LABEL_D = {
   't-particulier':'Particulier','t-groupe':'Groupe','t-anniv':'Anniversaire',
@@ -4618,6 +4708,7 @@ async function confirmModifierParStaff(){
           ...(d.ados1315    !== undefined ? {ados1315:    d.ados1315}    : {}),
           ...(d.ados1618    !== undefined ? {ados1618:    d.ados1618}    : {}),
           ...(d.adultes     !== undefined ? {adultes:     d.adultes}     : {}),
+          ...(parseInt(d.annivAge) ? {annivAge: parseInt(d.annivAge)} : {}),
           ...(d.groupId ? {groupId: d.groupId} : {})
         };
       });
@@ -4819,6 +4910,7 @@ async function accepterDemandeInner(ref){
           comment: dd.comment ? `[En ligne] ${dd.comment}` : '[Réservation en ligne]',
           pay: 'attente', confirmed: false, present: false,
           ...(dd.profil ? {profil: dd.profil} : {}),
+          ...(parseInt(dd.annivAge) ? {annivAge: parseInt(dd.annivAge)} : {}),
           ...(dd.groupId ? {groupId: dd.groupId} : {})
         };
       });
