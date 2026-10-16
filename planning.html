@@ -557,6 +557,18 @@ const DAYS = ["mar.","mer.","jeu.","ven.","sam.","dim."]; // mardi → dimanche 
 const PERIODS = { normale:"Période normale", vacances:"Vacances scolaires", ete:"Été" };
 const MODELS = { A:"Semaine A", B:"Semaine B", Ai:"Semaine A inversée", Bi:"Semaine B inversée" };
 const CYCLE = ["A","B","Ai","Bi"];
+/* Nom parlant d'un modèle, calculé à partir des horaires types de la période :
+   jours de repos de chaque agent + Boss au travail ou en repos le week-end.
+   Ex. « Mélodie repos dim. · Kélian repos mar. · Boss travaille le week-end ». */
+function modelLabel(period, model){
+  const t = TPL[period] && TPL[period][model[0]];
+  if (!t) return MODELS[model] || model;
+  const inv = model.endsWith("i"), J = ["mar.","mer.","jeu.","ven.","sam.","dim."];
+  const off = src => J.filter((_, i) => !t[src][i]).join(", ");
+  const ag = id => { const src = inv ? (id === "melodie" ? "kelian" : "melodie") : id, o = off(src); return `${id === "melodie" ? "Mélodie" : "Kélian"} ${o ? "repos " + o : "tous les jours"}`; };
+  const bossWE = t.boss[4] && t.boss[5];
+  return `${ag("melodie")} · ${ag("kelian")} · Boss ${bossWE ? "travaille" : "en repos"} le week-end`;
+}
 
 const OPEN = {
   normale:  [["17:00","21:00"],["14:00","20:00"],["17:00","21:00"],["17:00","22:15"],["14:00","22:15"],["14:00","19:00"]],
@@ -957,11 +969,11 @@ function renderWeek(monday, today){
   const periodLabel = period === "vacances" ? '<span class="pill vacances">🏖 Vacances scolaires</span>'
     : period === "ete" ? '<span class="pill ete">☀ Été</span>' : PERIODS[period];
   let head = `<h2>Semaine du ${monday.getDate()} ${monday.toLocaleDateString("fr-FR",{month:"short"})}</h2>
-    <span class="period">${hasData ? periodLabel + (isAdmin() && meta.model ? ", " + MODELS[meta.model].toLowerCase() : "") : "Pas encore rempli"}</span>`;
+    <span class="period">${hasData ? periodLabel + (isAdmin() && meta.model ? " · " + modelLabel(period, meta.model) : "") : "Pas encore rempli"}</span>`;
   if (isAdmin()) {
     head += `<div class="wkadmin">
       <select data-k="period" aria-label="Période">${Object.entries(PERIODS).map(([k,v]) => `<option value="${k}" ${k===period?"selected":""}>${v}</option>`).join("")}</select>
-      <select data-k="model" aria-label="Modèle">${Object.entries(MODELS).map(([k,v]) => `<option value="${k}" ${k===(meta.model||"A")?"selected":""}>${v}</option>`).join("")}</select>
+      <select data-k="model" aria-label="Modèle">${Object.entries(MODELS).map(([k,v]) => `<option value="${k}" ${k===(meta.model||"A")?"selected":""}>${modelLabel(period, k)}</option>`).join("")}</select>
       <button type="button" data-a="apply">Appliquer le modèle</button>
       <button type="button" data-a="clear">Vider la semaine</button>
       <button type="button" data-a="swap" title="Échange les cases de Mélodie et de Kélian sur toute la semaine (horaires, repos, absences, notes), sans toucher au Boss">Intervertir Mélodie ⇄ Kélian</button>
@@ -1443,6 +1455,8 @@ $("genGo").onclick = async () => {
 $("btnCycle").onclick = () => {
   const c = data.config || {};
   $("cycDate").value = c.anchor || "";
+  // Noms parlants (horaires types de la période scolaire)
+  $("cycModel").querySelectorAll("option").forEach(op => op.textContent = modelLabel("normale", op.value));
   $("cycModel").value = c.model || "Bi";
   $("cycHolidays").innerHTML = holidays().map(([a,b,n]) => `${n} : du ${new Date(a+"T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(b+"T12:00:00").toLocaleDateString("fr-FR")}`).join("<br>") + "<br>Été : semaines de juillet et août.<br><i>Modifiables dans « Paramètres d'ouverture ».</i>";
   $("cycErr").textContent = "";
