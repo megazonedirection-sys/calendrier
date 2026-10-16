@@ -485,7 +485,7 @@ dialog h4{font-family:"Chakra Petch",sans-serif;margin:1.1rem 0 .3rem;font-size:
 
 <dialog id="dlgHours" class="wide">
   <h3>Horaires des tâches</h3>
-  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». « Seulement pendant les parties laser » : la tâche n'apparaît que pendant les réservations laser (De / À ignorés). « Répéter » crée un passage à cocher à chaque intervalle dans la plage (lavage des tables, vérification fumée…). Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée.</p>
+  <p class="period" style="margin:0">Pour chaque tâche, la plage pendant laquelle les agents peuvent la cocher, calculée automatiquement chaque jour. Ouverture / fermeture : horaires du centre du jour. Arrivée / départ agents : première prise de service et dernier départ dans le planning (à défaut, horaires du centre). Exemple : de « Arrivée agents pile » à « Ouverture centre pile ». « Seulement pendant les parties laser » : la tâche n'apparaît que pendant les réservations laser (De / À ignorés). « Répéter » crée un passage à cocher à chaque intervalle dans la plage (lavage des tables, vérification fumée…). Avant : grisée. Après : « Non faite ». Le Boss peut toujours valider, à toute heure. Sans plage, la tâche est cochable toute la journée. « Poste » : à qui la tâche est attribuée. Laser = l'agent qui tient le laser à ce moment-là ; Caisse / bar = la personne en caisse (le Boss s'il est là) ; Salle = l'agent hors laser avec le Boss + 2 agents, le Boss s'il n'y a qu'un agent, l'agent en caisse sans le Boss ; Ménage = à tour de rôle entre les agents, inversé chaque jour (jamais le Boss). Les tâches de ménage du même groupe vont toujours au même agent (ex. WC + lavage entrée).</p>
   <div id="hrList"></div>
   <div class="err" id="hrErr"></div>
   <div class="actions">
@@ -1508,42 +1508,81 @@ function tasksFor(key){
   if (dayOpen(key)) {
     const i = dayIndex(key), dom = +key.slice(8);
     Object.entries(T.catalogue || {}).forEach(([id, t]) => {
-      if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz });
+      if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr });
     });
   }
-  Object.entries((T.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz }); });
+  Object.entries((T.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr }); });
   return list.sort((a, b) => "osf".indexOf(a.m) - "osf".indexOf(b.m) || a.o - b.o || (a.win ? a.win.d : 0) - (b.win ? b.win.d : 0));
 }
-/* Attribution des tâches aux agents, à tour de rôle (calcul identique dans
-   calendrier.html : assignCore). Tâches rangées par moment, ordre, identifiant,
-   attribuées en alternance ; l'agent qui commence change chaque jour. Seuls
-   les agents présents à l'heure de la tâche comptent ; une tâche répétée garde
-   le même agent pour tous ses passages. Le Boss est hors rotation. Indicatif :
-   n'importe quel agent peut cocher (le suivi signale « à la place de »). */
-function assignCore(dayKey, list, shifts, refTime){
-  const out = {};
-  if (!shifts.length) return out;
+/* Attribution des tâches (calcul identique dans planning.html et calendrier.html :
+   rolesAt + assignCore). Chaque tâche a une catégorie (ps), réglée dans
+   « Horaires des tâches » :
+   - l = Laser : l'agent qui tient le laser à l'heure de la tâche ;
+   - c = Caisse / bar : la personne en caisse (le Boss s'il est là, sinon
+     l'agent qui n'est pas au laser) ;
+   - s = Salle : Boss + 2 → l'agent hors laser ; Boss + 1 → le Boss ;
+     sans Boss → l'agent en caisse ;
+   - m (ou rien) = Ménage : à tour de rôle entre les agents, inversé chaque jour.
+     Le Boss ne fait jamais le ménage. Les tâches du même groupe (gr) vont au
+     même agent ; une tâche répétée garde le même agent pour tous ses passages.
+   Qui tient le laser : mêmes règles que les « Postes du jour » (tranches de 2 h
+   avec le Boss, moitié de vacation sans lui), hors passages en VR.
+   Indicatif : tout le monde peut cocher (« en renfort »). */
+function rolesAt(ctx, t){
+  const ag = ctx.shifts.filter(([, s, e]) => s <= t && t <= e).map(x => x[0]);
+  let laser = null, caisse = null, salle = null;
+  if (ag.length >= 2) {
+    const tt = Math.max(t, ctx.o);
+    const part = ctx.bossOn ? Math.floor((tt - ctx.o) / 120) : (ctx.mid != null && t >= ctx.mid ? 1 : 0);
+    laser = ag[(part + ctx.parity) % 2];
+    const autre = ag.find(x => x !== laser);
+    caisse = ctx.bossOn ? "boss" : autre; salle = autre;
+  } else if (ag.length === 1) {
+    laser = ag[0]; caisse = salle = ctx.bossOn ? "boss" : ag[0];
+  } else if (ctx.bossOn) laser = caisse = salle = "boss";
+  return { laser, caisse, salle, ag };
+}
+function assignCore(dayKey, list, ctx, refTime){
+  const out = {}, units = {};
   const ids = ["melodie", "kelian"];
-  const at = t => t == null ? shifts.map(x => x[0]) : shifts.filter(([, s, e]) => s <= t && t <= e).map(x => x[0]);
-  const bases = {};
-  list.forEach(t => { const b = String(t.id).split("~")[0]; (bases[b] = bases[b] || []).push(t); });
-  const order = Object.keys(bases).sort((a, b) => {
-    const x = bases[a][0], y = bases[b][0];
-    return ("osf".indexOf(x.m || "s") - "osf".indexOf(y.m || "s")) || ((x.o || 0) - (y.o || 0)) || (a < b ? -1 : a > b ? 1 : 0);
+  const cmp = (x, y) => ("osf".indexOf(x.m || "s") - "osf".indexOf(y.m || "s")) || ((x.o || 0) - (y.o || 0)) || (String(x.id) < String(y.id) ? -1 : String(x.id) > String(y.id) ? 1 : 0);
+  list.forEach(t => {
+    const ps = t.ps || "m";
+    if (ps !== "m") {
+      const tt = refTime(t), R = rolesAt(ctx, tt == null ? ctx.o : tt);
+      const who = ps === "l" ? R.laser : ps === "c" ? R.caisse : R.salle;
+      if (who) out[t.id] = who;
+      return;
+    }
+    const u = t.gr ? "g" + t.gr : String(t.id).split("~")[0];
+    (units[u] = units[u] || []).push(t);
   });
+  if (!ctx.shifts.length) return out;
+  const at = t => t == null ? ctx.shifts.map(x => x[0]) : ctx.shifts.filter(([, s, e]) => s <= t && t <= e).map(x => x[0]);
+  Object.values(units).forEach(a => a.sort(cmp));
+  const order = Object.keys(units).sort((a, b) => cmp(units[a][0], units[b][0]));
   const dn = Math.round(new Date(dayKey + "T12:00:00").getTime() / 86400000);
-  order.forEach((b, i) => {
+  order.forEach((u, i) => {
     const pref = ids[(i + dn) % 2], other = ids[(i + dn + 1) % 2];
     const pick = t => { const here = at(t); return here.includes(pref) ? pref : here.includes(other) ? other : null; };
-    const def = pick(refTime(bases[b][0])) || pick(null);
+    const def = pick(refTime(units[u][0])) || pick(null);
     if (!def) return;
-    bases[b].forEach(t => { const here = at(refTime(t)); out[t.id] = here.includes(def) ? def : (here[0] || def); });
+    units[u].forEach(t => { const here = at(refTime(t)); out[t.id] = here.includes(def) ? def : (here[0] || def); });
   });
   return out;
 }
-function assignFor(key){
+function taskCtx(key){
   const shifts = AGENTS.map(p => [p.id, entry(key, p.id)]).filter(([, e]) => enService(e) && e.s && e.e).map(([id, e]) => [id, toMin(e.s), toMin(e.e)]);
-  return assignCore(key, tasksFor(key), shifts, t => { const p = plage(key, t); return p.d != null ? p.d : p.a != null ? p.a : null; });
+  const info = entry(key, "_info"), h = dayOpen(key), opens = [];
+  if (h) opens.push(toMin(h[0]));
+  if (info && info.o && info.c) opens.push(toMin(info.o));
+  let mid = null;
+  if (shifts.length === 2) { const s0 = Math.max(shifts[0][1], shifts[1][1]), e0 = Math.min(shifts[0][2], shifts[1][2]); if (e0 > s0) mid = Math.round((s0 + e0) / 2 / 15) * 15; }
+  return { shifts, bossOn: enService(entry(key, "boss")), o: opens.length ? Math.min(...opens) : 0,
+    parity: Math.round(new Date(key + "T12:00:00").getTime() / 86400000) % 2, mid };
+}
+function assignFor(key){
+  return assignCore(key, tasksFor(key), taskCtx(key), t => { const p = plage(key, t); return p.d != null ? p.d : p.a != null ? p.a : null; });
 }
 /* Tâche répétée (rp = intervalle en minutes) : un passage par intervalle dans la plage,
    par défaut de l'ouverture à la fermeture du centre. Chaque passage est cochable
@@ -1693,7 +1732,7 @@ function renderTasks(){
     const cls = st === "done" ? "done" : st === "late" ? "missed" : st === "early" ? "early" : "";
     const pr = pour[t.id];
     const right = r
-      ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "…"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}${pr && r.qui !== pr ? `<span class="flag">à la place de ${esc(pname(pr))}</span>` : ""}</span>`
+      ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "…"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}${pr && r.qui !== pr ? `<span class="flag">en renfort</span>` : ""}</span>`
       : st === "late" ? `<span class="who" style="color:var(--bad)">Non faite${motifOf(today, t.id) ? `<span class="tc" style="color:var(--bad)">motif (${esc(pname(motifOf(today, t.id).qui))}) : « ${esc(motifOf(today, t.id).c || "—")} »</span>` : ""}</span>`
       : st === "early" ? `<span class="who" style="color:var(--muted)">dispo à ${fmtMin(p.d)}</span>`
       : p.a != null ? `<span class="who" style="color:var(--warn)">avant ${fmtMin(p.a)}</span>` : "";
@@ -2047,6 +2086,8 @@ $("taSave").onclick = async () => {
     if (old.pa) catalogue[r.dataset.id].pa = old.pa;
     if (old.rp) catalogue[r.dataset.id].rp = old.rp;
     if (old.lz) catalogue[r.dataset.id].lz = old.lz;
+    if (old.ps) catalogue[r.dataset.id].ps = old.ps;
+    if (old.gr) catalogue[r.dataset.id].gr = old.gr;
   }
   // Les tâches ponctuelles passées sont conservées (historique)
   const today = iso(new Date());
@@ -2062,6 +2103,8 @@ $("taSave").onclick = async () => {
     if (oldP.pa) np.pa = oldP.pa;
     if (oldP.rp) np.rp = oldP.rp;
     if (oldP.lz) np.lz = oldP.lz;
+    if (oldP.ps) np.ps = oldP.ps;
+    if (oldP.gr) np.gr = oldP.gr;
     (ponctuelles[dt] = ponctuelles[dt] || {})[r.dataset.id] = np;
   }
   const up = { catalogue, ponctuelles };
@@ -2118,12 +2161,14 @@ function boundPicker(cls, spec){
     <select class="${cls}o" aria-label="Décalage">${OFFSETS.map(m => `<option value="${m}"${m === (+off || 0) ? " selected" : ""}>${offLabel(m)}</option>`).join("")}</select>`;
 }
 const REPEATS = [0, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180, 240];
+const PS_LABELS = { m:"Ménage (à tour de rôle)", l:"Laser", c:"Caisse / bar", s:"Salle" };
 const readBound = (row, cls) => { const r = row.querySelector(`.${cls}r`).value; return r ? `${r}:${row.querySelector(`.${cls}o`).value}` : null; };
 function hoursPreview(row){
   const today = iso(new Date()), R = dayRefs(today);
   const t = { pd: readBound(row, "hd"), pa: readBound(row, "ha"), rp: +row.querySelector(".hrp").value, lz: row.querySelector(".hlz").checked };
   const prev = row.querySelector(".hprev");
   row.querySelectorAll(".hdr,.hdo,.har,.hao").forEach(x => x.disabled = t.lz);
+  row.querySelector(".hgr").disabled = row.querySelector(".hps").value !== "m";
   if (t.lz) {
     const occ = occurrences(today, t), nb = laserBlocks(today).length;
     prev.textContent = !nb ? "Aujourd'hui : aucune partie laser réservée → pas de passage."
@@ -2153,7 +2198,9 @@ $("btnTasksHours").onclick = () => {
       <span class="hn">${esc(x.t.n)}<small>${esc(x.sub)}</small></span>
       <span class="hsel">De ${boundPicker("hd", x.t.pd)} à ${boundPicker("ha", x.t.pa)}
         · <label style="display:inline-flex;align-items:center;gap:.25rem;margin:0;font-size:.85rem;color:inherit"><input type="checkbox" class="hlz" style="width:auto;margin:0"${x.t.lz ? " checked" : ""}>Seulement pendant les parties laser</label>
-        · Répéter <select class="hrp" aria-label="Répéter">${REPEATS.map(m => `<option value="${m}"${m === (+x.t.rp || 0) ? " selected" : ""}>${m ? "toutes les " + offLabel(m).replace("+", "") : "non"}</option>`).join("")}</select></span>
+        · Répéter <select class="hrp" aria-label="Répéter">${REPEATS.map(m => `<option value="${m}"${m === (+x.t.rp || 0) ? " selected" : ""}>${m ? "toutes les " + offLabel(m).replace("+", "") : "non"}</option>`).join("")}</select>
+        · Poste <select class="hps" aria-label="Poste">${Object.entries(PS_LABELS).map(([k, l]) => `<option value="${k}"${k === (x.t.ps || "m") ? " selected" : ""}>${l}</option>`).join("")}</select>
+        <select class="hgr" aria-label="Groupe (ménage)" title="Ménage : les tâches du même groupe vont au même agent">${["", "1", "2", "3", "4", "5"].map(g => `<option value="${g}"${g === String(x.t.gr || "") ? " selected" : ""}>${g ? "groupe " + g : "sans groupe"}</option>`).join("")}</select></span>
       <span class="hprev"></span></div>`).join("")
     : `<p class="period">Aucune tâche : créez-les d'abord dans « Gérer les tâches ».</p>`);
   $("hrList").querySelectorAll(".hrow").forEach(row => { hoursPreview(row); row.addEventListener("change", () => hoursPreview(row)); });
@@ -2175,6 +2222,9 @@ $("hrSave").onclick = async () => {
     up[`${row.dataset.path}/pa`] = pa;
     up[`${row.dataset.path}/rp`] = +row.querySelector(".hrp").value || null;
     up[`${row.dataset.path}/lz`] = row.querySelector(".hlz").checked || null;
+    const ps = row.querySelector(".hps").value;
+    up[`${row.dataset.path}/ps`] = ps === "m" ? null : ps;
+    up[`${row.dataset.path}/gr`] = ps === "m" ? (row.querySelector(".hgr").value || null) : null;
   }
   if (await write(() => update(ref(db, "taches"), up))) $("dlgHours").close();
 };
@@ -2194,7 +2244,7 @@ async function loadSuivi(key){
   else $("svDay").innerHTML = list.map(t => {
     const r = fait[t.id], fl = flags(key, t, r);
     return `<div class="svday"><span>${esc(t.n)}${r && r.c ? `<span class="tc" style="display:block;font-size:.78rem;color:var(--muted)">« ${esc(r.c)} »</span>` : ""}</span>
-      ${r ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "?"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}${pour[t.id] && r.qui !== pour[t.id] ? `<span class="flag">à la place de ${esc(pname(pour[t.id]))}</span>` : ""}</span>`
+      ${r ? `<span class="who ${esc(r.qui)}">${esc(pname(r.qui))} · ${r.t ? hhmm(new Date(r.t)) : "?"}${fl.map(f => `<span class="flag">${esc(f)}</span>`).join("")}${pour[t.id] && r.qui !== pour[t.id] ? `<span class="flag">en renfort (prévue pour ${esc(pname(pour[t.id]))})</span>` : ""}</span>`
           : `<span class="ko">${key <= iso(new Date()) ? "Non faite" : "À venir"}${pour[t.id] ? ` (prévue pour ${esc(pname(pour[t.id]))})` : ""}${motifOf(key, t.id) ? `<span style="display:block;font-size:.76rem">motif (${esc(pname(motifOf(key, t.id).qui))}) : « ${esc(motifOf(key, t.id).c || "—")} »</span>` : ""}${tr[t.id] ? `<span style="display:block;font-size:.76rem;color:var(--muted)">traité${tr[t.id].c ? ` : « ${esc(tr[t.id].c)} »` : ""}</span>` : ""}</span>`}</div>`;
   }).join("");
   loadSuiviMonth(key.slice(0, 7));

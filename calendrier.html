@@ -5129,7 +5129,7 @@ if ('serviceWorker' in navigator) {
 #tk .it .bx:hover{border-color:#22c55e}
 #tk .it .nm{flex:1;line-height:1.3}
 #tk .it .nm small{display:block;color:#94a3b8;font-size:11px}
-#tk .pour{font-weight:800} #tk .pour.melodie{color:#ff8cc2} #tk .pour.kelian{color:#c4a6ff}
+#tk .pour{font-weight:800} #tk .pour.melodie{color:#ff8cc2} #tk .pour.kelian{color:#c4a6ff} #tk .pour.boss{color:#8cc6ff}
 #tk .it.lt{background:rgba(239,68,68,.14)}
 #tk .it.lt .nm{color:#fecaca}
 #tk .it.lt .nm small{color:#fca5a5}
@@ -5225,42 +5225,81 @@ if ('serviceWorker' in navigator) {
     if (centreHours(key)) {
       const i = (new Date(key + "T12:00:00").getDay() + 5) % 7, dom = +key.slice(8);
       Object.entries(S.catalogue || {}).forEach(([id, t]) => {
-        if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz });
+        if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr });
       });
     }
-    Object.entries((S.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz }); });
+    Object.entries((S.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr }); });
     return list;
   }
-  /* Attribution des tâches aux agents, à tour de rôle (calcul identique dans
-     planning.html : assignCore). Tâches rangées par moment, ordre, identifiant,
-     attribuées en alternance ; l'agent qui commence change chaque jour. Seuls
-     les agents présents à l'heure de la tâche comptent ; une tâche répétée garde
-     le même agent pour tous ses passages. Le Boss est hors rotation. Indicatif :
-     n'importe quel agent peut cocher. */
-  function assignCore(dayKey, list, shifts, refTime){
-    const out = {};
-    if (!shifts.length) return out;
+  /* Attribution des tâches (calcul identique dans planning.html et calendrier.html :
+     rolesAt + assignCore). Chaque tâche a une catégorie (ps), réglée dans
+     « Horaires des tâches » :
+     - l = Laser : l'agent qui tient le laser à l'heure de la tâche ;
+     - c = Caisse / bar : la personne en caisse (le Boss s'il est là, sinon
+       l'agent qui n'est pas au laser) ;
+     - s = Salle : Boss + 2 → l'agent hors laser ; Boss + 1 → le Boss ;
+       sans Boss → l'agent en caisse ;
+     - m (ou rien) = Ménage : à tour de rôle entre les agents, inversé chaque jour.
+       Le Boss ne fait jamais le ménage. Les tâches du même groupe (gr) vont au
+       même agent ; une tâche répétée garde le même agent pour tous ses passages.
+     Qui tient le laser : mêmes règles que les « Postes du jour » (tranches de 2 h
+     avec le Boss, moitié de vacation sans lui), hors passages en VR.
+     Indicatif : tout le monde peut cocher (« en renfort »). */
+  function rolesAt(ctx, t){
+    const ag = ctx.shifts.filter(([, s, e]) => s <= t && t <= e).map(x => x[0]);
+    let laser = null, caisse = null, salle = null;
+    if (ag.length >= 2) {
+      const tt = Math.max(t, ctx.o);
+      const part = ctx.bossOn ? Math.floor((tt - ctx.o) / 120) : (ctx.mid != null && t >= ctx.mid ? 1 : 0);
+      laser = ag[(part + ctx.parity) % 2];
+      const autre = ag.find(x => x !== laser);
+      caisse = ctx.bossOn ? "boss" : autre; salle = autre;
+    } else if (ag.length === 1) {
+      laser = ag[0]; caisse = salle = ctx.bossOn ? "boss" : ag[0];
+    } else if (ctx.bossOn) laser = caisse = salle = "boss";
+    return { laser, caisse, salle, ag };
+  }
+  function assignCore(dayKey, list, ctx, refTime){
+    const out = {}, units = {};
     const ids = ["melodie", "kelian"];
-    const at = t => t == null ? shifts.map(x => x[0]) : shifts.filter(([, s, e]) => s <= t && t <= e).map(x => x[0]);
-    const bases = {};
-    list.forEach(t => { const b = String(t.id).split("~")[0]; (bases[b] = bases[b] || []).push(t); });
-    const order = Object.keys(bases).sort((a, b) => {
-      const x = bases[a][0], y = bases[b][0];
-      return ("osf".indexOf(x.m || "s") - "osf".indexOf(y.m || "s")) || ((x.o || 0) - (y.o || 0)) || (a < b ? -1 : a > b ? 1 : 0);
+    const cmp = (x, y) => ("osf".indexOf(x.m || "s") - "osf".indexOf(y.m || "s")) || ((x.o || 0) - (y.o || 0)) || (String(x.id) < String(y.id) ? -1 : String(x.id) > String(y.id) ? 1 : 0);
+    list.forEach(t => {
+      const ps = t.ps || "m";
+      if (ps !== "m") {
+        const tt = refTime(t), R = rolesAt(ctx, tt == null ? ctx.o : tt);
+        const who = ps === "l" ? R.laser : ps === "c" ? R.caisse : R.salle;
+        if (who) out[t.id] = who;
+        return;
+      }
+      const u = t.gr ? "g" + t.gr : String(t.id).split("~")[0];
+      (units[u] = units[u] || []).push(t);
     });
+    if (!ctx.shifts.length) return out;
+    const at = t => t == null ? ctx.shifts.map(x => x[0]) : ctx.shifts.filter(([, s, e]) => s <= t && t <= e).map(x => x[0]);
+    Object.values(units).forEach(a => a.sort(cmp));
+    const order = Object.keys(units).sort((a, b) => cmp(units[a][0], units[b][0]));
     const dn = Math.round(new Date(dayKey + "T12:00:00").getTime() / 86400000);
-    order.forEach((b, i) => {
+    order.forEach((u, i) => {
       const pref = ids[(i + dn) % 2], other = ids[(i + dn + 1) % 2];
       const pick = t => { const here = at(t); return here.includes(pref) ? pref : here.includes(other) ? other : null; };
-      const def = pick(refTime(bases[b][0])) || pick(null);
+      const def = pick(refTime(units[u][0])) || pick(null);
       if (!def) return;
-      bases[b].forEach(t => { const here = at(refTime(t)); out[t.id] = here.includes(def) ? def : (here[0] || def); });
+      units[u].forEach(t => { const here = at(refTime(t)); out[t.id] = here.includes(def) ? def : (here[0] || def); });
     });
     return out;
   }
-  function assignToday(list){
+  function taskCtx(){
     const shifts = AGENTS.map(id => [id, S.day[id]]).filter(([, e]) => enService(e) && e.s && e.e).map(([id, e]) => [id, minT(e.s), minT(e.e)]);
-    return assignCore(day, list, shifts, t => { const p = plage(t); return p.d != null ? p.d : p.a != null ? p.a : null; });
+    const info = S.day._info || {}, h = centreHours(day), opens = [];
+    if (h) opens.push(h[0]);
+    if (info.o && info.c) opens.push(minT(info.o));
+    let mid = null;
+    if (shifts.length === 2) { const s0 = Math.max(shifts[0][1], shifts[1][1]), e0 = Math.min(shifts[0][2], shifts[1][2]); if (e0 > s0) mid = Math.round((s0 + e0) / 2 / 15) * 15; }
+    return { shifts, bossOn: enService(S.day.boss), o: opens.length ? Math.min(...opens) : 0,
+      parity: Math.round(new Date(day + "T12:00:00").getTime() / 86400000) % 2, mid };
+  }
+  function assignToday(list){
+    return assignCore(day, list, taskCtx(), t => { const p = plage(t); return p.d != null ? p.d : p.a != null ? p.a : null; });
   }
   let POUR = {};
   function plage(t){
