@@ -5326,7 +5326,7 @@ if ('serviceWorker' in navigator) {
     if (centreHours(key)) {
       const i = (new Date(key + "T12:00:00").getDay() + 5) % 7, dom = +key.slice(8);
       Object.entries(S.catalogue || {}).forEach(([id, t]) => {
-        if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr });
+        if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7) && (!t.cr || t.cr <= key)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr });
       });
     }
     Object.entries((S.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr }); });

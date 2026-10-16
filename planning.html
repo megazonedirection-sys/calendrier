@@ -1508,7 +1508,8 @@ function tasksFor(key){
   if (dayOpen(key)) {
     const i = dayIndex(key), dom = +key.slice(8);
     Object.entries(T.catalogue || {}).forEach(([id, t]) => {
-      if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr });
+      // cr = date de création : une tâche ajoutée n'existe (et ne compte comme « non faite ») qu'à partir de ce jour
+      if (t && t.n && t.j && t.j[i] === "1" && (t.f !== "m" || dom <= 7) && (!t.cr || t.cr <= key)) pushTask(list, key, { id, n:t.n, m:t.m || "s", o:t.o || 0, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr });
     });
   }
   Object.entries((T.ponct || {})[key] || {}).forEach(([id, t]) => { if (t && t.n) pushTask(list, key, { id:"p_" + id, n:t.n, m:t.m || "s", o:1000, pd:t.pd, pa:t.pa, rp:t.rp, lz:t.lz, ps:t.ps, gr:t.gr }); });
@@ -2093,6 +2094,9 @@ $("taSave").onclick = async () => {
     if (!j.includes("1")) { $("taErr").textContent = `« ${n} » : cochez au moins un jour.`; return; }
     const old = (T.catalogue || {})[r.dataset.id] || {};
     catalogue[r.dataset.id] = { n, m: r.querySelector(".tm").value, j, f: r.querySelector(".tf").value, o: o++ };
+    // Date de création : conservée pour une tâche existante, aujourd'hui pour une nouvelle
+    if (old.cr) catalogue[r.dataset.id].cr = old.cr;
+    else if (!(T.catalogue || {})[r.dataset.id]) catalogue[r.dataset.id].cr = iso(new Date());
     if (old.pd) catalogue[r.dataset.id].pd = old.pd;
     if (old.pa) catalogue[r.dataset.id].pa = old.pa;
     if (old.rp) catalogue[r.dataset.id].rp = old.rp;
