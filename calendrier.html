@@ -1033,7 +1033,7 @@ auth.onAuthStateChanged(user => {
   // domaine) ne doit jamais être considérée comme une connexion staff valide.
   if(user && !user.isAnonymous){
     document.getElementById('loginOverlay').classList.add('hidden');
-    migrateSlots().then(() => { initFirebaseSync(); purgeDemandesTraiteesPassees(); });
+    migrateSlots().then(() => { initFirebaseSync(); purgeDemandesTraiteesPassees(); purgeOldBackups(); });
   } else {
     document.getElementById('loginOverlay').classList.remove('hidden');
     // Détacher le listener si existant
@@ -2398,9 +2398,10 @@ async function saveBookings(){
   }
 
   setSyncDot('syncing');
-  // Sauvegarde de sécurité de l'état précédent (inchangé par rapport à avant)
+  // Sauvegarde de sécurité de l'état précédent : au plus UNE par heure
+  // (avant : une copie complète à chaque clic, ce qui saturait la base)
   if(oldCount > 0){
-    db.ref(`backups_bookings/${Date.now()}`).set(base).catch(()=>{});
+    sauvegardeHoraire(base);
     purgeOldBackups();
   }
   try {
@@ -2415,17 +2416,48 @@ async function saveBookings(){
   // temps réel dès que le serveur confirme le changement.
 }
 
-// Purge les sauvegardes horodatées de plus de 7 jours (fire-and-forget,
-// n'empêche jamais la sauvegarde principale en cas d'échec).
-function purgeOldBackups(){
-  const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  db.ref('backups_bookings').once('value').then(snap => {
-    const data = snap.val() || {};
-    Object.keys(data).forEach(ts => {
-      const t = parseInt(ts, 10);
-      if (!isNaN(t) && t < limite) db.ref(`backups_bookings/${ts}`).remove().catch(()=>{});
-    });
-  }).catch(()=>{});
+// ── SAUVEGARDES (correction du 21/10/2026, quota Firebase) ──
+// Avant : une copie complète des réservations à CHAQUE modification, puis
+// téléchargement de TOUTES les copies pour supprimer les anciennes → quota
+// de la base dépassé. Désormais :
+// - au plus une sauvegarde par heure (clé = début de l'heure), tous postes
+//   confondus : la première modification de l'heure enregistre l'état
+//   d'avant, les suivantes ne copient plus rien ;
+// - nettoyage une fois par jour et par poste, en ne lisant que la LISTE des
+//   sauvegardes (pas leur contenu), puis suppression de celles de + de 7 jours.
+const LS_DERNIERE_SAUVEGARDE = 'gz_derniereSauvegardeHeure';
+const LS_DERNIERE_PURGE      = 'gz_dernierePurgeSauvegardes';
+function sauvegardeHoraire(base){
+  const heure = Math.floor(Date.now() / 3600000) * 3600000;
+  try { if(localStorage.getItem(LS_DERNIERE_SAUVEGARDE) === String(heure)) return; } catch(e){}
+  try { localStorage.setItem(LS_DERNIERE_SAUVEGARDE, String(heure)); } catch(e){}
+  // N'écrit que si aucun poste n'a déjà sauvegardé cette heure-ci
+  db.ref(`backups_bookings/${heure}`).transaction(cur => cur === null ? base : undefined, undefined, false)
+    .catch(e => console.warn('Sauvegarde horaire :', e));
+}
+async function listeClesSauvegardes(){
+  // Lecture « shallow » : renvoie seulement les noms des sauvegardes (quelques octets)
+  const user = auth.currentUser;
+  if(!user) throw new Error('Non connecté');
+  const token = await user.getIdToken();
+  const r = await fetch(`${firebaseConfig.databaseURL}/backups_bookings.json?shallow=true&auth=${encodeURIComponent(token)}`);
+  if(!r.ok) throw new Error('Lecture de la liste refusée (' + r.status + ')');
+  return Object.keys((await r.json()) || {});
+}
+async function purgeOldBackups(force){
+  const jour = fmtDate(new Date());
+  try { if(!force && localStorage.getItem(LS_DERNIERE_PURGE) === jour) return; } catch(e){}
+  try {
+    const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const aSupprimer = (await listeClesSauvegardes()).filter(ts => { const t = parseInt(ts, 10); return !isNaN(t) && t < limite; });
+    for(let i = 0; i < aSupprimer.length; i += 200){
+      const up = {};
+      aSupprimer.slice(i, i + 200).forEach(ts => { up[ts] = null; });
+      await db.ref('backups_bookings').update(up);
+    }
+    try { localStorage.setItem(LS_DERNIERE_PURGE, jour); } catch(e){}
+    if(aSupprimer.length) console.log(`Sauvegardes : ${aSupprimer.length} ancienne(s) supprimée(s).`);
+  } catch(e) { console.warn('Nettoyage des sauvegardes :', e); }
 }
 
 // Supprime les demandes déjà TRAITÉES (validées ou refusées — jamais celles
@@ -2463,18 +2495,16 @@ setInterval(purgeDemandesTraiteesPassees, 30 * 60 * 1000);
 
 // ── OUTILS DE SECOURS (à utiliser depuis la console du navigateur en cas de
 // besoin, ex: après une perte de données accidentelle) ──────────────────────
-// listerSauvegardes() : affiche les sauvegardes disponibles avec leur date et
-// le nombre de réservations qu'elles contiennent.
+// listerSauvegardes() : affiche les sauvegardes disponibles avec leur date
+// (liste seule, sans télécharger leur contenu).
 // restaurerSauvegarde(timestamp) : restaure une sauvegarde précise (le
 // timestamp exact affiché par listerSauvegardes()) à la place des
 // réservations actuelles, après confirmation.
 async function listerSauvegardes(){
-  const snap = await db.ref('backups_bookings').once('value');
-  const data = snap.val() || {};
-  const liste = Object.keys(data).sort((a,b) => b - a).map(ts => ({
+  const cles = await listeClesSauvegardes();
+  const liste = cles.sort((a,b) => b - a).map(ts => ({
     timestamp: ts,
-    date: new Date(parseInt(ts,10)).toLocaleString('fr-FR'),
-    nbReservations: Object.keys(data[ts] || {}).length
+    date: new Date(parseInt(ts,10)).toLocaleString('fr-FR')
   }));
   console.table(liste);
   console.log('Pour restaurer une sauvegarde : restaurerSauvegarde("TIMESTAMP") avec le timestamp exact ci-dessus.');
