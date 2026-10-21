@@ -1816,15 +1816,23 @@ function verifierDemandeAuto(d){
   if(act === 'laser'){
     let used = 0;
     const catsPresentes = [];
+    const monAnniv = d.activiteLabel === 'Forfait Anniversaire';
+    const mesTranches = tranchesPresentes(d.enfants79, d.enfants1012, d.ados1315, d.ados1618, d.adultes);
+    let compoAnnivDifferente = false;
     Object.entries(bookings).forEach(([k, b]) => {
       const p = k.split('|');
       if(!b || p[0] !== 'laser' || p[1] !== date || p[2] !== time) return;
       used += parseInt(b.pers) || 0;
-      if(!NO_PERS_TYPES.includes(b.type)) catsPresentes.push(computeCategories(b.enfants79, b.enfants1012, b.ados1315, b.ados1618, b.adultes));
+      if(NO_PERS_TYPES.includes(b.type)) return;
+      catsPresentes.push(computeCategories(b.enfants79, b.enfants1012, b.ados1315, b.ados1618, b.adultes));
+      // Règle anniversaire : mêmes tranches d'âge exactement
+      if((monAnniv || ANNIV_TYPES.includes(b.type)) &&
+         tranchesPresentes(b.enfants79, b.enfants1012, b.ados1315, b.ados1618, b.adultes) !== mesTranches) compoAnnivDifferente = true;
     });
     if(used + pers > MAX_VESTS) return 'verif_capacite';
     const miennes = computeCategories(d.enfants79, d.enfants1012, d.ados1315, d.ados1618, d.adultes);
     if(catsPresentes.some(c => !c.some(x => miennes.includes(x)))) return 'verif_profil';
+    if(compoAnnivDifferente) return 'verif_anniv_compo';
     // Forfait Anniversaire : un autre anniversaire déjà au planning sur cette
     // partie → écart d'âge max 1 an ; âge inconnu → validation manuelle.
     if(d.activiteLabel === 'Forfait Anniversaire'){
@@ -2174,6 +2182,36 @@ function computeCategories(enfants79, enfants1012, ados1315, ados1618, adultes){
   return cats.sort();
 }
 
+// ── Règle anniversaire (21/10/2026) ──
+// Dès qu'un anniversaire est en jeu sur une partie Laser (l'anniversaire
+// réservé, ou un anniversaire déjà au planning), l'auto-confirmation exige
+// EXACTEMENT les mêmes tranches d'âge présentes des deux côtés (Enf. 7-9,
+// Enf. 10-12, Ados 13-15, Ados 16-18, Adultes), sinon validation manuelle.
+// Répartition inconnue → aucune tranche → jamais identique → manuel.
+// Liste des tranches présentes, ex. "adulte+enf79" :
+function tranchesPresentes(enfants79, enfants1012, ados1315, ados1618, adultes){
+  const t = [];
+  if((parseInt(enfants79)||0) > 0)   t.push('enf79');
+  if((parseInt(enfants1012)||0) > 0) t.push('enf1012');
+  if((parseInt(ados1315)||0) > 0)    t.push('ado1315');
+  if((parseInt(ados1618)||0) > 0)    t.push('a1618');
+  if((parseInt(adultes)||0) > 0)     t.push('adulte');
+  return t.sort().join('+');
+}
+// Signature publiée dans dispo_profil : les catégories ci-dessus + des
+// repères pour la règle anniversaire : "a1618" (Ados 16-18 présents),
+// "adulte" (adultes présents), "anniv" (c'est un anniversaire).
+// Ces repères ne sont pas des catégories : la règle habituelle (au moins une
+// catégorie en commun) n'est pas modifiée.
+// Fonctions identiques dans resa-en-ligne.html.
+function computeProfilSignature(enfants79, enfants1012, ados1315, ados1618, adultes, isAnniv){
+  const t = computeCategories(enfants79, enfants1012, ados1315, ados1618, adultes);
+  if((parseInt(ados1618)||0) > 0) t.push('a1618');
+  if((parseInt(adultes)||0) > 0)  t.push('adulte');
+  if(isAnniv) t.push('anniv');
+  return t.sort().join('+');
+}
+
 // Calcule, pour chaque créneau Laser, la signature de catégories de CHAQUE
 // réservation qui y est présente (ex: "enf1012", "grand", "enf1012+ado1315")
 // — sans AUCUNE donnée personnelle. Sert au formulaire public à vérifier
@@ -2185,7 +2223,8 @@ function computeProfilFlagsFromBookings(bk){
     const parts = key.split('|');
     if(parts.length < 3 || parts[0] !== 'laser') return;
     const slotKeyStr = `${parts[0]}|${parts[1]}|${parts[2]}`;
-    const sig = computeCategories(b.enfants79, b.enfants1012, b.ados1315, b.ados1618, b.adultes).join('+');
+    if(!b) return;
+    const sig = computeProfilSignature(b.enfants79, b.enfants1012, b.ados1315, b.ados1618, b.adultes, ANNIV_TYPES.includes(b.type));
     if(!flags[slotKeyStr]) flags[slotKeyStr] = {};
     flags[slotKeyStr][sig] = true;
   });
@@ -4284,6 +4323,8 @@ const AUTO_REASON_LABEL = {
   verif_capacite: '🛡️ Plus assez de places (ou de gilets) au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   verif_complet:  '🛡️ Plus de colonne ou de casque libre au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   verif_profil:   '🛡️ Groupe incompatible avec un groupe déjà placé sur ce créneau. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  anniv_composition: '🎂 Anniversaire sur ce créneau : les tranches d\'âge ne sont pas exactement les mêmes que celles du groupe déjà placé (ou de l\'anniversaire déjà placé) — à valider manuellement.',
+  verif_anniv_compo: '🛡️ Anniversaire sur la même partie avec des tranches d\'âge différentes, bloqué par CalendIT. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   verif_anniv:    '🛡️ Un autre anniversaire est au planning sur ce créneau (écart d\'âge de plus d\'1 an, ou âge inconnu). ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
 };
 const TYPE_LABEL_D = {
