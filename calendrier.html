@@ -1830,6 +1830,9 @@ function verifierDemandeAuto(d){
          tranchesPresentes(b.enfants79, b.enfants1012, b.ados1315, b.ados1618, b.adultes) !== mesTranches) compoAnnivDifferente = true;
     });
     if(used + pers > MAX_VESTS) return 'verif_capacite';
+    // Laser Game (23/10/2026) : au moins 2 joueurs pour jouer — un joueur seul
+    // sur une partie encore vide passe en validation manuelle.
+    if(d.activiteLabel === 'Laser Game' && used === 0 && pers < 2) return 'verif_seul';
     const miennes = computeCategories(d.enfants79, d.enfants1012, d.ados1315, d.ados1618, d.adultes);
     if(catsPresentes.some(c => !c.some(x => miennes.includes(x)))) return 'verif_profil';
     if(compoAnnivDifferente) return 'verif_anniv_compo';
@@ -4353,6 +4356,8 @@ const AUTO_REASON_LABEL = {
   verif_capacite: '🛡️ Plus assez de places (ou de gilets) au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   verif_complet:  '🛡️ Plus de colonne ou de casque libre au moment du traitement. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   verif_profil:   '🛡️ Groupe incompatible avec un groupe déjà placé sur ce créneau. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
+  joueur_seul:    '👥 Joueur seul sur une partie où personne n\'est encore inscrit (il faut au moins 2 joueurs) — à valider manuellement, ou proposer un autre créneau.',
+  verif_seul:     '🛡️ Joueur seul sur une partie encore vide, bloqué par CalendIT. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   anniv_composition: '🎂 Anniversaire sur ce créneau : les tranches d\'âge ne sont pas exactement les mêmes que celles du groupe déjà placé (ou de l\'anniversaire déjà placé) — à valider manuellement.',
   verif_anniv_compo: '🛡️ Anniversaire sur la même partie avec des tranches d\'âge différentes, bloqué par CalendIT. ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
   verif_anniv:    '🛡️ Un autre anniversaire est au planning sur ce créneau (écart d\'âge de plus d\'1 an, ou âge inconnu). ⚠ Le client a vu « confirmée » à l\'écran : le rappeler.',
