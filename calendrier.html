@@ -2000,11 +2000,15 @@ function buildAnniv3PartiesOptionMessage(nom, dateF, heureDebut, heureFin, pers,
 // récapitulatif générique multi-sessions. Renvoie null si ce n'est pas un
 // forfait anniversaire.
 function buildAnnivMessageFor(d, dateF, heureDebut, heureFin){
+  // 3e partie payante cochée en ligne → toujours le mail « option », quel que
+  // soit le type. Correction du 26/10/2026 : l'option n'existant que le
+  // week-end / en vacances, ces réservations sont de type t-anniv et
+  // recevaient à tort le mail « 2 parties ».
+  if ((d.forceType === 't-anniv' || d.forceType === 't-anniv3') && d.annivPaidExtra) {
+    return buildAnniv3PartiesOptionMessage(d.nom, dateF, heureDebut, heureFin, d.pers, d.annivPrenom);
+  }
   if (d.forceType === 't-anniv') {
     return buildAnniv2PartiesMessage(d.nom, dateF, heureDebut, heureFin, d.pers, d.annivPrenom);
-  }
-  if (d.forceType === 't-anniv3' && d.annivPaidExtra) {
-    return buildAnniv3PartiesOptionMessage(d.nom, dateF, heureDebut, heureFin, d.pers, d.annivPrenom);
   }
   if (d.forceType === 't-anniv3') {
     return buildAnniv3PartiesSemaineMessage(d.nom, dateF, heureDebut, heureFin, d.pers, d.annivPrenom);
