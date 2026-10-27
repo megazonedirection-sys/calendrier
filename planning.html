@@ -2215,7 +2215,7 @@ function boundPicker(cls, spec){
   return `<select class="${cls}r" aria-label="Référence"><option value="">—</option>${Object.entries(REFS).map(([k, l]) => `<option value="${k}"${ref === k ? " selected" : ""}>${l}</option>`).join("")}</select>
     <select class="${cls}o" aria-label="Décalage">${OFFSETS.map(m => `<option value="${m}"${m === (+off || 0) ? " selected" : ""}>${offLabel(m)}</option>`).join("")}</select>`;
 }
-const REPEATS = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180, 240];
+const REPEATS = [0, 5, 7, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180, 240];
 const PS_LABELS = { m:"Ménage (à tour de rôle)", w:"Sanitaires (WC, entrée)", l:"Laser", c:"Caisse / bar", s:"Salle" };
 const readBound = (row, cls) => { const r = row.querySelector(`.${cls}r`).value; return r ? `${r}:${row.querySelector(`.${cls}o`).value}` : null; };
 function hoursPreview(row){
