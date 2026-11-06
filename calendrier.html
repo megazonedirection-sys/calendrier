@@ -75,6 +75,11 @@ nav{
 #planningBanner.ferme{ display:flex;background:#b91c1c;color:#fff;border-bottom:1.5px solid #7f1d1d; }
 #planningBanner.horaires{ display:flex;background:#f97316;color:#fff;border-bottom:1.5px solid #c2410c; }
 
+/* ── OFFRE DU JOUR (05/11/2026) : bandeau + étiquette sous l'heure, vue Laser ── */
+#offreBanner{ display:none;align-items:center;gap:8px;flex-shrink:0;padding:7px 16px;font-size:13px;font-weight:800; }
+#offreBanner.show{ display:flex; }
+.offre-chip{ display:inline-block;margin-top:4px;font-family:'DM Sans',sans-serif;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:10px;white-space:nowrap;text-decoration:none; }
+
 /* ── BANDEAU : emails client non envoyés (à traiter par téléphone) ── */
 #emailFailBanner{
   display:none;align-items:center;gap:8px;cursor:pointer;
@@ -749,6 +754,9 @@ tbody tr.closed-day .time-cell{text-decoration:none !important}
 
 <!-- BANDEAU JOURNÉE FERMÉE / HORAIRES MODIFIÉS (planning équipe) -->
 <div id="planningBanner"><span id="planningBannerText"></span></div>
+
+<!-- BANDEAU OFFRE DU JOUR (vue Laser) -->
+<div id="offreBanner"><span id="offreBannerText"></span></div>
 
 <!-- CALENDAR -->
 <div class="cal-wrap">
@@ -2588,6 +2596,31 @@ function isVieChere(date){
   return date >= VIE_CHERE_START && date <= VIE_CHERE_END
       && new Date(date + 'T12:00:00').getDay() === 6; // samedi
 }
+// ── OFFRE DU JOUR (affichage seul, 05/11/2026) ──
+// Renvoie l'offre valable ce jour-là (null sinon), à partir des règles
+// ci-dessus : All Play mardi, Just Play jeudi, Afterwork vendredi dès 17h00 ;
+// Vie Chère samedi dès 19h00 entre VIE_CHERE_START et VIE_CHERE_END.
+// Rien n'est enregistré dans Firebase. Aucun affichage un jour fermé.
+function getOffreDuJour(date){
+  const oh = getOpenHours(date);
+  if(oh && !oh.open) return null;
+  const dow = new Date(date + 'T12:00:00').getDay();
+  let o = null;
+  if(isVieChere(date)){
+    const fin = VIE_CHERE_END.split('-').reverse().slice(0,2).join('/');
+    o = { type:'t-viechere', label:'Vie Chère', startMin:VIE_CHERE_START_MIN, detail:`2 parties (jusqu'au ${fin})` };
+  } else if(dow === 2){
+    o = { type:'t-team', label:'All Play', startMin:OFFER_START_MIN, detail:'' };
+  } else if(dow === 4){
+    o = { type:'t-jeu3', label:'Just Play', startMin:OFFER_START_MIN, detail:`${OFFER_AUTO_SESSIONS['t-jeu3'].count} parties` };
+  } else if(dow === 5){
+    o = { type:'t-vendredi', label:'Afterwork', startMin:OFFER_START_MIN, detail:`${OFFER_AUTO_SESSIONS['t-vendredi'].count} parties + 1 boisson offerte` };
+  }
+  if(!o) return null;
+  if(oh && oh.open && oh.closeMin <= o.startMin) return null; // ferme avant le début de l'offre
+  return o;
+}
+
 function offerBlockedReason(date, time, tel, ignoreKey){
   // Vie Chère : uniquement samedis 10/10–30/11 dès 19h
   if(isVieChere(date)){
@@ -3226,6 +3259,23 @@ function renderCalendar(){
     }
   }
 
+  // ── Bandeau « Offre du jour » (vue Laser uniquement) ──
+  const offreJour = currentView === 'laser' ? getOffreDuJour(dateKey) : null;
+  {
+    const ob = document.getElementById('offreBanner');
+    const obt = document.getElementById('offreBannerText');
+    if(ob && obt){
+      if(offreJour){
+        const hm = m => `${Math.floor(m/60)}h${String(m%60).padStart(2,'0')}`;
+        ob.className = `show ${offreJour.type}`;
+        obt.textContent = `🎯 Offre du jour : ${offreJour.label} — à partir de ${hm(offreJour.startMin)}${offreJour.detail ? ' — ' + offreJour.detail : ''}`;
+      } else {
+        ob.className = '';
+        obt.textContent = '';
+      }
+    }
+  }
+
   const isBT = currentView === 'bt';
   const isVR = currentView === 'vr';
   const MAX_COLS = isBT ? BT_COLS : (isVR ? VR_COLS : LASER_COLS);
@@ -3290,6 +3340,14 @@ function renderCalendar(){
     const tdT = document.createElement('td');
     tdT.className='time-cell';
     tdT.textContent=time;
+    // Étiquette de l'offre sous l'heure, seulement aux heures où elle est valable
+    if(offreJour && timeToMin(time) >= offreJour.startMin && !tr.classList.contains('closed-row')){
+      tdT.appendChild(document.createElement('br'));
+      const chip = document.createElement('span');
+      chip.className = `offre-chip ${offreJour.type}`;
+      chip.textContent = offreJour.label;
+      tdT.appendChild(chip);
+    }
     tr.appendChild(tdT);
 
     for(let s=1;s<=MAX_COLS;s++){
